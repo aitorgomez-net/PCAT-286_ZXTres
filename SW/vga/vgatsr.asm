@@ -1,0 +1,865 @@
+cpu 8086
+bits 16
+org 100h
+
+; VGA 13h+ development TSR for PCXT_MiSTer.
+;
+; Build:
+;   nasm -O9 -f bin -o vgatsr.com vgatsr.asm
+;
+; Installs an INT 10h hook. AX=0013h updates the BIOS Data Area and writes
+; 13h to the private VGA control port 03CDh. AX=000Dh first lets the EGA BIOS
+; establish the planar mode, then writes 0Dh so the core can emit it through
+; its fixed VGA 320x200x16 raster. While mode 13h is active, the hook provides
+; the minimal BIOS calls needed by bring-up software. Other mode sets clear
+; the private VGA route and chain to the IBM EGA ROM.
+
+%define INT10_VECTOR      10h
+%define XTEGACTL_SIGNATURE 8980h
+%define XTEGACTL_VIDEO     8983h
+%define XTEGACTL_ID        'E'
+%define VGA_CTRL_PORT    03CDh
+%define VGA_FB_SEG       0A000h
+%define VGA_DAC_READ      03C7h
+%define VGA_DAC_WRITE     03C8h
+%define VGA_DAC_DATA      03C9h
+%define VGA_MISC_OUTPUT   03C2h
+%define VGA_SEQ_INDEX     03C4h
+%define VGA_GC_INDEX      03CEh
+%define VGA_CRTC_INDEX    03D4h
+%define VGA_ATTR_INDEX    03C0h
+%define VGA_ATTR_DATA     03C1h
+%define VGA_INPUT_STATUS  03DAh
+
+%define BDA_SEG           0040h
+%define BDA_MODE          0049h
+%define BDA_COLS          004Ah
+%define BDA_REGEN_SIZE    004Ch
+%define BDA_PAGE_OFFSET   004Eh
+%define BDA_ACTIVE_PAGE   0062h
+
+start:
+    push cs
+    pop ds
+
+    ; VGA 13h+ is intentionally absent after reset. Enable it through the
+    ; XTEGACTL video field before installing the INT 10h hook. This keeps the
+    ; OSD's Native/TV choice purely about raster timing: cycling it cannot
+    ; remove a running VGA device underneath a game.
+    call enable_vga13
+    jc .exit_error
+
+    ; Running the COM twice used to stack two INT 10h hooks. The resident
+    ; handler carries a small signature immediately after its entry jump, so a
+    ; second invocation can leave the working TSR alone.
+    call tsr_installed
+    jc .already_installed
+
+.install:
+    mov ax, 3510h
+    int 21h
+    mov [old10_off], bx
+    mov [old10_seg], es
+
+    mov dx, int10_hook
+    mov ax, 2510h
+    int 21h
+
+    ; INT 21h/AH=31h counts paragraphs from the PSP, which is where this segment
+    ; starts, so resident_end doubles as the byte count. Derive the paragraph
+    ; count from it rather than hardcoding one: a hardcoded value silently stops
+    ; covering the hook as soon as the code grows, and DOS then hands the tail of
+    ; the INT 10h handler out to the next allocation.
+    mov dx, (resident_end - $$ + 100h + 15) / 16
+    mov ax, 3100h
+    int 21h
+
+.already_installed:
+    mov dx, msg_tsr_installed
+    mov ah, 09h
+    int 21h
+    mov ax, 4C00h
+    int 21h
+
+.exit_error:
+    mov ax, 4C01h
+    int 21h
+
+int10_hook:
+    jmp short int10_hook_entry
+tsr_signature: db 'V13+'
+int10_hook_entry:
+    cmp ah, 00h
+    jne .check_get_mode
+    ; Any mode set, not just a mode 13h one, is where the hardware gets asked.
+    ; It happens a handful of times in a session so it can afford to be
+    ; thorough, and every game does one - which is what makes it a fair point to
+    ; notice a later XTEGACTL change. Preserves AX, so the masking
+    ; and compare below are unaffected.
+    call refresh_vga_cached
+    ; Bit 7 of AL is the standard "do not clear video memory" flag, part of
+    ; the mode number on any VGA BIOS; games do use AL=93h to re-enter mode
+    ; 13h without a flash. Mask it only for the compare, so AX keeps flowing
+    ; into set_mode13/clear_and_chain exactly as the caller passed it.
+    push ax
+    and al, 7Fh
+    cmp al, 13h
+    pop ax
+    je .try_mode13
+
+    push ax
+    and al, 7Fh
+    cmp al, 0Dh
+    pop ax
+    je .try_mode0d
+    jmp .clear_and_chain
+
+.try_mode13:
+    push ax
+    call vga_available
+    pop ax
+    je .set_mode13
+    ; VGA was disabled through XTEGACTL after we went resident. Treat the
+    ; request like any other mode set and let the video BIOS reject it, so the
+    ; caller falls back instead of drawing into a mode nothing will display.
+    jmp .clear_and_chain
+
+.try_mode0d:
+    push ax
+    call vga_available
+    pop ax
+    je .set_mode0d
+    jmp .clear_and_chain
+
+.clear_and_chain:
+    push ax
+    push dx
+    ; The EGA BIOS below owns its normal mode table, but it does not know
+    ; about VGA-only CRTC 12h-18h, pel panning or split-panning suppression.
+    ; Restore the state that was present before mode 13h instead of leaving a
+    ; Mode-X Offset/Line Compare behind for the EGA renderer to inherit.
+    cmp byte [cs:current_mode], 13h
+    jne .just_clear
+    call restore_ega_state
+.just_clear:
+    mov dx, VGA_CTRL_PORT
+    xor al, al
+    out dx, al
+    mov byte [cs:current_mode], 00h
+    pop dx
+    pop ax
+    jmp far [cs:old10_off]
+
+.check_get_mode:
+    cmp ah, 0Fh
+    jne .check_ega_info
+    cmp byte [cs:current_mode], 13h
+    jne .chain
+    mov al, 13h
+    mov ah, 40
+    xor bh, bh
+    iret
+
+.check_ega_info:
+    cmp ah, 12h
+    jne .check_display_combination
+    cmp bl, 10h
+    jne .chain
+    push ax
+    call vga_available
+    pop ax
+    jne .chain
+    xor bh, bh
+    mov bl, 03h
+    mov cx, 0009h
+    iret
+
+.check_display_combination:
+    cmp ah, 1Ah
+    jne .check_write_pixel
+    or al, al
+    jne .chain
+    push ax
+    call vga_available
+    pop ax
+    jne .chain
+    mov ax, 001Ah
+    mov bx, 0008h
+    iret
+
+.check_write_pixel:
+    cmp ah, 0Ch
+    jne .check_read_pixel
+    cmp byte [cs:current_mode], 13h
+    jne .chain
+    call write_pixel
+    iret
+
+.check_read_pixel:
+    cmp ah, 0Dh
+    jne .check_palette
+    cmp byte [cs:current_mode], 13h
+    jne .chain
+    call read_pixel
+    iret
+
+.check_palette:
+    cmp ah, 10h
+    jne .chain
+    ; The DAC subfunctions (AL=10h/12h/15h/17h) are VGA-only: the EGA BIOS
+    ; underneath does not implement them and drops them silently. The core's
+    ; DAC now feeds every mode, not just mode 13h (see ega_dac_hit in
+    ; ega_top.v), so serve these in any mode, gated only on VGA being
+    ; available, matching how a real VGA answers this call regardless of
+    ; the current video mode.
+    push ax
+    call vga_available
+    pop ax
+    jne .chain
+    cmp al, 10h
+    je .set_one_dac
+    cmp al, 12h
+    je .set_dac_block
+    cmp al, 15h
+    je .read_one_dac
+    cmp al, 17h
+    je .read_dac_block
+    jmp .chain
+
+.set_one_dac:
+    call set_one_dac
+    iret
+
+.set_dac_block:
+    call set_dac_block
+    iret
+
+.read_one_dac:
+    call read_one_dac
+    iret
+
+.read_dac_block:
+    call read_dac_block
+    iret
+
+.set_mode0d:
+    ; Mode 0Dh itself is already in the IBM EGA ROM. Let that handler load its
+    ; sequencer, graphics/attribute controller, BDA and planar clear exactly as
+    ; before; the private control write below changes only the display fetch
+    ; and raster. If mode 13h owned the registers, first put back the EGA state
+    ; saved on entry so the old BIOS starts from a clean adapter.
+    cmp byte [cs:current_mode], 13h
+    jne .call_ega_mode0d
+    call restore_ega_state
+.call_ega_mode0d:
+    pushf
+    call far [cs:old10_off]
+
+    push ax
+    push dx
+    mov dx, VGA_CTRL_PORT
+    mov al, 0Dh
+    out dx, al
+    mov byte [cs:current_mode], 0Dh
+    pop dx
+    pop ax
+    iret
+
+.set_mode13:
+    ; A second INT 10h/13h is allowed while mode 13h is already active. Keep
+    ; the original EGA state in that case: saving again would save our own
+    ; VGA table and make a later return to DOS restore the wrong registers.
+    cmp byte [cs:current_mode], 13h
+    je .state_saved
+    call save_ega_state
+.state_saved:
+    push ax
+    push bx
+    push dx
+    push ds
+
+    ; Establish the VGA mode 13h register baseline before making the private
+    ; framebuffer visible. Programs such as Wrath read these registers and
+    ; turn Chain-4 off to enter unchained 320x200x256 mode. The CRTC table is
+    ; equally important for Mode-X-family software: it normally starts from
+    ; 13h and changes only the registers needed for 320x240 or 360x200.
+    mov dx, VGA_MISC_OUTPUT
+    mov al, 063h                  ; 25 MHz clock, colour CRTC, negative sync
+    out dx, al
+
+    mov dx, VGA_SEQ_INDEX
+    mov ax, 0101h                 ; Sequencer 01h: 8-dot timing
+    out dx, ax
+    mov ax, 0F02h                 ; Sequencer 02h: Map Mask = all planes
+    out dx, ax
+    mov ax, 0E04h                 ; Sequencer 04h: Chain-4 + O/E disable + ext mem
+    out dx, ax
+
+    mov dx, VGA_GC_INDEX
+    mov ax, 4005h                 ; GC 05h: Shift256, read/write mode 0
+    out dx, ax
+    mov ax, 0506h                 ; GC 06h: graphics, A0000h-AFFFFh
+    out dx, ax
+    mov ax, 0FF08h                ; GC 08h: Bit Mask = FFh
+    out dx, ax
+
+    ; VGA 320x200x256 CRTC baseline. Index 11h bit 7 protects CRTC 00h-07h,
+    ; so clear it before loading the table and restore it at the end. This is
+    ; the IBM VGA table; it is deliberately not a synthetic 15 kHz timing -
+    ; the FPGA selects its safe output raster independently.
+    mov dx, VGA_CRTC_INDEX
+    mov ax, 0E11h                 ; unlock CRTC 00h-07h
+    out dx, ax
+    mov ax, 5F00h
+    out dx, ax
+    mov ax, 4F01h
+    out dx, ax
+    mov ax, 5002h
+    out dx, ax
+    mov ax, 8203h
+    out dx, ax
+    mov ax, 5404h
+    out dx, ax
+    mov ax, 8005h
+    out dx, ax
+    mov ax, 0BF06h
+    out dx, ax
+    mov ax, 1F07h
+    out dx, ax
+    mov ax, 0008h
+    out dx, ax
+    mov ax, 4109h                 ; maximum scanline 1 (400 physical lines)
+    out dx, ax
+    mov ax, 9C10h
+    out dx, ax
+    mov ax, 8F12h                 ; Vertical Display End = 399
+    out dx, ax
+    mov ax, 2813h                 ; Offset = 40 words = 80 plane bytes
+    out dx, ax
+    mov ax, 4014h
+    out dx, ax
+    mov ax, 9615h
+    out dx, ax
+    mov ax, 0B916h
+    out dx, ax
+    mov ax, 0A317h
+    out dx, ax
+    mov ax, 0FF18h
+    out dx, ax
+    mov ax, 8E11h                 ; lock CRTC 00h-07h again
+    out dx, ax
+
+    mov dx, VGA_CTRL_PORT
+    mov al, 13h
+    out dx, al
+
+    mov ax, BDA_SEG
+    mov ds, ax
+    mov byte [BDA_MODE], 13h
+    mov word [BDA_COLS], 40
+    mov word [BDA_REGEN_SIZE], 0FA00h
+    mov word [BDA_PAGE_OFFSET], 0000h
+    mov byte [BDA_ACTIVE_PAGE], 00h
+
+    pop ds
+    pop dx
+    pop bx
+    pop ax
+
+    ; Bit 7 of AL is the "do not clear video memory" flag (also masked out
+    ; above, before the mode-number compare). A real VGA BIOS clears the
+    ; framebuffer on every mode set unless it is set; without this the
+    ; previous screen's pixels linger through the first frame of a fresh
+    ; mode 13h entry.
+    test al, 80h
+    jnz .skip_clear
+    call clear_framebuffer
+.skip_clear:
+
+    mov byte [cs:current_mode], 13h
+    mov al, 13h
+    mov ah, 40
+    ; No "xor bh, bh" here: AH=00h has no BH return value, and a mode set is
+    ; called often enough that zeroing a caller's register is a real hazard.
+    ; The page number in BH belongs to AH=0Fh, which sets it above.
+    iret
+
+.chain:
+    jmp far [cs:old10_off]
+
+; Clears the mode 13h framebuffer to colour 0 (32000 words at A000h:0000h).
+; Called from .set_mode13 only, right before AX is overwritten with the
+; return value, so nothing needs preserving across the call except what this
+; routine itself uses.
+;
+; The cld is not optional. rep stosw walks DI in the direction DF says, and the
+; caller's DF arrives here untouched - a blitter that left std set sends the
+; clear backwards from DI=0, which wraps to the top of the segment, leaves the
+; first 1536 bytes holding the previous screen and writes 0FA00h-0FFFFh past
+; the end of the visible framebuffer. DF itself needs no saving: the entry was
+; an INT, so the iret in .set_mode13 restores the caller's flags for us.
+clear_framebuffer:
+    push ax
+    push cx
+    push di
+    push es
+    mov ax, VGA_FB_SEG
+    mov es, ax
+    xor di, di
+    xor ax, ax
+    cld
+    mov cx, 32000
+    rep stosw
+    pop es
+    pop di
+    pop cx
+    pop ax
+    ret
+
+; Returns ZF=1 when the core reports VGA mode 13h available. Reads a cached
+; byte, not the port. RET leaves the compare flags intact, and nothing at all is
+; clobbered - not even AL, which the previous port-reading version did use.
+;
+; Why cached. At Max an I/O cycle is only a few video
+; clocks wide and a 3CDh read can come back 00h with the option switched on -
+; see RC12 in docs/vga-mode13-palette.md. Every VGA-only call the hook serves is
+; gated on this, so a bad read makes the hook chain to the EGA BIOS, which
+; answers AX=1A00h as not-VGA and drops AX=1012h silently.
+;
+; Retrying the read made a single call reliable enough - VGA detection stopped
+; failing on hardware - but not a fade. AX=1A00h is asked once per session;
+; AX=1012h is asked once per fade step, hundreds of times. Whatever per-call
+; failure rate survives the retry gets multiplied by that, and each survivor is
+; one palette load silently dropped, which is a visibly broken fade. Confirmed
+; by the two games: Prehistorik drives 3C8h/3C9h itself, never asks, and is
+; correct at every speed; Titus goes through AX=1012h and is correct at every
+; speed except this one.
+;
+; So the port is read where it is cheap to be thorough - a mode set, a handful
+; of times a session, in refresh_vga_cached - and every call after that reads
+; the answer out of memory. A later software write that disables XTEGACTL's
+; video field likewise takes effect on the next mode set, and every game does
+; one.
+vga_available:
+    cmp byte [cs:vga_cached], 13h
+    ret
+
+; Samples the control port and stores the answer for vga_available. Called from
+; the AH=00h path only, so it can afford eight tries where the old per-call
+; version could only afford three. A disabled extension returns 00h on every
+; one of them; a single 13h anywhere is proof it is on.
+refresh_vga_cached:
+    push ax
+    push cx
+    push dx
+    mov cx, 8
+    mov dx, VGA_CTRL_PORT
+.retry:
+    in al, dx
+    cmp al, 13h
+    je .store
+    loop .retry
+    xor al, al
+.store:
+    mov [cs:vga_cached], al
+    pop dx
+    pop cx
+    pop ax
+    ret
+
+; Save the CRTC and Attribute Controller state that exists before the TSR
+; programs its private VGA 13h baseline. IBM's EGA BIOS naturally reloads the
+; standard registers on a later mode set, but it cannot reset the VGA extension
+; registers that this core exposes in the same block. Keeping the prior state
+; is therefore both safer than inventing an EGA table and transparent to an
+; application which entered mode 13h from a non-default EGA mode.
+save_ega_state:
+    push ax
+    push bx
+    push cx
+    push dx
+
+    mov dx, VGA_CRTC_INDEX
+    xor bx, bx
+    mov cx, 25
+.crtc_loop:
+    mov al, bl
+    out dx, al
+    inc dx
+    in al, dx
+    dec dx
+    mov [cs:crtc_saved + bx], al
+    inc bx
+    loop .crtc_loop
+
+    ; Reads of 3DAh reset the Attribute Controller index/data flip-flop.
+    ; Save only the two registers mode 13h+/Mode X changes outside the normal
+    ; EGA BIOS table: Mode Control (10h) and Horizontal Pel Panning (13h).
+    mov dx, VGA_INPUT_STATUS
+    in al, dx
+    mov dx, VGA_ATTR_INDEX
+    mov al, 30h                  ; PAS + index 10h
+    out dx, al
+    mov dx, VGA_ATTR_DATA
+    in al, dx
+    mov [cs:attr_mode_saved], al
+
+    mov dx, VGA_INPUT_STATUS
+    in al, dx
+    mov dx, VGA_ATTR_INDEX
+    mov al, 33h                  ; PAS + index 13h
+    out dx, al
+    mov dx, VGA_ATTR_DATA
+    in al, dx
+    mov [cs:attr_pan_saved], al
+
+    pop dx
+    pop cx
+    pop bx
+    pop ax
+    ret
+
+; Restore the snapshot above before chaining a non-13h mode set to the EGA
+; BIOS. Unlock 00h-07h first, restore every other CRTC register, and only then
+; put the original write-protect state back in R11h.
+restore_ega_state:
+    push ax
+    push bx
+    push cx
+    push dx
+
+    mov dx, VGA_CRTC_INDEX
+    mov al, 11h
+    out dx, al
+    inc dx
+    mov al, [cs:crtc_saved + 17]
+    and al, 7Fh
+    out dx, al
+    dec dx
+
+    xor bx, bx
+    mov cx, 25
+.crtc_loop:
+    cmp bl, 11h
+    je .skip_r11
+    mov al, bl
+    out dx, al
+    inc dx
+    mov al, [cs:crtc_saved + bx]
+    out dx, al
+    dec dx
+.skip_r11:
+    inc bx
+    loop .crtc_loop
+
+    mov al, 11h
+    out dx, al
+    inc dx
+    mov al, [cs:crtc_saved + 17]
+    out dx, al
+
+    mov dx, VGA_INPUT_STATUS
+    in al, dx
+    mov dx, VGA_ATTR_INDEX
+    mov al, 30h                  ; PAS + index 10h
+    out dx, al
+    mov al, [cs:attr_mode_saved]
+    out dx, al
+
+    mov dx, VGA_INPUT_STATUS
+    in al, dx
+    mov dx, VGA_ATTR_INDEX
+    mov al, 33h                  ; PAS + index 13h
+    out dx, al
+    mov al, [cs:attr_pan_saved]
+    out dx, al
+
+    pop dx
+    pop cx
+    pop bx
+    pop ax
+    ret
+
+write_pixel:
+    or bh, bh
+    jne .done
+    cmp cx, 320
+    jae .done
+    cmp dx, 200
+    jae .done
+
+    push ax
+    push bx
+    push cx
+    push dx
+    push si
+    push di
+    push es
+
+    mov bl, al
+    mov si, dx
+    shl si, 1
+    shl si, 1
+    shl si, 1
+    shl si, 1
+    shl si, 1
+    shl si, 1
+    mov di, dx
+    shl di, 1
+    shl di, 1
+    shl di, 1
+    shl di, 1
+    shl di, 1
+    shl di, 1
+    shl di, 1
+    shl di, 1
+    add di, si
+    add di, cx
+    mov ax, VGA_FB_SEG
+    mov es, ax
+    mov [es:di], bl
+
+    pop es
+    pop di
+    pop si
+    pop dx
+    pop cx
+    pop bx
+    pop ax
+.done:
+    ret
+
+read_pixel:
+    xor al, al
+    or bh, bh
+    jne .done
+    cmp cx, 320
+    jae .done
+    cmp dx, 200
+    jae .done
+
+    push bx
+    push cx
+    push dx
+    push si
+    push di
+    push es
+
+    mov si, dx
+    shl si, 1
+    shl si, 1
+    shl si, 1
+    shl si, 1
+    shl si, 1
+    shl si, 1
+    mov di, dx
+    shl di, 1
+    shl di, 1
+    shl di, 1
+    shl di, 1
+    shl di, 1
+    shl di, 1
+    shl di, 1
+    shl di, 1
+    add di, si
+    add di, cx
+    mov ax, VGA_FB_SEG
+    mov es, ax
+    mov al, [es:di]
+
+    pop es
+    pop di
+    pop si
+    pop dx
+    pop cx
+    pop bx
+.done:
+    ret
+
+set_one_dac:
+    push ax
+    push bx
+    push dx
+    mov bh, dh
+    mov dx, VGA_DAC_WRITE
+    mov al, bl
+    out dx, al
+    inc dx
+    mov al, bh
+    out dx, al
+    mov al, ch
+    out dx, al
+    mov al, cl
+    out dx, al
+    pop dx
+    pop bx
+    pop ax
+    ret
+
+set_dac_block:
+    push ax
+    push bx
+    push cx
+    push dx
+    push si
+    mov si, dx
+    mov dx, VGA_DAC_WRITE
+    mov al, bl
+    out dx, al
+    inc dx
+    jcxz .done
+.next:
+    mov al, [es:si]
+    out dx, al
+    inc si
+    mov al, [es:si]
+    out dx, al
+    inc si
+    mov al, [es:si]
+    out dx, al
+    inc si
+    loop .next
+.done:
+    pop si
+    pop dx
+    pop cx
+    pop bx
+    pop ax
+    ret
+
+; AL=15h returns DH=red, CH=green, CL=blue and nothing else: a real VGA BIOS
+; leaves BX and DL alone. BH is only borrowed to hold red across the reads, so
+; it has to be restored, and DX has to be put back before DH is loaded. Getting
+; this wrong hangs fade loops that keep their step counter in BH, which is the
+; usual place for it - every call would overwrite the counter with a colour
+; component and the fade would never reach its last step.
+read_one_dac:
+    push ax
+    push bx
+    push dx
+    mov dx, VGA_DAC_READ
+    mov al, bl
+    out dx, al
+    mov dx, VGA_DAC_DATA
+    in al, dx
+    mov bh, al
+    in al, dx
+    mov ch, al
+    in al, dx
+    mov cl, al
+    mov al, bh
+    pop dx
+    mov dh, al
+    pop bx
+    pop ax
+    ret
+
+read_dac_block:
+    push ax
+    push bx
+    push cx
+    push dx
+    push di
+    mov di, dx
+    mov dx, VGA_DAC_READ
+    mov al, bl
+    out dx, al
+    mov dx, VGA_DAC_DATA
+    jcxz .done
+.next:
+    in al, dx
+    mov [es:di], al
+    inc di
+    in al, dx
+    mov [es:di], al
+    inc di
+    in al, dx
+    mov [es:di], al
+    inc di
+    loop .next
+.done:
+    pop di
+    pop dx
+    pop cx
+    pop bx
+    pop ax
+    ret
+
+old10_off:      dw 0
+old10_seg:      dw 0
+current_mode:   db 0
+crtc_saved:     times 25 db 0
+attr_mode_saved: db 0
+attr_pan_saved:  db 0
+; Seeded at 13h because enable_vga13 selects the extension before the TSR goes
+; resident, then refreshed on every mode set.
+vga_cached:     db 13h
+
+resident_end:
+
+; Only reached before going resident, so keep it outside the retained block.
+; Enable XTEGACTL video field [1:0] = 2 (vga13), preserving any future upper
+; fields in the same byte. Carry returns set only when the core lacks the
+; XTEGACTL port block, which means this version of the TSR cannot control it.
+enable_vga13:
+    mov dx, XTEGACTL_SIGNATURE
+    in al, dx
+    cmp al, XTEGACTL_ID
+    jne .unsupported
+
+    mov dx, XTEGACTL_VIDEO
+    in al, dx
+    mov ah, al
+    and al, 03h
+    cmp al, 02h
+    je .already_enabled
+    and ah, 0FCh
+    or ah, 02h
+    mov al, ah
+    out dx, al
+    mov dx, msg_activated
+    jmp short .print
+.already_enabled:
+    mov dx, msg_already_active
+.print:
+    mov ah, 09h
+    int 21h
+    clc
+    ret
+.unsupported:
+    mov dx, msg_no_xtegactl
+    mov ah, 09h
+    int 21h
+    stc
+    ret
+
+; Carry set when INT 10h already points at this TSR. The signature is after a
+; two-byte short jump, so it never runs in the interrupt path.
+tsr_installed:
+    push ax
+    push bx
+    push es
+    mov ax, 3510h
+    int 21h
+    cmp byte [es:bx+2], 'V'
+    jne .not_installed
+    cmp byte [es:bx+3], '1'
+    jne .not_installed
+    cmp byte [es:bx+4], '3'
+    jne .not_installed
+    cmp byte [es:bx+5], '+'
+    jne .not_installed
+    stc
+    jmp short .done
+.not_installed:
+    clc
+.done:
+    pop es
+    pop bx
+    pop ax
+    ret
+
+msg_activated:      db 'VGA 13h+ activated.', 13, 10, '$'
+msg_already_active: db 'VGA 13h+ was already active.', 13, 10, '$'
+msg_tsr_installed:  db 'VGATSR is already installed.', 13, 10, '$'
+msg_no_xtegactl:    db 'XTEGACTL port not found; TSR not installed.', 13, 10, '$'

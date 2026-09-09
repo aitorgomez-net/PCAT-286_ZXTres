@@ -1,0 +1,19 @@
+# Keep simulator scripts and generated timing sources portable.
+*.sh text eol=lf
+PCAT-286.qsf text eol=lf
+scripts/*.py text eol=lf
+scripts/*.json text eol=lf
+rtl/spk286_timing/** text eol=lf
+sim/spk286_timing/** text eol=lf
+rtl/spk286_integration/spk286_at_cpu_profile.sv text eol=lf
+sim/spk286_integration/spk286_at_cpu_profile_tb.sv text eol=lf
+sim/spk286_integration/spk286_at_profile_bridge_tb.sv text eol=lf
+sim/spk286_integration/spk286_instruction_timing_tb.sv text eol=lf
+
+# Firmware images and native timing captures must preserve their bytes.
+*.com binary
+SW/CPUTIME/** -text
+tests/firmware/pcat286_event_diag.asm text eol=lf
+tests/firmware/pcat286_event_diag.hex text eol=lf
+tests/firmware/pcat286_event_diag.json text eol=lf
+tests/firmware/pcat286_event_diag_rom_case.svh text eol=lf
