@@ -1,0 +1,28 @@
+{
+  "artifact": "PCAT-286 project diagnostic ROM",
+  "builder": "NASM flat binary, BITS 16, ORG 0",
+  "failure_port": "0x0081",
+  "format": "raw 64 KiB ROM loaded at XT F0000-FFFFF",
+  "memory_signature": {
+    "physical_0x10500": "0x2860",
+    "physical_0x10502": "0x5a3c"
+  },
+  "reset_vector_offset": "0xfff0",
+  "rom": "tests/firmware/pcat286_diag.rom",
+  "rom_sha256": "a7e34045ccf4bf31688f957818de7f60c4c70cd755c2bc1053e3263fb3ad5679",
+  "rom_size": 65536,
+  "schema_version": 1,
+  "simulation_case": "tests/firmware/pcat286_diag_rom_case.svh",
+  "simulation_case_sha256": "eb27e842e082f6aa80eac4c476c825f8f35db831320b7b6938e0d8474eb8c389",
+  "source": "tests/firmware/pcat286_diag.asm",
+  "source_sha256": "a942f45d6fc9b283116ffbccdc19adb4140969ce2f90adce43c40249c6a80d37",
+  "success_port": "0x0080",
+  "success_sequence": [
+    "0x10",
+    "0x20",
+    "0x30",
+    "0x40",
+    "0x50",
+    "0x86"
+  ]
+}

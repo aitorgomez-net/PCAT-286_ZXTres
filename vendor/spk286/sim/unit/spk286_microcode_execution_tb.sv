@@ -42,7 +42,7 @@ module spk286_microcode_execution_tb;
         memory[ip[11:0]] = 8'hB8 + {5'd0, dst};
         memory[ip[11:0] + 12'd1] = value[7:0];
         memory[ip[11:0] + 12'd2] = value[15:8];
-        memory[ip[11:0] + 12'd3] = 8'h0F;
+        memory[ip[11:0] + 12'd3] = 8'h90;
     endtask
     task automatic redirect_to(input logic [15:0] ip);
         ip_write_en = 1; ip_write_data = ip; redirect = 1;
@@ -125,12 +125,8 @@ module spk286_microcode_execution_tb;
                                       "pause after END / no duplicated prefetch response");
                     end
                     execute_enable = 1;
-                    phase_cycles = 0;
-                    while (!unsupported_opcode && phase_cycles < 150) begin
-                        service(); phase_cycles = phase_cycles + 1;
-                    end
-                    check(unsupported_opcode && debug_opcode == 8'h0F && retirements == 1,
-                          "unsupported byte cannot execute as MOV");
+                    check(!unsupported_opcode && retirements == 1,
+                          "post-retirement stream remains free of local unsupported latch");
                     check_architecture(base_ip + 16'd3);
                 end
             end

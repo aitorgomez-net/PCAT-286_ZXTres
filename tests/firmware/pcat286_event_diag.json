@@ -1,0 +1,32 @@
+{
+  "artifact": "PCAT-286 I4 event diagnostic ROM",
+  "builder": "NASM flat binary, BITS 16, ORG 0",
+  "controlled_nmi_simulation_extra": [
+    "0x73"
+  ],
+  "failure_port": "0x0081",
+  "format": "raw 64 KiB ROM loaded at XT F0000-FFFFF",
+  "memory_signature": {
+    "physical_0x10600": "0xa55a",
+    "physical_0x10604": "0x2864",
+    "physical_0x10606_after_controlled_nmi": "0x2bad"
+  },
+  "pic_irq": 0,
+  "pic_vector": "0x20",
+  "reset_vector_offset": "0xfff0",
+  "rom": "tests/firmware/pcat286_event_diag.rom",
+  "rom_sha256": "2a562fc1a1624cd0f4425b0f943d9372f21ae5acb1838b115b5d76986993873e",
+  "rom_size": 65536,
+  "schema_version": 1,
+  "simulation_case": "tests/firmware/pcat286_event_diag_rom_case.svh",
+  "simulation_case_sha256": "6f5f5ce35079ef726b3c2e30ddafa2da3a0d97923ab8b4437f4ddc3722f0d44d",
+  "source": "tests/firmware/pcat286_event_diag.asm",
+  "source_sha256": "02cae46017f8281f6ec123c4aaa018f119a067b225c41894f2b35498cace4efb",
+  "success_port": "0x0080",
+  "success_sequence": [
+    "0x70",
+    "0x72",
+    "0x71",
+    "0x86"
+  ]
+}

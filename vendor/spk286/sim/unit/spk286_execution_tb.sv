@@ -175,20 +175,25 @@ module spk286_execution_tb;
         if (debug_prefetch_count > 4'd6)
             $fatal(1, "prefetch queue count overflow: %d", debug_prefetch_count);
 
-        // Unsupported opcodes are reported without consuming or writing them.
+        // An unsupported second byte of the 0F escape is an architectural #UD
+        // event; the old local "unsupported opcode" latch must stay clear.
         ip_write_en = 1'b1;
         ip_write_data = 16'h0200;
         redirect = 1'b1;
         load_byte(16'h0200, 8'h0F);
+        load_byte(16'h0201, 8'hFF);
+        memory[24] = 8'h00; memory[25] = 8'h03; // vector 6 -> 0000:0300
+        memory[26] = 8'h00; memory[27] = 8'h00;
+        load_byte(16'h0300, 8'hCF);
         #1;
         tick();
         ip_write_en = 1'b0;
         redirect = 1'b0;
-        for (cycles = 0; cycles < 600 && !unsupported_opcode; cycles = cycles + 1)
+        for (cycles = 0; cycles < 600 && !event_completed; cycles = cycles + 1)
             service_cycle();
-        if (!unsupported_opcode || debug_opcode !== 8'h0F || debug_ip !== 16'h0200 ||
+        if (!event_completed || debug_event_vector !== 8'd6 || unsupported_opcode ||
             debug_gpr[15:0] !== 16'h1234 || debug_flags !== 16'h0043)
-            $fatal(1, "unsupported opcode trap did not preserve state");
+            $fatal(1, "0F invalid form did not raise architectural #UD");
 
         $display("EXECUTION PASS: MOV single/multi-instruction, stalls, redirect flush and unsupported opcode; bus transactions=%0d",
                  bus_transactions);

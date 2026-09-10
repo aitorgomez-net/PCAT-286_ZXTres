@@ -1,9 +1,9 @@
 # PCAT-286 for MiSTer
 
-Import the upstream PCXT platform and the selected SPK286 CPU snapshot, preserving component ownership and license notices.
+Add the CPU wrapper, serialized XT bus, machine events and ROM loading. Incorporate the bus handshake and real-mode instruction corrections used during initial board bring-up.
 
 This development snapshot is part of the consolidated chronological
-history. Its source state comes from 2026-09-09.
+history. Its source state comes from 2026-09-10.
 The latest revision contains the common technical reference and current
 validation instructions. Historical reports and compiled candidates are
 kept in the original development archive, outside this branch.
