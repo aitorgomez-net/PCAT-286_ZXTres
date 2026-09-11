@@ -1,0 +1,61 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+root=$(cd "$(dirname "$0")/.." && pwd)
+build_dir="${PCAT_BUILD_DIR:-$root/build/at-machine-boundary}"
+rom_path="${AT_SYSTEM_ROM:-$root/tests/firmware/pcat286_event_diag.rom}"
+mkdir -p "$build_dir"
+cd "$root"
+
+sources=(
+  vendor/spk286/microcode/generated/spk286_microcode_pkg.sv
+  vendor/spk286/microcode/generated/spk286_microcode_rom.sv
+)
+for source in vendor/spk286/rtl/*.sv; do
+  [[ "$source" == "vendor/spk286/rtl/spk286_operand.sv" ]] || sources+=("$source")
+done
+sources+=(
+  rtl/spk286_integration/spk286_operand_timing.sv
+  rtl/spk286_integration/spk286_machine_cpu.sv
+  rtl/spk286_integration/spk286_at_bus_bridge.sv
+  rtl/spk286_integration/spk286_at_memory_decode.sv
+  rtl/spk286_integration/spk286_at_arbiter.sv
+  rtl/spk286_integration/spk286_at_pic.sv
+  rtl/spk286_integration/spk286_at_dma.sv
+  rtl/spk286_integration/spk286_at_refresh.sv
+  rtl/spk286_integration/spk286_at_pit.sv
+  rtl/spk286_integration/spk286_at_8042.sv
+  rtl/spk286_integration/spk286_at_rtc_cmos.sv
+  rtl/spk286_integration/spk286_at_storage_video.sv
+  rtl/spk286_integration/spk286_at_device_router.sv
+  rtl/spk286_integration/spk286_at_machine.sv
+)
+pic_sources=()
+for source in rtl/KFPC-XT/HDL/KF8259/HDL/*.sv; do
+  pic_sources+=("$source")
+done
+
+iverilog -g2012 -t null -Irtl/KFPC-XT/HDL/KF8259/HDL \
+  -s spk286_at_machine "${sources[@]}" "${pic_sources[@]}" \
+  >"$build_dir/iverilog-build.log" 2>&1
+echo AT_MACHINE_ICARUS_ELAB_PASS
+
+verilator --lint-only --timing --top-module spk286_at_machine \
+  -Wno-fatal -Irtl/KFPC-XT/HDL/KF8259/HDL \
+  "${sources[@]}" "${pic_sources[@]}" \
+  >"$build_dir/verilator-production-lint.log" 2>&1
+echo AT_MACHINE_PRODUCTION_LINT_PASS
+
+rm -rf "$build_dir/verilator-obj"
+verilator --binary --timing -DAT_MACHINE_PIC_MODEL \
+  --top-module spk286_at_machine_tb \
+  -Wno-fatal -Irtl/KFPC-XT/HDL/KF8259/HDL \
+  --Mdir "$build_dir/verilator-obj" -o at_machine_vlt \
+  "${sources[@]}" sim/spk286_integration/spk286_at_machine_pic_model.sv \
+  sim/spk286_integration/spk286_at_machine_tb.sv \
+  >"$build_dir/verilator-build.log" 2>&1
+timeout 120s "$build_dir/verilator-obj/at_machine_vlt" "+ROM=$rom_path" \
+  "+MAX_CYCLES=${AT_SYSTEM_MAX_CYCLES:-2000000}" \
+  | tee "$build_dir/verilator-run.log"
+
+echo AT_MACHINE_BOUNDARY_TEST_PASS
