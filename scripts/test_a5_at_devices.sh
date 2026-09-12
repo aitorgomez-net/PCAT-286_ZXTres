@@ -7,8 +7,12 @@ mkdir -p "$build_dir"
 cd "$root"
 
 sources=(
+  rtl/common/simple_ram.v
+  rtl/common/simple_fifo.v
+  rtl/common/floppy.v
   rtl/spk286_integration/spk286_at_8042.sv
   rtl/spk286_integration/spk286_at_rtc_cmos.sv
+  rtl/spk286_integration/spk286_at_fdc.sv
   rtl/spk286_integration/spk286_at_storage_video.sv
   rtl/spk286_integration/spk286_at_video_adapter.sv
   rtl/KFPC-XT/HDL/ega_vram_bram_frontend.sv
@@ -24,12 +28,12 @@ done
 iverilog -g2012 -s spk286_at_devices_tb \
   -o "$build_dir/a5_iv" "${sources[@]}" \
   >"$build_dir/iverilog-build.log" 2>&1
-vvp "$build_dir/a5_iv" | tee "$build_dir/iverilog-run.log"
+(cd "$root/rtl/video" && vvp "$build_dir/a5_iv") | tee "$build_dir/iverilog-run.log"
 
 rm -rf "$build_dir/verilator-obj"
 verilator --binary --timing --top-module spk286_at_devices_tb \
   -Wno-fatal --Mdir "$build_dir/verilator-obj" -o a5_vlt \
   "${sources[@]}" >"$build_dir/verilator-build.log" 2>&1
-"$build_dir/verilator-obj/a5_vlt" | tee "$build_dir/verilator-run.log"
+(cd "$root/rtl/video" && "$build_dir/verilator-obj/a5_vlt") | tee "$build_dir/verilator-run.log"
 
 echo A5_AT_DEVICES_TEST_PASS

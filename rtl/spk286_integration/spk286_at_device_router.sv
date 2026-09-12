@@ -42,10 +42,19 @@ module spk286_at_device_router (
     input  logic        dma_transfer_complete,
     input  logic        dma_terminal_count,
     input  logic [2:0]  dma_active_channel,
+    input  logic [15:0] dma_transfer_data_in,
     output logic        dma_transfer_accept,
     output logic        dma_transfer_ready,
     output logic [15:0] dma_transfer_data_out,
     output logic [7:0]  dma_request,
+    input  logic [15:0] mgmt_address,
+    input  logic [15:0] mgmt_writedata,
+    input  logic        mgmt_write,
+    input  logic        mgmt_read,
+    output logic [15:0] mgmt_readdata,
+    input  logic [1:0]  floppy_write_protect,
+    output logic [1:0]  floppy_present,
+    output logic [1:0]  floppy_request,
     output logic        irq6,
     output logic        irq14,
     output logic        ata_selected,
@@ -70,6 +79,7 @@ module spk286_at_device_router (
     output logic [9:0]  video_active_lines,
     output logic [15:0] side_effect_count,
     output logic [15:0] irq_request,
+    output wire [3:0]   debug_fault_sources,
     output logic        protocol_error
 );
     localparam logic [2:0] ROUTER_IDLE   = 3'd0;
@@ -194,6 +204,8 @@ module spk286_at_device_router (
         .request_accept(rtc_request_accept), .request_ready(rtc_request_ready),
         .request_read_data(rtc_read_data),
         .request_read_data_valid(rtc_read_data_valid),
+        .mgmt_address(mgmt_address), .mgmt_writedata(mgmt_writedata),
+        .mgmt_write(mgmt_write),
         .periodic_tick(periodic_tick), .second_tick(second_tick),
         .irq8(irq8), .nmi_mask(nmi_mask),
         .side_effect_count(rtc_side_effect_count),
@@ -217,10 +229,17 @@ module spk286_at_device_router (
         .dma_transfer_complete(dma_transfer_complete),
         .dma_terminal_count(dma_terminal_count),
         .dma_active_channel(dma_active_channel),
+        .dma_transfer_data_in(dma_transfer_data_in),
         .dma_transfer_accept(dma_transfer_accept),
         .dma_transfer_ready(dma_transfer_ready),
         .dma_transfer_data_out(dma_transfer_data_out),
-        .dma_request(dma_request), .ata_irq14(irq14), .floppy_irq6(irq6),
+        .dma_request(dma_request),
+        .mgmt_address(mgmt_address), .mgmt_writedata(mgmt_writedata),
+        .mgmt_write(mgmt_write), .mgmt_read(mgmt_read),
+        .mgmt_readdata(mgmt_readdata),
+        .floppy_write_protect(floppy_write_protect),
+        .floppy_present(floppy_present), .floppy_request(floppy_request),
+        .ata_irq14(irq14), .floppy_irq6(irq6),
         .ata_selected(ata_selected), .floppy_selected(floppy_selected),
         .video_io_selected(video_io_selected),
         .video_memory_selected(video_memory_selected),
@@ -270,6 +289,9 @@ module spk286_at_device_router (
         irq_request[8] = irq8;
         irq_request[14] = irq14;
     end
+
+    assign debug_fault_sources = {storage_protocol_error, rtc_protocol_error,
+                                  kbd_protocol_error, router_protocol_error_q};
 
     assign protocol_error = router_protocol_error_q | kbd_protocol_error |
                             rtc_protocol_error | storage_protocol_error;

@@ -75,9 +75,15 @@ module spk286_at_memory_decode_tb;
         classify(24'h100000, 4'h5, 1'b0);
         check(extended_ram_select && memory_cycle,
               "extended RAM start lost the 24-bit boundary");
-        classify(24'hFFEFFF, 4'h6, 1'b1);
+        classify(24'h15FFFF, 4'h6, 1'b1);
         check(extended_ram_select && write_allowed,
               "extended RAM upper limit was not decoded");
+        classify(24'h160000, 4'h5, 1'b0);
+        check(!extended_ram_select && !memory_cycle && unmapped_request,
+              "memory above the installed 1 MiB profile was decoded as RAM");
+        classify(24'hFFEFFF, 4'h6, 1'b1);
+        check(!extended_ram_select && !write_allowed && unmapped_request,
+              "high unmapped memory was exposed as SDRAM");
 
         classify(24'h0F0000, 4'h9, 1'b0);
         check(!memory_cycle && unmapped_request && !system_bios_select,

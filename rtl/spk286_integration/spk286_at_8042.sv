@@ -42,13 +42,16 @@ module spk286_at_8042 (
     logic       output_buffer_valid_q;
     logic [7:0] command_byte_q;
     logic [7:0] output_port_q;
+    logic       write_command_byte_q;
     logic       write_output_port_q;
     logic       reset_pulse_q;
     logic       keyboard_enabled_q;
+    logic       last_write_command_q;
     logic [7:0] request_byte;
     logic [7:0] current_read_data;
     logic       port_selected;
     logic       lane_valid;
+    logic       controller_reply_write;
 
     always_comb begin
         port_selected = request_valid && request_command_valid && request_io &&
@@ -60,6 +63,14 @@ module spk286_at_8042 (
                       (request_byte_enable == 2'b10));
         request_byte = request_byte_enable[1] ?
                        request_data_out[15:8] : request_data_out[7:0];
+        controller_reply_write = request_accept && request_write &&
+                                 (request_address[15:0] == 16'h0064) &&
+                                 ((request_byte == 8'h20) ||
+                                  (request_byte == 8'hAA) ||
+                                  (request_byte == 8'hAB) ||
+                                  (request_byte == 8'hC0) ||
+                                  (request_byte == 8'hD0) ||
+                                  (request_byte == 8'hE0));
     end
 
     assign request_accept = (io_state_q == IO_IDLE) && port_selected &&
@@ -83,8 +94,11 @@ module spk286_at_8042 (
 
     always_comb begin
         if (request_address[15:0] == 16'h0064)
-            current_read_data = {1'b0, 1'b0, 1'b0, 1'b0,
-                                 !keyboard_enabled_q, 1'b1, 1'b0,
+            // 5170 status: no parity/timeout error, inhibit switch open,
+            // last host write command/data, system flag, empty input buffer,
+            // and the live controller output-buffer state.
+            current_read_data = {3'b000, 1'b1, last_write_command_q,
+                                 command_byte_q[2], 1'b0,
                                  output_buffer_valid_q};
         else
             current_read_data = output_buffer_q;
@@ -100,9 +114,11 @@ module spk286_at_8042 (
             output_buffer_valid_q <= 1'b0;
             command_byte_q <= 8'h01;
             output_port_q <= 8'h01;
+            write_command_byte_q <= 1'b0;
             write_output_port_q <= 1'b0;
             reset_pulse_q <= 1'b0;
             keyboard_enabled_q <= 1'b1;
+            last_write_command_q <= 1'b0;
             side_effect_count <= 16'h0000;
             protocol_error <= 1'b0;
         end else begin
@@ -121,25 +137,66 @@ module spk286_at_8042 (
                     if (request_address[15:0] == 16'h0060)
                         output_buffer_valid_q <= 1'b0;
                 end else if (request_address[15:0] == 16'h0064) begin
+                    last_write_command_q <= 1'b1;
+                    write_command_byte_q <= 1'b0;
+                    write_output_port_q <= 1'b0;
                     case (request_byte)
                         8'h20: begin
                             output_buffer_q <= command_byte_q;
                             output_buffer_valid_q <= 1'b1;
                         end
+                        8'h60: write_command_byte_q <= 1'b1;
                         8'hAA: begin
+                            command_byte_q[2] <= 1'b1;
                             output_buffer_q <= 8'h55;
                             output_buffer_valid_q <= 1'b1;
                         end
-                        8'hAD: keyboard_enabled_q <= 1'b0;
-                        8'hAE: keyboard_enabled_q <= 1'b1;
+                        8'hAB: begin
+                            // The decoded MiSTer keyboard path has no exposed
+                            // stuck-clock/data condition, so its interface
+                            // diagnostic result is deterministically healthy.
+                            output_buffer_q <= 8'h00;
+                            output_buffer_valid_q <= 1'b1;
+                        end
+                        8'hAD: begin
+                            command_byte_q[4] <= 1'b1;
+                            keyboard_enabled_q <= 1'b0;
+                        end
+                        8'hAE: begin
+                            command_byte_q[4] <= 1'b0;
+                            keyboard_enabled_q <= 1'b1;
+                        end
+                        8'hC0: begin
+                            // AT input port: inhibit switch open, EGA/color,
+                            // manufacturing jumper absent, 512 KiB planar RAM.
+                            output_buffer_q <= 8'hA0;
+                            output_buffer_valid_q <= 1'b1;
+                        end
+                        8'hD0: begin
+                            output_buffer_q <= output_port_q;
+                            output_buffer_valid_q <= 1'b1;
+                        end
                         8'hD1: write_output_port_q <= 1'b1;
+                        8'hE0: begin
+                            // T0/T1 observe the idle-high decoded clock/data
+                            // interface represented by this boundary.
+                            output_buffer_q <= 8'h03;
+                            output_buffer_valid_q <= 1'b1;
+                        end
                         8'hFE: reset_pulse_q <= 1'b1;
                         default: begin end
                     endcase
-                end else if (write_output_port_q) begin
-                    output_port_q <= request_byte | 8'h01;
-                    reset_pulse_q <= !request_byte[0];
-                    write_output_port_q <= 1'b0;
+                end else begin
+                    last_write_command_q <= 1'b0;
+                    if (write_command_byte_q) begin
+                        command_byte_q <= request_byte;
+                        keyboard_enabled_q <= !request_byte[4];
+                        write_command_byte_q <= 1'b0;
+                    end else if (write_output_port_q) begin
+                        output_port_q <= request_byte | 8'h01;
+                        reset_pulse_q <= !request_byte[0];
+                        write_output_port_q <= 1'b0;
+                    end
                 end
             end
 
@@ -147,7 +204,7 @@ module spk286_at_8042 (
             // Reading port 60h therefore remains the sole operation that
             // releases a pending keyboard IRQ.
             if (keyboard_byte_valid && keyboard_enabled_q &&
-                !output_buffer_valid_q) begin
+                !output_buffer_valid_q && !controller_reply_write) begin
                 output_buffer_q <= keyboard_byte;
                 output_buffer_valid_q <= 1'b1;
             end

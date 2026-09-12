@@ -2245,6 +2245,7 @@ module emu
         .VB                      (pre2x_LVBL),
         .rgb_in                  (credits_rgb_out),
         .page                    (status[73:72]),
+        .ram_trace_view          (1'b0),
         .cpu_reset               (spk_reset),
         .cpu_halted              (spk_halted),
         .cpu_shutdown            (spk_shutdown),

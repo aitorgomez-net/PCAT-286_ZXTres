@@ -26,6 +26,8 @@ module spk286_at_memory_decode (
     localparam logic [23:0] SYSTEM_BIOS_LIMIT      = 24'h0FFFFF;
     localparam logic [23:0] SYSTEM_BIOS_ALIAS_BASE = 24'hFFF000;
     localparam logic [23:0] SYSTEM_BIOS_ALIAS_LIMIT = 24'hFFFFFF;
+    localparam logic [23:0] EXTENDED_RAM_BASE      = 24'h100000;
+    localparam logic [23:0] EXTENDED_RAM_LIMIT     = 24'h15FFFF;
 
     logic valid_memory_class;
     logic system_bios_alias_select;
@@ -54,7 +56,8 @@ module spk286_at_memory_decode (
                                      (address <= SYSTEM_BIOS_LIMIT)) ||
                                     system_bios_alias_select);
         extended_ram_select      = valid_memory_class &&
-                                   (address >= 24'h100000) &&
+                                   (address >= EXTENDED_RAM_BASE) &&
+                                   (address <= EXTENDED_RAM_LIMIT) &&
                                    !system_bios_alias_select;
 
         memory_cycle = conventional_ram_select || video_aperture_select ||
@@ -66,10 +69,9 @@ module spk286_at_memory_decode (
                         (conventional_ram_select || video_aperture_select ||
                          extended_ram_select);
 
-        // Every 24-bit address belongs to one of the profile ranges.  This
-        // output therefore means "not a memory/code request" for this unit;
-        // option-ROM presence and reserved-hole policy are chipset inputs
-        // applied after option_region_select.
+        // Addresses above the installed 1 MiB profile (640 KiB conventional
+        // plus 384 KiB extended) are explicitly unmapped. The machine-level
+        // sink completes such reads with FFh instead of exposing spare SDRAM.
         unmapped_request = request_valid && !memory_cycle;
     end
 endmodule

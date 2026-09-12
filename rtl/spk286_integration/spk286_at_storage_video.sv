@@ -1,7 +1,7 @@
 // Functional AT storage/video device boundary.
 //
-// The storage side exposes deterministic primary ATA and floppy register
-// behaviour plus a floppy-like DMA request on channel 2.  The video side is
+// The storage side exposes the primary ATA registers and the shared uPD765
+// floppy controller, including its channel-2 DMA request. The video side is
 // the real EGA device: its register file, CRTC and planar VRAM are provided by
 // spk286_at_video_adapter and share this request owner with ATA/FDC.
 `timescale 1ns/1ps
@@ -28,10 +28,20 @@ module spk286_at_storage_video (
     input  logic        dma_transfer_complete,
     input  logic        dma_terminal_count,
     input  logic [2:0]  dma_active_channel,
+    input  logic [15:0] dma_transfer_data_in,
     output logic        dma_transfer_accept,
     output logic        dma_transfer_ready,
     output logic [15:0] dma_transfer_data_out,
     output logic [7:0]  dma_request,
+
+    input  logic [15:0] mgmt_address,
+    input  logic [15:0] mgmt_writedata,
+    input  logic        mgmt_write,
+    input  logic        mgmt_read,
+    output logic [15:0] mgmt_readdata,
+    input  logic [1:0]  floppy_write_protect,
+    output logic [1:0]  floppy_present,
+    output logic [1:0]  floppy_request,
 
     output logic        ata_irq14,
     output logic        floppy_irq6,
@@ -71,7 +81,6 @@ module spk286_at_storage_video (
     logic       lane_valid;
     logic       ata_data_word;
     logic       device_selected;
-    logic       endpoint_seen_q;
 
     logic [7:0]  ata_status_q;
     logic [7:0]  ata_error_q;
@@ -83,15 +92,24 @@ module spk286_at_storage_video (
     logic [7:0]  ata_drive_head_q;
     logic [15:0] ata_data_q;
     logic [7:0]  ata_data_index_q;
-    logic [7:0]  floppy_command_q;
-    logic [1:0]  floppy_bytes_remaining_q;
-    logic       floppy_busy_q;
-    logic [7:0]  floppy_data_q;
     logic       video_active_q;
+    logic       floppy_active_q;
     logic       video_request_accept;
     logic       video_request_ready;
     logic [15:0] video_read_data;
     logic       video_read_data_valid;
+    logic       floppy_request_accept;
+    logic       floppy_request_ready;
+    logic [15:0] floppy_read_data;
+    logic       floppy_read_data_valid;
+    logic       floppy_dma_transfer_accept;
+    logic       floppy_dma_transfer_ready;
+    logic [15:0] floppy_dma_transfer_data_out;
+    logic [7:0] floppy_dma_request;
+    logic       floppy_irq;
+    logic [15:0] floppy_command_count_i;
+    logic       floppy_protocol_error;
+    logic       protocol_error_q;
     integer i;
 
     always_comb begin
@@ -122,17 +140,7 @@ module spk286_at_storage_video (
                        request_data_out[15:8] : request_data_out[7:0];
 
         current_read_data = 16'h0000;
-        if (floppy_selected) begin
-            case (request_address[15:0])
-                16'h03F4: current_read_data = {8'h00,
-                                               4'b1000,
-                                               floppy_busy_q,
-                                               3'b000};
-                16'h03F5: current_read_data = {8'h00, floppy_data_q};
-                16'h03F7: current_read_data = 16'h0000;
-                default:  current_read_data = 16'h0000;
-            endcase
-        end else if (ata_selected) begin
+        if (ata_selected) begin
             case (request_address[15:0])
                 16'h01F0: current_read_data = ata_data_q;
                 16'h01F1: current_read_data = {8'h00, ata_error_q};
@@ -154,38 +162,39 @@ module spk286_at_storage_video (
             current_read_data = {8'h00, current_read_data[7:0]};
     end
 
-    // Video transactions have their own clock-crossing completion.  ATA and
-    // floppy remain the short single-clock endpoints that were already
-    // implemented here.
+    // Video transactions have their own clock-crossing completion. The shared
+    // floppy controller registers its read data and therefore owns a separate
+    // normalized completion. ATA remains the short local endpoint.
     assign request_accept = (video_io_selected || video_memory_selected) ?
                             video_request_accept :
-                            ((io_state_q == IO_IDLE) && device_selected &&
-                             (lane_valid || ata_data_word));
+                            (floppy_selected ? floppy_request_accept :
+                             ((io_state_q == IO_IDLE) && ata_selected &&
+                              (lane_valid || ata_data_word)));
     assign request_ready = video_active_q ? video_request_ready :
-                           (io_state_q == IO_DONE);
+                           (floppy_active_q ? floppy_request_ready :
+                            (io_state_q == IO_DONE));
     assign request_read_data_valid = video_active_q ? video_read_data_valid :
-                                     (request_ready && io_read_data_valid_q);
-    assign request_read_data = video_active_q ? video_read_data : io_read_data_q;
-    assign dma_request = floppy_busy_q ? 8'b00000100 : 8'h00;
-    assign dma_transfer_accept = floppy_busy_q && dma_transfer_valid &&
-                                 (dma_active_channel == 3'd2) &&
-                                 !endpoint_seen_q;
-    assign dma_transfer_ready = floppy_busy_q && dma_transfer_valid &&
-                                (dma_active_channel == 3'd2) &&
-                                endpoint_seen_q;
-    assign dma_transfer_data_out = {8'hF0, floppy_data_q};
+                                     (floppy_active_q ? floppy_read_data_valid :
+                                      (request_ready && io_read_data_valid_q));
+    assign request_read_data = video_active_q ? video_read_data :
+                               (floppy_active_q ? floppy_read_data :
+                                io_read_data_q);
+    assign dma_request = floppy_dma_request;
+    assign dma_transfer_accept = floppy_dma_transfer_accept;
+    assign dma_transfer_ready = floppy_dma_transfer_ready;
+    assign dma_transfer_data_out = floppy_dma_transfer_data_out;
     assign ata_irq14 = ata_irq14_q;
-    assign floppy_irq6 = floppy_irq6_q;
+    assign floppy_irq6 = floppy_irq;
+    assign floppy_command_count = floppy_command_count_i;
+    assign protocol_error = protocol_error_q || floppy_protocol_error;
 
     logic ata_irq14_q;
-    logic floppy_irq6_q;
 
     always_ff @(posedge clk) begin
         if (reset) begin
             io_state_q <= IO_IDLE;
             io_read_data_q <= 16'h0000;
             io_read_data_valid_q <= 1'b0;
-            endpoint_seen_q <= 1'b0;
             ata_status_q <= 8'h50;
             ata_error_q <= 8'h00;
             ata_features_q <= 8'h00;
@@ -196,31 +205,26 @@ module spk286_at_storage_video (
             ata_drive_head_q <= 8'hA0;
             ata_data_q <= 16'h0040;
             ata_data_index_q <= 8'h00;
-            floppy_command_q <= 8'h00;
-            floppy_bytes_remaining_q <= 2'd0;
-            floppy_busy_q <= 1'b0;
-            floppy_data_q <= 8'hF0;
             ata_irq14_q <= 1'b0;
-            floppy_irq6_q <= 1'b0;
             side_effect_count <= 16'h0000;
             ata_command_count <= 16'h0000;
-            floppy_command_count <= 16'h0000;
-            protocol_error <= 1'b0;
+            protocol_error_q <= 1'b0;
             video_active_q <= 1'b0;
+            floppy_active_q <= 1'b0;
         end else begin
             if (io_state_q == IO_DONE)
                 io_state_q <= IO_IDLE;
 
             if (video_active_q && video_request_ready)
                 video_active_q <= 1'b0;
-
-            if (!dma_transfer_valid)
-                endpoint_seen_q <= 1'b0;
-            else if (!endpoint_seen_q && dma_transfer_accept)
-                endpoint_seen_q <= 1'b1;
+            if (floppy_active_q && floppy_request_ready)
+                floppy_active_q <= 1'b0;
 
             if (request_accept && (video_io_selected || video_memory_selected)) begin
                 video_active_q <= 1'b1;
+                side_effect_count <= side_effect_count + 16'h0001;
+            end else if (floppy_request_accept) begin
+                floppy_active_q <= 1'b1;
                 side_effect_count <= side_effect_count + 16'h0001;
             end else if (request_accept) begin
                 io_state_q <= IO_DONE;
@@ -228,23 +232,7 @@ module spk286_at_storage_video (
                 io_read_data_q <= current_read_data;
                 side_effect_count <= side_effect_count + 16'h0001;
 
-                if (floppy_selected) begin
-                    if (!request_write && request_address[15:0] == 16'h03F4)
-                        floppy_irq6_q <= 1'b0;
-                    else if (request_write && request_address[15:0] == 16'h03F5) begin
-                        floppy_command_q <= request_byte;
-                        floppy_command_count <= floppy_command_count + 16'h0001;
-                        if ((request_byte == 8'h06) || (request_byte == 8'h46)) begin
-                            floppy_busy_q <= 1'b1;
-                            floppy_bytes_remaining_q <= 2'd2;
-                            floppy_data_q <= 8'hF0;
-                        end else if (request_byte == 8'h08) begin
-                            floppy_busy_q <= 1'b0;
-                            floppy_bytes_remaining_q <= 2'd0;
-                            floppy_irq6_q <= 1'b0;
-                        end
-                    end
-                end else if (ata_selected) begin
+                if (ata_selected) begin
                     if (request_address[15:0] == 16'h01F0) begin
                         if (request_write)
                             ata_data_q <= request_data_out;
@@ -273,22 +261,47 @@ module spk286_at_storage_video (
                 end
             end
 
-            if (dma_transfer_complete && dma_active_channel == 3'd2 &&
-                floppy_busy_q) begin
-                floppy_data_q <= floppy_data_q + 8'h01;
-                if (floppy_bytes_remaining_q <= 2'd1 || dma_terminal_count) begin
-                    floppy_bytes_remaining_q <= 2'd0;
-                    floppy_busy_q <= 1'b0;
-                    floppy_irq6_q <= 1'b1;
-                end else begin
-                    floppy_bytes_remaining_q <= floppy_bytes_remaining_q - 2'd1;
-                end
-            end
-
             if (device_selected && !(lane_valid || ata_data_word))
-                protocol_error <= 1'b1;
+                protocol_error_q <= 1'b1;
         end
     end
+
+    spk286_at_fdc u_fdc (
+        .clk                    (clk),
+        .reset                  (reset),
+        .request_valid          (request_valid),
+        .request_command_valid  (request_command_valid),
+        .request_write          (request_write),
+        .request_io             (request_io),
+        .request_address        (request_address),
+        .request_byte_enable    (request_byte_enable),
+        .request_data_out       (request_data_out),
+        .request_accept         (floppy_request_accept),
+        .request_ready          (floppy_request_ready),
+        .request_read_data      (floppy_read_data),
+        .request_read_data_valid(floppy_read_data_valid),
+        .dma_transfer_valid     (dma_transfer_valid),
+        .dma_transfer_complete  (dma_transfer_complete),
+        .dma_terminal_count     (dma_terminal_count),
+        .dma_active_channel     (dma_active_channel),
+        .dma_transfer_data_in   (dma_transfer_data_in),
+        .dma_transfer_accept    (floppy_dma_transfer_accept),
+        .dma_transfer_ready     (floppy_dma_transfer_ready),
+        .dma_transfer_data_out  (floppy_dma_transfer_data_out),
+        .dma_request            (floppy_dma_request),
+        .irq6                   (floppy_irq),
+        .mgmt_address           (mgmt_address),
+        .mgmt_writedata         (mgmt_writedata),
+        .mgmt_write             (mgmt_write),
+        .mgmt_read              (mgmt_read),
+        .mgmt_readdata          (mgmt_readdata),
+        .floppy_write_protect   (floppy_write_protect),
+        .floppy_present         (floppy_present),
+        .floppy_request         (floppy_request),
+        .side_effect_count      (),
+        .command_count          (floppy_command_count_i),
+        .protocol_error         (floppy_protocol_error)
+    );
 
     spk286_at_video_adapter u_video (
         .clk                    (clk),

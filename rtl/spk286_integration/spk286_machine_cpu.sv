@@ -38,6 +38,9 @@ module spk286_machine_cpu (
     output logic [15:0]  debug_flags,
     output logic [127:0] debug_gpr,
     output logic [63:0]  debug_segment_selectors,
+    output logic         debug_instruction_retired,
+    output logic [15:0]  debug_instruction_ip,
+    output logic [95:0]  debug_segment_bases,
     output logic         fetch_blocked,
     output logic [16:0]  debug_fetch_cursor,
     output logic [11:0]  debug_micro_pc,
@@ -55,8 +58,6 @@ module spk286_machine_cpu (
     logic [15:0] unused_segment_limit;
     logic [7:0]  unused_segment_access;
     logic [23:0] unused_segment_address;
-    logic        unused_instruction_retired;
-    logic [15:0] unused_debug_instruction_ip;
     logic        unused_debug_nmi_pending;
     logic        unused_debug_nmi_blocked;
     logic        unused_debug_sti_shadow;
@@ -69,7 +70,6 @@ module spk286_machine_cpu (
     logic [15:0] unused_fetch_data;
     logic [15:0] unused_fetch_ip;
     logic [1:0]  unused_fetch_count;
-    logic [95:0] unused_debug_segment_bases;
     logic [63:0] unused_debug_segment_limits;
     logic [31:0] unused_debug_segment_access;
 
@@ -87,7 +87,7 @@ module spk286_machine_cpu (
         .event_completed(event_completed),
         .debug_event_vector(debug_event_vector),
         .debug_event_kind(debug_event_kind),
-        .debug_instruction_ip(unused_debug_instruction_ip),
+        .debug_instruction_ip(debug_instruction_ip),
         .debug_nmi_pending(unused_debug_nmi_pending),
         .debug_nmi_blocked(unused_debug_nmi_blocked),
         .debug_sti_shadow(unused_debug_sti_shadow),
@@ -121,7 +121,7 @@ module spk286_machine_cpu (
         .control_error(control_error),
         .unsupported_opcode(unsupported_opcode),
         .debug_opcode(debug_opcode),
-        .instruction_retired(unused_instruction_retired),
+        .instruction_retired(debug_instruction_retired),
         .microcode_fault(microcode_fault),
         .operand_blocked(operand_blocked),
         .debug_modrm(unused_debug_modrm),
@@ -155,7 +155,7 @@ module spk286_machine_cpu (
         .debug_flags(debug_flags),
         .debug_gpr(debug_gpr),
         .debug_segment_selectors(debug_segment_selectors),
-        .debug_segment_bases(unused_debug_segment_bases),
+        .debug_segment_bases(debug_segment_bases),
         .debug_segment_limits(unused_debug_segment_limits),
         .debug_segment_access(unused_debug_segment_access),
         .debug_fetch_cursor(debug_fetch_cursor),

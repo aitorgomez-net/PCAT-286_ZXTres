@@ -164,7 +164,14 @@ module spk286_at_mister_sdram_owner #(
         end
     end
 
-    assign sdram_address = kf_sdram_address;
+    // MiSTer SDRAM XS/XSDS boards wire chip DQMH/DQML to FPGA A12/A11.
+    // KFSDRAM does not generate those masks: its column command sets the
+    // unused address bits to zero. Drive the same byte masks on both sets
+    // of pins during READ/WRITE. ACTIVE must retain the full row address.
+    // See Hardware_MiSTer/releases/sdram_xsds_3.0.pdf (U1A/U2A pins 15/39).
+    assign sdram_address = (!kf_sdram_cs && kf_sdram_ras && !kf_sdram_cas)
+                         ? {sdram_udqm, sdram_ldqm, kf_sdram_address[10:0]}
+                         : kf_sdram_address;
     assign sdram_cke     = kf_sdram_cke;
     assign sdram_cs      = kf_sdram_cs;
     assign sdram_ras     = kf_sdram_ras;

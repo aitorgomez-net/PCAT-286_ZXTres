@@ -1,6 +1,6 @@
 # PCAT-286 for MiSTer
 
-Add native MiSTer memory ownership, KFSDRAM arbitration, BIOS loading and the optional AT top-level profile through the first board-booting integration checkpoint.
+Correct DMA, PIT, parity and SDRAM byte masks; implement 8042 diagnostics, the floppy controller, RTC and CMOS behavior.
 
 This development snapshot is part of the consolidated chronological
 history. Its source state comes from 2026-09-12.

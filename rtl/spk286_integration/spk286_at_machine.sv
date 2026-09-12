@@ -27,6 +27,16 @@ module spk286_at_machine (
     input  logic         channel_check_event,
     input  logic         external_nmi_event,
 
+    // MiSTer hps_ext management for RTC/CMOS and the shared floppy controller.
+    input  logic [15:0]  mgmt_address,
+    input  logic [15:0]  mgmt_writedata,
+    input  logic         mgmt_write,
+    input  logic         mgmt_read,
+    output logic [15:0]  mgmt_readdata,
+    input  logic [1:0]   floppy_write_protect,
+    output logic [1:0]   floppy_present,
+    output logic [1:0]   floppy_request,
+
     // CPU memory/code-fetch target.  The request metadata is retained by the
     // bridge and remains stable from command through READY.
     output logic         memory_request_valid,
@@ -114,6 +124,7 @@ module spk286_at_machine (
     output logic         cpu_halted,
     output logic         cpu_shutdown,
     output logic         cpu_fault,
+    output wire [15:0]   debug_fault_sources,
     output logic         debug_control_error,
     output logic         debug_unsupported_opcode,
     output logic         debug_microcode_fault,
@@ -129,6 +140,9 @@ module spk286_at_machine (
     output logic [15:0]  debug_flags,
     output logic [127:0] debug_gpr,
     output logic [63:0]  debug_segment_selectors,
+    output logic         debug_instruction_retired,
+    output logic [15:0]  debug_instruction_ip,
+    output logic [95:0]  debug_segment_bases,
     output logic         debug_fetch_blocked,
     output logic [16:0]  debug_fetch_cursor,
     output logic [11:0]  debug_micro_pc,
@@ -255,6 +269,10 @@ module spk286_at_machine (
     logic        refresh_complete;
     logic        refresh_protocol_error;
 
+    logic sys_request_accept, sys_request_ready, sys_read_valid;
+    logic [15:0] sys_read_data;
+    logic [7:0] sys_port_b;
+    logic timer_2_gate, system_check_pending, sys_protocol_error;
     logic        pit_request_accept;
     logic        pit_request_ready;
     logic [15:0] pit_read_data;
@@ -302,6 +320,14 @@ module spk286_at_machine (
     logic [15:0] io_sink_read_data;
     logic        io_sink_read_data_valid;
 
+    logic        memory_sink_active_q;
+    logic        memory_sink_read_q;
+    logic [1:0]  memory_sink_lane_q;
+    logic        memory_sink_accept;
+    logic        memory_sink_ready;
+    logic [15:0] memory_sink_read_data;
+    logic        memory_sink_read_data_valid;
+
     logic        rom_write_sink_active_q;
     logic        rom_write_sink_accept;
     logic        rom_write_sink_ready;
@@ -310,6 +336,7 @@ module spk286_at_machine (
     logic        nmi_source_active_q;
 
     logic [15:0] debug_cpu_cycle_count_q;
+    wire [3:0] device_fault_sources;
     logic [15:0] debug_at_cycle_count_q;
     logic [31:0] debug_trace0_q;
     logic [31:0] debug_trace1_q;
@@ -322,6 +349,7 @@ module spk286_at_machine (
     logic        dma_io_candidate;
     logic        io_known_target;
     logic        io_unmapped_candidate;
+    logic        memory_unmapped_candidate;
     logic        cpu_owner_active;
     logic        cpu_memory_candidate;
     logic        device_request_candidate;
@@ -370,9 +398,11 @@ module spk286_at_machine (
         dma_io_candidate = at_io && is_dma_port(at_address[15:0]);
         a5_io_candidate = at_io && is_a5_io_port(at_address[15:0]);
         io_known_target = at_inta || pic_io_candidate || pit_io_candidate ||
-                          dma_io_candidate || a5_io_candidate;
+                          dma_io_candidate || a5_io_candidate || (at_io && at_address[15:0]==16'h61);
         io_unmapped_candidate = cpu_owner_active && at_io &&
                                 !io_known_target;
+        memory_unmapped_candidate = cpu_owner_active && !at_io && !at_inta &&
+                                    memory_unmapped_request;
         cpu_memory_candidate = cpu_owner_active && !at_io && !at_inta &&
                                memory_cycle && !video_aperture_select &&
                                !rom_write_blocked;
@@ -415,6 +445,9 @@ module spk286_at_machine (
         .debug_flags             (spk_debug_flags),
         .debug_gpr               (spk_debug_gpr),
         .debug_segment_selectors (spk_debug_segment_selectors),
+        .debug_instruction_retired(debug_instruction_retired),
+        .debug_instruction_ip(debug_instruction_ip),
+        .debug_segment_bases(debug_segment_bases),
         .fetch_blocked           (spk_fetch_blocked),
         .debug_fetch_cursor      (spk_debug_fetch_cursor),
         .debug_micro_pc          (spk_debug_micro_pc),
@@ -531,10 +564,24 @@ module spk286_at_machine (
         .dma_transfer_complete  (dma_transfer_complete),
         .dma_terminal_count     (dma_terminal_count),
         .dma_active_channel     (dma_active_channel),
+        // DMA1 byte devices consume a normalized low-byte value. Select the
+        // addressed SDRAM lane for memory-to-I/O transfers.
+        .dma_transfer_data_in   ((dma_active_channel < 3'd4) &&
+                                 dma_transfer_byte_enable[1] ?
+                                 {8'h00, dma_memory_data_in[15:8]} :
+                                 dma_memory_data_in),
         .dma_transfer_accept    (devices_dma_transfer_accept),
         .dma_transfer_ready     (devices_dma_transfer_ready),
         .dma_transfer_data_out  (devices_dma_transfer_data_out),
         .dma_request            (devices_dma_request),
+        .mgmt_address           (mgmt_address),
+        .mgmt_writedata         (mgmt_writedata),
+        .mgmt_write             (mgmt_write),
+        .mgmt_read              (mgmt_read),
+        .mgmt_readdata          (mgmt_readdata),
+        .floppy_write_protect   (floppy_write_protect),
+        .floppy_present         (floppy_present),
+        .floppy_request         (floppy_request),
         .irq6                   (irq6),
         .irq14                  (irq14),
         .ata_selected           (ata_selected),
@@ -559,6 +606,7 @@ module spk286_at_machine (
         .video_active_lines     (video_active_lines),
         .side_effect_count      (device_side_effect_count),
         .irq_request             (devices_irq_request),
+        .debug_fault_sources     (device_fault_sources),
         .protocol_error          (devices_protocol_error)
     );
 
@@ -594,10 +642,23 @@ module spk286_at_machine (
         .protocol_error         (pic_protocol_error)
     );
 
+    spk286_at_system_control u_system_control (
+        .clk(clk), .reset(reset),
+        .request_valid(cpu_owner_active && at_io), .request_command_valid(at_command_valid),
+        .request_write(at_write), .request_io(at_io), .request_address(at_address),
+        .request_byte_enable(at_byte_enable), .request_data_out(at_data_out),
+        .request_accept(sys_request_accept), .request_ready(sys_request_ready),
+        .request_read_data(sys_read_data), .request_read_data_valid(sys_read_valid),
+        .timer_1_out(pit_counter_out[1]), .timer_2_out(pit_counter_out[2]),
+        .parity_event(parity_event), .channel_check_event(channel_check_event),
+        .timer_2_gate(timer_2_gate), .speaker_enable(), .check_pending(system_check_pending),
+        .port_b(sys_port_b), .protocol_error(sys_protocol_error)
+    );
     spk286_at_pit u_pit (
         .clk                    (clk),
         .reset                  (reset),
         .counter_clock          (counter_clock),
+        .counter_2_gate         (timer_2_gate),
         .request_valid          (cpu_owner_active && at_io),
         .request_command_valid  (at_command_valid),
         .request_write          (at_write),
@@ -717,7 +778,7 @@ module spk286_at_machine (
     assign debug_trace3            = debug_trace3_q;
     assign debug_keyboard_keycode  = keyboard_byte;
     assign debug_keyboard_irq      = keyboard_byte_valid;
-    assign debug_keyboard_port_b   = 8'h00;
+    assign debug_keyboard_port_b   = sys_port_b;
     assign debug_keyboard_pic_int  = intr;
     assign debug_dma_request       = devices_dma_request[3:0];
     assign debug_dma_acknowledge_n = 4'hF;
@@ -801,6 +862,20 @@ module spk286_at_machine (
     assign io_sink_read_data = io_sink_lane_q[1] ? 16'hFF00 : 16'h00FF;
     assign io_sink_read_data_valid = io_sink_ready && io_sink_read_q;
 
+    assign memory_sink_accept = memory_unmapped_candidate &&
+                                at_command_valid && !memory_sink_active_q;
+    assign memory_sink_ready = memory_sink_active_q;
+    assign memory_sink_read_data = (memory_sink_lane_q == 2'b11) ?
+                                   16'hFFFF :
+                                   (memory_sink_lane_q[1] ?
+                                    16'hFF00 : 16'h00FF);
+    assign memory_sink_read_data_valid = memory_sink_ready &&
+                                         memory_sink_read_q;
+
+    assign unmapped_request = io_unmapped_candidate ||
+                              memory_unmapped_candidate ||
+                              devices_unmapped_request;
+
     // A blocked ROM write is a completed no-op.  It is kept separate from
     // the unmapped-I/O sink so the memory policy remains visible in traces.
     always_ff @(posedge clk) begin
@@ -808,6 +883,9 @@ module spk286_at_machine (
             io_sink_active_q <= 1'b0;
             io_sink_read_q <= 1'b0;
             io_sink_lane_q <= 2'b00;
+            memory_sink_active_q <= 1'b0;
+            memory_sink_read_q <= 1'b0;
+            memory_sink_lane_q <= 2'b00;
             rom_write_sink_active_q <= 1'b0;
             dma_memory_accept_q <= 1'b0;
             nmi_source_active_q <= 1'b0;
@@ -815,6 +893,8 @@ module spk286_at_machine (
         end else begin
             if (io_sink_active_q)
                 io_sink_active_q <= 1'b0;
+            if (memory_sink_active_q)
+                memory_sink_active_q <= 1'b0;
             if (rom_write_sink_active_q)
                 rom_write_sink_active_q <= 1'b0;
 
@@ -822,6 +902,11 @@ module spk286_at_machine (
                 io_sink_active_q <= 1'b1;
                 io_sink_read_q <= !at_write;
                 io_sink_lane_q <= at_byte_enable;
+            end
+            if (memory_sink_accept) begin
+                memory_sink_active_q <= 1'b1;
+                memory_sink_read_q <= !at_write;
+                memory_sink_lane_q <= at_byte_enable;
             end
             if (rom_write_sink_accept)
                 rom_write_sink_active_q <= 1'b1;
@@ -831,30 +916,34 @@ module spk286_at_machine (
             else if (dma_memory_accept)
                 dma_memory_accept_q <= 1'b1;
 
-            nmi <= (parity_event || channel_check_event || external_nmi_event) &&
+            nmi <= (system_check_pending || external_nmi_event) &&
                    !nmi_source_active_q && !nmi_mask;
-            nmi_source_active_q <= parity_event || channel_check_event ||
-                                   external_nmi_event;
+            nmi_source_active_q <= (system_check_pending || external_nmi_event) && !nmi_mask;
         end
     end
 
     always_comb begin
         at_accept = (memory_command_valid && memory_accept) ||
+                    memory_sink_accept ||
                     rom_write_sink_accept ||
                     devices_request_accept || pic_request_accept ||
                     pit_request_accept || dma_config_accept ||
-                    io_sink_accept;
+                    sys_request_accept || io_sink_accept;
 
         at_ready = (memory_request_valid && memory_ready) ||
+                   memory_sink_ready ||
                    rom_write_sink_ready || devices_request_ready ||
                    pic_request_ready || pit_request_ready ||
-                   dma_config_ready || io_sink_ready;
+                   dma_config_ready || sys_request_ready || io_sink_ready;
 
         at_read_data = 16'h0000;
         at_read_data_valid = 1'b0;
         if (memory_request_valid && memory_ready &&
             memory_read_data_valid) begin
             at_read_data = memory_read_data;
+            at_read_data_valid = 1'b1;
+        end else if (memory_sink_ready && memory_sink_read_data_valid) begin
+            at_read_data = memory_sink_read_data;
             at_read_data_valid = 1'b1;
         end else if (devices_request_ready && devices_read_data_valid) begin
             at_read_data = devices_read_data;
@@ -868,18 +957,29 @@ module spk286_at_machine (
         end else if (dma_config_ready && dma_config_read_data_valid) begin
             at_read_data = dma_config_read_data;
             at_read_data_valid = 1'b1;
+        end else if (sys_request_ready && sys_read_valid) begin
+            at_read_data = sys_read_data;
+            at_read_data_valid = 1'b1;
         end else if (io_sink_ready && io_sink_read_data_valid) begin
             at_read_data = io_sink_read_data;
             at_read_data_valid = 1'b1;
         end
     end
 
+    // Bits 0..4 CPU, 5 bridge, 6 arbiter, 7 PIC, 8 PIT, 9 DMA,
+    // 10 refresh, 11 router, 12 keyboard, 13 RTC, 14 storage, 15 aggregate devices (including system control 61h).
+    assign debug_fault_sources = {(devices_protocol_error | sys_protocol_error), device_fault_sources,
+        refresh_protocol_error, dma_protocol_error, pit_protocol_error,
+        pic_protocol_error, arbiter_protocol_error, bridge_protocol_error,
+        spk_operand_blocked, spk_microcode_fault, spk_unsupported_opcode,
+        spk_control_error, spk_shutdown};
+
     assign cpu_fault = spk_shutdown | spk_control_error |
                        spk_unsupported_opcode | spk_microcode_fault |
                        spk_operand_blocked | bridge_protocol_error |
                        arbiter_protocol_error | pic_protocol_error |
                        pit_protocol_error | dma_protocol_error |
-                       refresh_protocol_error | devices_protocol_error;
+                       refresh_protocol_error | devices_protocol_error | sys_protocol_error;
 
     assign protocol_error = cpu_fault;
 endmodule

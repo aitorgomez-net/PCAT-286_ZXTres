@@ -58,7 +58,10 @@ module spk286_at_dma (
     logic [15:0] current_address_q [0:7];
     logic [15:0] base_count_q [0:7];
     logic [15:0] current_count_q [0:7];
-    logic [7:0]  page_q [0:7];
+    // The 74LS612 exposes all 16 byte latches, including scratch/POST ports.
+    logic [7:0]  page_q [0:15];
+    logic [7:0]  terminal_status_q;
+    logic [1:0]  controller_disabled_q;
     logic [7:0]  mode_q [0:7];
     logic [7:0]  mask_q;
     logic [7:0]  software_request_q;
@@ -85,31 +88,19 @@ module spk286_at_dma (
     integer i;
     integer j;
 
-    function automatic logic is_page_port(input logic [15:0] port);
-        begin
-            case (port)
-                16'h0080, 16'h0081, 16'h0082, 16'h0083,
-                16'h0089, 16'h008A, 16'h008B, 16'h008F:
-                    is_page_port = 1'b1;
-                default:
-                    is_page_port = 1'b0;
-            endcase
-        end
-    endfunction
-
-    function automatic logic [2:0] page_port_channel(input logic [15:0] port);
-        begin
-            case (port)
-                16'h0080: page_port_channel = 3'd0;
-                16'h0081: page_port_channel = 3'd2;
-                16'h0082: page_port_channel = 3'd3;
-                16'h0083: page_port_channel = 3'd1;
-                16'h0089: page_port_channel = 3'd5;
-                16'h008A: page_port_channel = 3'd6;
-                16'h008B: page_port_channel = 3'd7;
-                default:  page_port_channel = 3'd4;
-            endcase
-        end
+    // IBM 5170 Technical Reference, DMA page-register assignment.
+    // Channel 4 is cascade; 8F is the independent refresh page latch.
+    function automatic logic [3:0] channel_page_index(input logic [2:0] channel);
+        case (channel)
+            3'd0: channel_page_index = 4'h7;
+            3'd1: channel_page_index = 4'h3;
+            3'd2: channel_page_index = 4'h1;
+            3'd3: channel_page_index = 4'h2;
+            3'd5: channel_page_index = 4'hb;
+            3'd6: channel_page_index = 4'h9;
+            3'd7: channel_page_index = 4'ha;
+            default: channel_page_index = 4'hf;
+        endcase
     endfunction
 
     always_comb begin
@@ -124,22 +115,22 @@ module spk286_at_dma (
              (request_byte_enable == 2'b01)) ||
             ((request_address[0] == 1'b1) &&
              (request_byte_enable == 2'b10));
-        page_port_valid = is_page_port(request_address[15:0]);
+        page_port_valid = (request_address[15:4] == 12'h008);
 
         address_port_valid =
             (dma1_bank && (request_address[3:0] <= 4'h7) &&
              !request_address[0]) ||
-            (dma2_bank && (request_address[1:0] == 2'b00));
+            (dma2_bank && !request_address[4] &&
+             (request_address[1:0] == 2'b00));
         count_port_valid =
             (dma1_bank && (request_address[3:0] <= 4'h7) &&
              request_address[0]) ||
-            (dma2_bank && (request_address[1:0] == 2'b10));
+            (dma2_bank && !request_address[4] &&
+             (request_address[1:0] == 2'b10));
 
         config_port_valid = dma1_bank || dma2_bank || page_port_valid;
         config_channel = 3'd0;
-        if (page_port_valid)
-            config_channel = page_port_channel(request_address[15:0]);
-        else if (dma1_bank)
+        if (dma1_bank)
             config_channel = {1'b0, request_address[2:1]};
         else if (dma2_bank)
             config_channel = 3'd4 + request_address[3:2];
@@ -147,6 +138,8 @@ module spk286_at_dma (
         transfer_request_state = dma_request | software_request_q;
         transfer_request_state = transfer_request_state & ~mask_q;
         transfer_request_state = transfer_request_state & ~single_block_q;
+        if (controller_disabled_q[0]) transfer_request_state[3:0] = 4'h0;
+        if (controller_disabled_q[1]) transfer_request_state[7:4] = 4'h0;
         dma_request_state = transfer_request_state;
 
         selected_channel_valid = 1'b0;
@@ -184,15 +177,18 @@ module spk286_at_dma (
 
     always_comb begin
         if (active_channel_q < 3'd4) begin
-            dma_transfer_address = {page_q[active_channel_q],
+            dma_transfer_address = {page_q[channel_page_index(active_channel_q)],
                                      current_address_q[active_channel_q]};
-            dma_transfer_byte_enable = 2'b01;
+            // DMA1 is byte-wide, while the normalized SDRAM boundary is a
+            // 16-bit word with independent lanes. Physical A0 selects the
+            // lane; presenting every byte on lane 0 aliases each odd byte
+            // onto the preceding even address.
+            dma_transfer_byte_enable =
+                current_address_q[active_channel_q][0] ? 2'b10 : 2'b01;
         end else begin
-            // DMA2 addresses are word addressed; this functional 24-bit
-            // profile keeps the even byte address and both data lanes.
-            dma_transfer_address = {page_q[active_channel_q],
-                                    current_address_q[active_channel_q][15:1],
-                                    1'b0};
+            // DMA2 A0..A15 drive physical A1..A16; page bit 0 is ignored.
+            dma_transfer_address = {page_q[channel_page_index(active_channel_q)][7:1],
+                                    current_address_q[active_channel_q], 1'b0};
             dma_transfer_byte_enable = 2'b11;
         end
 
@@ -202,7 +198,13 @@ module spk286_at_dma (
             mode_q[active_channel_q][3:2] == 2'b10;
         dma_transfer_io_to_memory = dma_transfer_write_to_memory;
         dma_transfer_memory_to_io = dma_transfer_read_from_memory;
-        dma_transfer_data_out = transfer_data_in;
+        // Byte devices exchange their byte in transfer_data_in[7:0]. Align
+        // device-to-memory data to the SDRAM lane selected above.
+        if ((active_channel_q < 3'd4) &&
+            current_address_q[active_channel_q][0])
+            dma_transfer_data_out = {transfer_data_in[7:0], 8'h00};
+        else
+            dma_transfer_data_out = transfer_data_in;
     end
 
     always_ff @(posedge clk) begin
@@ -215,6 +217,8 @@ module spk286_at_dma (
             software_request_q <= 8'h00;
             single_block_q <= 8'h00;
             byte_pointer_q <= 2'b00;
+            terminal_status_q <= 8'h00;
+            controller_disabled_q <= 2'b00;
             transfer_active_q <= 1'b0;
             transfer_accepted_q <= 1'b0;
             active_channel_q <= 3'd0;
@@ -226,9 +230,10 @@ module spk286_at_dma (
                 current_address_q[i] <= 16'h0000;
                 base_count_q[i] <= 16'h0000;
                 current_count_q[i] <= 16'h0000;
-                page_q[i] <= 8'h00;
                 mode_q[i] <= 8'h00;
             end
+            for (i = 0; i < 16; i = i + 1)
+                page_q[i] <= 8'h00;
         end else begin
             dma_transfer_complete <= 1'b0;
             dma_terminal_count <= 1'b0;
@@ -247,7 +252,7 @@ module spk286_at_dma (
 
                 if (!request_write) begin
                     if (page_port_valid)
-                        io_read_data_q <= page_q[config_channel];
+                        io_read_data_q <= page_q[request_address[3:0]];
                     else if (address_port_valid)
                         io_read_data_q <= byte_pointer_q[(dma2_bank ? 1 : 0)] ?
                             current_address_q[config_channel][15:8] :
@@ -258,18 +263,28 @@ module spk286_at_dma (
                             current_count_q[config_channel][7:0];
                     else if ((request_address[15:0] == 16'h0008) ||
                              (request_address[15:0] == 16'h00D0))
-                        io_read_data_q <= {dma_terminal_count,
-                                            dma_request_state[6:0]};
-                    else if ((request_address[15:0] == 16'h000A) ||
-                             (request_address[15:0] == 16'h00D4))
-                        io_read_data_q <= mask_q;
+                        io_read_data_q <= dma2_bank ?
+                            {(dma_request[7:4] | software_request_q[7:4]), terminal_status_q[7:4]} :
+                            {(dma_request[3:0] | software_request_q[3:0]), terminal_status_q[3:0]};
+                    else if ((request_address[15:0] == 16'h000F) ||
+                             (request_address[15:0] == 16'h00DE))
+                        io_read_data_q <= {4'h0, dma2_bank ? mask_q[7:4] : mask_q[3:0]};
                     else
                         io_read_data_q <= 8'h00;
+                    // One shared low/high pointer per controller, for reads
+                    // as well as writes (8237A first/last flip-flop).
+                    if (address_port_valid || count_port_valid)
+                        byte_pointer_q[dma2_bank] <= ~byte_pointer_q[dma2_bank];
+                    if ((request_address[15:0] == 16'h0008) ||
+                        (request_address[15:0] == 16'h00D0)) begin
+                        if (dma2_bank) terminal_status_q[7:4] <= 4'h0;
+                        else terminal_status_q[3:0] <= 4'h0;
+                    end
                 end else begin
                     io_read_data_q <= 8'h00;
 
                     if (page_port_valid)
-                        page_q[config_channel] <= config_byte;
+                        page_q[request_address[3:0]] <= config_byte;
                     else if (address_port_valid) begin
                         if (!byte_pointer_q[(dma2_bank ? 1 : 0)]) begin
                             base_address_q[config_channel][7:0] <= config_byte;
@@ -295,14 +310,27 @@ module spk286_at_dma (
                         byte_pointer_q[(dma2_bank ? 1 : 0)] <= 1'b0;
                     end else if ((request_address[15:0] == 16'h000D) ||
                                  (request_address[15:0] == 16'h00DA)) begin
-                        mask_q <= 8'hFF;
-                        software_request_q <= 8'h00;
+                        byte_pointer_q[dma2_bank] <= 1'b0;
+                        controller_disabled_q[dma2_bank] <= 1'b0;
+                        if (dma2_bank) begin
+                            mask_q[7:4] <= 4'hf;
+                            software_request_q[7:4] <= 4'h0;
+                            terminal_status_q[7:4] <= 4'h0;
+                            single_block_q[7:4] <= 4'h0;
+                        end else begin
+                            mask_q[3:0] <= 4'hf;
+                            software_request_q[3:0] <= 4'h0;
+                            terminal_status_q[3:0] <= 4'h0;
+                            single_block_q[3:0] <= 4'h0;
+                        end
                     end else if ((request_address[15:0] == 16'h000E) ||
                                  (request_address[15:0] == 16'h00DC)) begin
-                        mask_q <= 8'h00;
+                        if (dma2_bank) mask_q[7:4] <= 4'h0;
+                        else mask_q[3:0] <= 4'h0;
                     end else if ((request_address[15:0] == 16'h000F) ||
                                  (request_address[15:0] == 16'h00DE)) begin
-                        mask_q <= config_byte;
+                        if (dma2_bank) mask_q[7:4] <= config_byte[3:0];
+                        else mask_q[3:0] <= config_byte[3:0];
                     end else if ((request_address[15:0] == 16'h000A) ||
                                  (request_address[15:0] == 16'h00D4)) begin
                         mask_q[config_byte[1:0] + (dma2_bank ? 4 : 0)] <=
@@ -311,6 +339,9 @@ module spk286_at_dma (
                                  (request_address[15:0] == 16'h00D6)) begin
                         mode_q[config_byte[1:0] + (dma2_bank ? 4 : 0)] <=
                             config_byte;
+                    end else if ((request_address[15:0] == 16'h0008) ||
+                                 (request_address[15:0] == 16'h00D0)) begin
+                        controller_disabled_q[dma2_bank] <= config_byte[2];
                     end else if ((request_address[15:0] == 16'h0009) ||
                                  (request_address[15:0] == 16'h00D2)) begin
                         software_request_q[config_byte[1:0] +
@@ -328,6 +359,7 @@ module spk286_at_dma (
 
                     if (current_count_q[active_channel_q] == 16'h0000) begin
                         dma_terminal_count <= 1'b1;
+                        terminal_status_q[active_channel_q] <= 1'b1;
                         software_request_q[active_channel_q] <= 1'b0;
                         if (mode_q[active_channel_q][4]) begin
                             current_address_q[active_channel_q] <=

@@ -48,6 +48,14 @@ module spk286_at_devices_tb;
     wire [15:0]  side_effect_count;
     wire [15:0]  irq_request;
     wire         devices_protocol_error;
+    logic [15:0] mgmt_address = 16'h0000;
+    logic [15:0] mgmt_writedata = 16'h0000;
+    logic        mgmt_write = 1'b0;
+    logic        mgmt_read = 1'b0;
+    wire [15:0]  mgmt_readdata;
+    logic [1:0]  floppy_write_protect = 2'b00;
+    wire [1:0]   floppy_present;
+    wire [1:0]   floppy_request;
 
     // A4 DMA controller, driven by the A5 storage device's channel-2 request.
     logic        dma_config_valid = 1'b0;
@@ -98,6 +106,8 @@ module spk286_at_devices_tb;
     integer dma_beat_count = 0;
     integer dma_terminal_count_seen = 0;
     logic [23:0] dma_addresses [0:7];
+    logic [1:0] dma_lanes [0:7];
+    logic [15:0] dma_payloads [0:7];
 
     spk286_at_device_router devices (
         .clk(clk), .reset(reset),
@@ -124,10 +134,16 @@ module spk286_at_devices_tb;
         .dma_transfer_complete(dma_transfer_complete),
         .dma_terminal_count(dma_terminal_count),
         .dma_active_channel(dma_active_channel),
+        .dma_transfer_data_in(16'h0000),
         .dma_transfer_accept(devices_dma_transfer_accept),
         .dma_transfer_ready(devices_dma_transfer_ready),
         .dma_transfer_data_out(devices_dma_transfer_data_out),
         .dma_request(devices_dma_request), .irq6(irq6), .irq14(irq14),
+        .mgmt_address(mgmt_address), .mgmt_writedata(mgmt_writedata),
+        .mgmt_write(mgmt_write), .mgmt_read(mgmt_read),
+        .mgmt_readdata(mgmt_readdata),
+        .floppy_write_protect(floppy_write_protect),
+        .floppy_present(floppy_present), .floppy_request(floppy_request),
         .ata_selected(ata_selected), .floppy_selected(floppy_selected),
         .video_io_selected(video_io_selected),
         .video_memory_selected(video_memory_selected),
@@ -149,7 +165,7 @@ module spk286_at_devices_tb;
         .dma_request(devices_dma_request), .dma_grant(dma_grant),
         .transfer_accept(devices_dma_transfer_accept),
         .transfer_ready(devices_dma_transfer_ready),
-        .transfer_data_in(16'h0000),
+        .transfer_data_in(devices_dma_transfer_data_out),
         .dma_bus_request(dma_bus_request),
         .dma_transfer_valid(dma_transfer_valid),
         .dma_active_channel(dma_active_channel),
@@ -332,6 +348,57 @@ module spk286_at_devices_tb;
         end
     endtask
 
+    task automatic mgmt_write_word(input logic [15:0] address,
+                                   input logic [15:0] value);
+        begin
+            @(negedge clk);
+            mgmt_address = address;
+            mgmt_writedata = value;
+            mgmt_write = 1'b1;
+            @(posedge clk);
+            @(negedge clk);
+            mgmt_write = 1'b0;
+        end
+    endtask
+
+    task automatic fdc_wait_host_write;
+        logic [7:0] status;
+        integer cycles;
+        begin
+            status = 8'h00;
+            cycles = 0;
+            while (((status & 8'hC0) != 8'h80) && cycles < 20000) begin
+                router_read(16'h03F4, status);
+                cycles = cycles + 1;
+            end
+            check((status & 8'hC0) == 8'h80,
+                  "FDC did not enter host-write phase");
+        end
+    endtask
+
+    task automatic fdc_write_fifo(input logic [7:0] value);
+        begin
+            fdc_wait_host_write();
+            router_write(16'h03F5, value);
+        end
+    endtask
+
+    task automatic fdc_read_fifo(output logic [7:0] value);
+        logic [7:0] status;
+        integer cycles;
+        begin
+            status = 8'h00;
+            cycles = 0;
+            while (((status & 8'hC0) != 8'hC0) && cycles < 20000) begin
+                router_read(16'h03F4, status);
+                cycles = cycles + 1;
+            end
+            check((status & 8'hC0) == 8'hC0,
+                  "FDC did not enter result phase");
+            router_read(16'h03F5, value);
+        end
+    endtask
+
     task automatic pulse_periodic_tick;
         begin
             @(negedge clk);
@@ -360,6 +427,10 @@ module spk286_at_devices_tb;
             if (dma_transfer_valid && devices_dma_transfer_accept) begin
                 if (dma_beat_count < 8)
                     dma_addresses[dma_beat_count] = dma_transfer_address;
+                if (dma_beat_count < 8) begin
+                    dma_lanes[dma_beat_count] = dma_transfer_byte_enable;
+                    dma_payloads[dma_beat_count] = dma_transfer_data_out;
+                end
                 dma_beat_count = dma_beat_count + 1;
             end
             if (dma_terminal_count)
@@ -380,7 +451,51 @@ module spk286_at_devices_tb;
         repeat (3) @(negedge clk);
         reset = 1'b0;
 
-        // 8042 keyboard output buffer, IRQ1 and output-port A20 control.
+        // IBM 5170 8042 command protocol exercised by the Landmark U126 and
+        // keyboard-scan-lines diagnostics.
+        router_read(16'h0064, value);
+        check(value[4] && !value[2] && !value[1] && !value[0],
+              "8042 power-on status was incorrect");
+        router_write(16'h0064, 8'hAA);
+        router_read(16'h0064, value);
+        check(value[3] && value[2] && value[0],
+              "8042 self-test did not set command/system/output status");
+        router_read(16'h0060, value);
+        check(value == 8'h55, "8042 AA self-test response was not 55h");
+        router_write(16'h0064, 8'hAB);
+        router_read(16'h0060, value);
+        check(value == 8'h00, "8042 AB interface-test response was not 00h");
+
+        router_write(16'h0064, 8'h60);
+        router_read(16'h0064, value);
+        check(value[3], "8042 status did not remember a command-port write");
+        router_write(16'h0060, 8'h44);
+        router_read(16'h0064, value);
+        check(!value[3] && value[2] && !value[0],
+              "8042 command-byte write produced incorrect status");
+        router_write(16'h0064, 8'h20);
+        router_read(16'h0060, value);
+        check(value == 8'h44, "8042 command-byte readback was incorrect");
+
+        router_write(16'h0064, 8'hAD);
+        router_write(16'h0064, 8'h20);
+        router_read(16'h0060, value);
+        check(value[4], "8042 disable command did not set command-byte bit 4");
+        router_write(16'h0064, 8'hAE);
+        router_write(16'h0064, 8'h20);
+        router_read(16'h0060, value);
+        check(!value[4], "8042 enable command did not clear command-byte bit 4");
+        router_write(16'h0064, 8'hC0);
+        router_read(16'h0060, value);
+        check(value == 8'hA0, "8042 AT input-port image was incorrect");
+        router_write(16'h0064, 8'hE0);
+        router_read(16'h0060, value);
+        check(value == 8'h03, "8042 idle test-input image was incorrect");
+
+        // Restore translated keyboard input with IRQ1 enabled, then exercise
+        // the host-byte output buffer and output-port A20 control.
+        router_write(16'h0064, 8'h60);
+        router_write(16'h0060, 8'h45);
         keyboard_byte = 8'h1C;
         keyboard_byte_valid = 1'b1;
         @(posedge clk);
@@ -395,8 +510,12 @@ module spk286_at_devices_tb;
         router_write(16'h0060, 8'h03);
         check(a20_enable && !cpu_reset_request,
               "8042 output port did not enable A20 safely");
+        router_write(16'h0064, 8'hD0);
+        router_read(16'h0060, value);
+        check(value == 8'h03, "8042 output-port readback was incorrect");
         router_read(16'h0064, value);
-        check(value[2] && !value[0], "8042 status register was incorrect");
+        check(value[4] && value[3] && value[2] && !value[1] && !value[0],
+              "8042 status register was incorrect");
 
         // Both documented AT reset forms must produce a CPU-local pulse.
         cycles = cpu_reset_pulse_count;
@@ -411,7 +530,19 @@ module spk286_at_devices_tb;
         check(cpu_reset_pulse_count > cycles,
               "8042 D1/FE reset sequence did not pulse CPU reset");
 
-        // RTC index/data, NMI mask, periodic IRQ8 and deterministic seconds.
+        // RTC index/data, MiSTer F4xx host time, NMI mask, periodic IRQ8 and
+        // deterministic seconds.
+        mgmt_write_word(16'hF400, 16'h0042);
+        router_write(16'h0070, 8'h00);
+        router_read(16'h0071, value);
+        check(value == 8'h42,
+              "RTC did not receive the MiSTer F4xx management write");
+        router_write(16'h0070, 8'h15);
+        router_read(16'h0071, value);
+        check(value == 8'h80, "RTC did not advertise 640 KiB base memory");
+        router_write(16'h0070, 8'h17);
+        router_read(16'h0071, value);
+        check(value == 8'h80, "RTC did not advertise 384 KiB extended memory");
         router_write(16'h0070, 8'h0B);
         router_write(16'h0071, 8'h42);
         check(!nmi_mask, "RTC NMI mask did not clear");
@@ -494,47 +625,109 @@ module spk286_at_devices_tb;
               "EGA memory aperture readback failed");
         @(posedge clk);
 
-        // Floppy command + A4 DMA1 channel 2: two beats and terminal IRQ6.
+        // The IBM 5170 adapter sequence resets the uPD765 through DOR, senses
+        // the reset interrupt and programs Specify.  This is the sequence used
+        // by the Landmark "FLOPPY ADAPTER" test.
+        mgmt_write_word(16'hF200, 16'h0001);
+        mgmt_write_word(16'hF201, 16'h0000);
+        mgmt_write_word(16'hF202, 16'd80);
+        mgmt_write_word(16'hF203, 16'd15);
+        mgmt_write_word(16'hF204, 16'd2400);
+        mgmt_write_word(16'hF205, 16'd2);
+        check(floppy_present[0], "FDC media-present state was not retained");
+
+        router_write(16'h03F2, 8'h0C);
+        router_write(16'h03F2, 8'h08);
+        router_write(16'h03F2, 8'h0C);
+        cycles = 0;
+        while (!irq6 && cycles < 64) begin
+            @(negedge clk);
+            cycles = cycles + 1;
+        end
+        check(irq6 && irq_request[6],
+              "DOR reset release did not assert IRQ6");
+        fdc_write_fifo(8'h08);
+        fdc_read_fifo(value);
+        check((value & 8'hC0) == 8'hC0,
+              "Sense Interrupt did not report controller reset");
+        fdc_read_fifo(value);
+        check(value == 8'h00, "Sense Interrupt returned a wrong cylinder");
+        fdc_write_fifo(8'h03);
+        fdc_write_fifo(8'hCF);
+        fdc_write_fifo(8'h02);
+
+        // Program DMA1 channel 2 exactly as an AT floppy read: physical
+        // 010200h, 512 byte count, device-to-memory, single transfer mode.
         dma_write(16'h000C, 8'h00);
         dma_write(16'h0004, 8'h00);
         dma_write(16'h0004, 8'h02);
+        dma_write(16'h0005, 8'hFF);
         dma_write(16'h0005, 8'h01);
-        dma_write(16'h0005, 8'h00);
         dma_write(16'h0081, 8'h01);
-        dma_write(16'h000B, 8'h86);
+        dma_write(16'h000B, 8'h46);
         dma_write(16'h000A, 8'h02);
-        router_write(16'h03F5, 8'h06);
-        #1;
-        check(devices_dma_request[2] && irq_request[6] == 1'b0,
-              "floppy command did not request DMA channel 2");
+
+        router_write(16'h03F2, 8'h1C);
+        fdc_write_fifo(8'h66);
+        fdc_write_fifo(8'h00);
+        fdc_write_fifo(8'h00);
+        fdc_write_fifo(8'h00);
+        fdc_write_fifo(8'h01);
+        fdc_write_fifo(8'h02);
+        fdc_write_fifo(8'h09);
+        fdc_write_fifo(8'h2A);
+        fdc_write_fifo(8'hFF);
 
         cycles = 0;
-        while (((dma_beat_count < 2) ||
-                (dma_terminal_count_seen < 1)) && cycles < 160) begin
+        while (!floppy_request[0] && cycles < 20000) begin
+            @(negedge clk);
+            cycles = cycles + 1;
+        end
+        check(floppy_request == 2'b01,
+              "FDC did not request sector data from hps_ext");
+        for (cycles = 0; cycles < 512; cycles = cycles + 1)
+            mgmt_write_word(16'hF20F, {8'h00, cycles[7:0]});
+
+        cycles = 0;
+        while (((dma_beat_count < 512) ||
+                (dma_terminal_count_seen < 1)) && cycles < 5000) begin
             @(posedge clk);
             cycles = cycles + 1;
         end
         #1;
-        check(dma_beat_count == 2 && dma_terminal_count_seen == 1,
-              "floppy-like DMA did not complete two beats");
+        check(dma_beat_count == 512 && dma_terminal_count_seen == 1,
+              "FDC DMA did not complete one 512-byte sector");
         check(dma_addresses[0] == 24'h010200 &&
-              dma_addresses[1] == 24'h010201,
+               dma_addresses[1] == 24'h010201,
               "floppy DMA page/address sequencing was incorrect");
+        check(dma_lanes[0] == 2'b01 && dma_payloads[0][7:0] == 8'h00 &&
+              dma_lanes[1] == 2'b10 && dma_payloads[1][15:8] == 8'h01,
+              "floppy DMA did not align even/odd bytes to SDRAM lanes");
+        cycles = 0;
+        while (!irq6 && cycles < 10000) begin
+            @(negedge clk);
+            cycles = cycles + 1;
+        end
         check(irq6 && irq_request[6] && !devices_dma_request[2],
-              "floppy terminal count did not produce IRQ6 and release DMA");
-        router_read(16'h03F4, value);
-        check(!irq6, "floppy status read did not clear IRQ6");
+              "FDC terminal count did not produce IRQ6 and release DMA");
+        for (cycles = 0; cycles < 7; cycles = cycles + 1) begin
+            fdc_read_fifo(value);
+            if (cycles == 0)
+                check((value & 8'hC0) == 8'h00,
+                      "FDC read result reported an abnormal termination");
+        end
+        check(!irq6, "FDC result read did not clear IRQ6");
 
         check(!devices_protocol_error && !dma_protocol_error &&
               !arbiter_protocol_error,
               "A5 device integration raised a protocol error");
-        $display("A5_AT_DEVICES_PASS keyboard=1 rtc_irq8=1 ata_irq14=1 floppy_dma_beats=%0d irq6=1 video=1",
+        $display("A5_AT_DEVICES_PASS keyboard=1 rtc_irq8=1 ata_irq14=1 fdc_reset_sense_specify=1 floppy_dma_beats=%0d irq6=1 video=1",
                  dma_beat_count);
         $finish;
     end
 
     initial begin
-        #300000;
+        #5000000;
         $fatal(1, "CHECK_FAIL: global timeout");
     end
 endmodule

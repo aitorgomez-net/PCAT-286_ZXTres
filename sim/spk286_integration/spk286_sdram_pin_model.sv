@@ -1,6 +1,10 @@
 `timescale 1ns/1ps
 
-// Pin-level functional model of the x16 SDR SDRAM geometry used by KFSDRAM.
+// Pin-level functional model of the x16 SDR SDRAM geometry used by KFSDRAM,
+// including the MiSTer module connection between address and byte-mask pins.
+// Official board: Hardware_MiSTer/releases/sdram_xsds_3.0.pdf, sheet 1,
+// U1A/U2A DQML (15) = A11, DQMH (39) = A12; same on SDRAM XS 2.2.
+// https://github.com/MiSTer-devel/Hardware_MiSTer/tree/master/releases
 // This is deliberately not a sign-off vendor timing model. It models BL1,
 // CAS latency 2, finite DQ drive, read DQM latency 2 and write DQM latency 0.
 // Micron 256Mb SDRAM datasheet, CAS Latency/Figure 8: a READ sampled at T0
@@ -11,6 +15,9 @@
 // The full pin address is decoded. Limited storage is an explicit assertion,
 // never a modulo/truncated address that could conceal an aliasing error.
 module spk286_sdram_pin_model #(
+    // MiSTer XS/XSDS modules connect SDRAM DQM to FPGA A12/A11. Use 0
+    // for modules wired to the dedicated DQMH/DQML pins instead.
+    parameter bit DQM_FROM_ADDRESS = 1'b1,
     parameter integer MEM_WORDS = 1048576,
     parameter real T_AC_NS = 6.0,
     parameter real T_OH_NS = 3.0
@@ -40,6 +47,7 @@ module spk286_sdram_pin_model #(
     localparam [15:0] INVALID_DATA = 16'hzzzz;
 `endif
     initial dq_to_controller = INVALID_DATA;
+    wire [1:0] chip_dqm = DQM_FROM_ADDRESS ? address[12:11] : dqm;
     reg [15:0] mem [0:MEM_WORDS-1];
     reg [12:0] open_row [0:3];
     reg [3:0] row_open = 4'b0000;
@@ -78,7 +86,7 @@ module spk286_sdram_pin_model #(
                 dq_valid <= #(T_OH_NS) 2'b00;
             end
             pending_read <= 1'b0;
-            dqm_q <= dqm;
+            dqm_q <= chip_dqm;
 
             if ((|dq_valid) && controller_dq_oe)
                 $fatal(1, "SDRAM_PIN_MODEL bus contention");
@@ -94,7 +102,9 @@ module spk286_sdram_pin_model #(
                     3'b101, 3'b100: begin // READ or WRITE
                         if (!mode_loaded || !row_open[ba])
                             $fatal(1, "SDRAM_PIN_MODEL column without MRS/ACTIVE");
-                        if (address[12:9] != 4'h0)
+                        // A12/A11 are don't-care column inputs on this x16
+                        // geometry; on MiSTer they also drive the DQM nets.
+                        if (address[10:9] != 2'b00)
                             $fatal(1, "SDRAM_PIN_MODEL unsupported column/AP bits %h", address);
                         physical_word = {ba, open_row[ba], address[8:0]};
                         if (physical_word >= MEM_WORDS)
@@ -108,8 +118,8 @@ module spk286_sdram_pin_model #(
                         end else begin
                             if (!controller_dq_oe)
                                 $fatal(1, "SDRAM_PIN_MODEL missing FPGA write drive");
-                            if (!dqm[0]) mem[physical_word][7:0] = dq_from_controller[7:0];
-                            if (!dqm[1]) mem[physical_word][15:8] = dq_from_controller[15:8];
+                            if (!chip_dqm[0]) mem[physical_word][7:0] = dq_from_controller[7:0];
+                            if (!chip_dqm[1]) mem[physical_word][15:8] = dq_from_controller[15:8];
                             write_count = write_count + 1;
                         end
                     end

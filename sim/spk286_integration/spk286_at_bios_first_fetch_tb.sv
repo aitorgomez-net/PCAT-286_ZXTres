@@ -1,8 +1,15 @@
 `timescale 1ns/1ps
 
-// Composed CPU-to-AT boundary test.  The memory model is intentionally small:
-// it provides the externally loaded 64 KiB system ROM, sparse conventional
-// memory and the same handshake used by a future MiSTer SDRAM owner.
+// Production CPU, HPS loader, AT bridge, KFSDRAM and physical SDRAM pin model.
+// By default verify first BIOS fetches. Optional LANDMARK_CASE values select
+// isolated DMA routines (1/2), original-entry investigation (3), and original
+// parity/memory/PIT/refresh-status routines (4..9), NMI (10), RAM header (11),
+// distinct DS/ES (12), injected low/high-byte faults (13/14), and original POST
+// through RAM (15), PM-skip CPU/RAM continuations (16/17), ROM checksums (18),
+// the original 8042 controller/scan-lines routines (19/20), and the original
+// floppy-adapter/read routines (21/22).
+// Cases other than 0/3/15 set
+// a test-only entry/setup in the private ROM buffer, never in the user ROM.
 module spk286_at_bios_first_fetch_tb;
     logic clk = 1'b0;
     logic reset = 1'b1;
@@ -10,27 +17,55 @@ module spk286_at_bios_first_fetch_tb;
     logic clk_video = 1'b0;
     always #17.45 clk_video = ~clk_video;
 
+    // Optional isolated Landmark routines. The on-disk user ROM is never
+    // changed; only the test fixture reset jump selects a diagnostic entry.
+    // This exercises its exact instruction bytes, not a claimed full POST.
+    integer landmark_case = 0;
+    integer io_completed = 0;
+    integer checksum_pass_count = 0;
+    integer floppy_pass_count = 0;
+    integer floppy_dma_beats = 0;
+    integer floppy_irq_edges = 0;
+    logic floppy_irq_previous = 1'b0;
+    integer source_lane_sum [0:1];
+    integer fixture_lane_sum;
+    logic [55:0] skip_mono = 0, skip_color = 0;
+    wire [15:0] skip_screen_offset = landmark_case==17 ? 16'h0448 : 16'h0866;
+    // Status text is checked on completed video writes, independently of ROM IP.
+    localparam [55:0] SKIPPED_TEXT = 56'h44455050494B53;
+    logic [15:0] routine_entry;
+    logic [7:0] last_port61;
+    integer ram_reads=0, ram_writes=0;
+    logic ram_test_active=0, injected=0;
+    logic [23:0] oracle_base=0;
+    wire [23:0] inject_address = landmark_case==14 ? 24'h000001 : 24'h000000;
+    logic [1:0] ram_trace_page=0;
+    wire [127:0] ram_trace_words;
+    wire ram_trace_captured, ram_trace_armed;
+    wire [15:0] ram_trace_comparisons;
+
+    function automatic [7:0] memory_pattern(input integer beat);
+        case(beat / 16384)
+            0: memory_pattern=8'hff;
+            1: memory_pattern=8'h01;
+            2: memory_pattern=8'h55;
+            3: memory_pattern=8'haa;
+            4: memory_pattern=8'h00;
+            default: memory_pattern=8'hxx;
+        endcase
+    endfunction
+    integer nmi_pulses=0, nmi_markers=0, parity_pulse_cycles=0;
+    logic nmi_prev=0, resumed_after_nmi=0;
+    integer io_wait_cycles = 0;
+    integer max_cpu_cycles = 200000;
+    logic protocol_reported = 0;
+
     logic execute_enable = 1'b1;
     logic cpu_boot_reset = 1;
-    logic counter_clock = 1'b0;
+    logic machine_boot_reset = 1;
+    wire counter_clock;
     logic refresh_enable = 1'b1;
-    logic pit_clock_active = 1'b0;
-    integer pit_clock_rising_edges = 0;
-    always_ff @(posedge clk) begin
-        if (reset) begin
-            counter_clock <= 1'b0;
-            pit_clock_active <= 1'b0;
-            pit_clock_rising_edges <= 0;
-        end else if (!pit_clock_active) begin
-            counter_clock <= 1'b0;
-        end else if (pit_clock_rising_edges < 32) begin
-            counter_clock <= ~counter_clock;
-            if (!counter_clock)
-                pit_clock_rising_edges <= pit_clock_rising_edges + 1;
-        end else begin
-            counter_clock <= 1'b0;
-        end
-    end
+    spk286_at_pit_clock pit_clock(.clk(clk), .reset(reset), .counter_clock(counter_clock));
 
     logic keyboard_byte_valid = 1'b0;
     logic [7:0] keyboard_byte = 8'h00;
@@ -39,6 +74,13 @@ module spk286_at_bios_first_fetch_tb;
     logic parity_event = 1'b0;
     logic channel_check_event = 1'b0;
     logic external_nmi_event = 1'b0;
+    logic [15:0] mgmt_address = 16'h0000;
+    logic [15:0] mgmt_writedata = 16'h0000;
+    logic mgmt_write = 1'b0;
+    logic mgmt_read = 1'b0;
+    wire [15:0] mgmt_readdata;
+    wire [1:0] floppy_present;
+    wire [1:0] floppy_request;
 
     wire memory_request_valid;
     wire memory_command_valid;
@@ -219,6 +261,19 @@ module spk286_at_bios_first_fetch_tb;
             $display("AT_HPS_PHYSICAL_LOAD_PASS words=%0d vector=%02h%02h",pin_writes,rom[16'hfff1],rom[16'hfff0]);
         end
     endtask
+
+    task automatic floppy_mgmt_write(input logic [15:0] address,
+                                     input logic [15:0] value);
+        begin
+            @(negedge clk);
+            mgmt_address = address;
+            mgmt_writedata = value;
+            mgmt_write = 1'b1;
+            @(posedge clk);
+            @(negedge clk);
+            mgmt_write = 1'b0;
+        end
+    endtask
     integer fetch_returns=0, cpu_fetch_returns=0;
     logic saw_opcode=0;
     logic [23:0] captured_word_address;
@@ -226,6 +281,34 @@ module spk286_at_bios_first_fetch_tb;
     wire [127:0] boot_words;
     wire boot_valid;
     wire [5:0] boot_count;
+    spk286_at_ram_trace ram_trace (
+        .clk(clk), .reset(reset),
+        .cpu_reset(machine_boot_reset | cpu_boot_reset | cpu_reset_request),
+        .retired(dut.debug_instruction_retired),
+        .instruction_ip(dut.debug_instruction_ip),
+        .cpu_cs(debug_cs),
+        .cpu_cs_base(dut.debug_cs_base), .cpu_flags(dut.debug_flags),
+        .cpu_opcode(debug_opcode), .cpu_gpr(dut.debug_gpr),
+        .cpu_segments(dut.debug_segment_selectors),
+        .cpu_segment_bases(dut.debug_segment_bases),
+        .cpu_valid(cpu_bus_valid), .cpu_ready(cpu_ready),
+        .cpu_write(cpu_bus_write), .cpu_bhe_n(cpu_bus_bhe_n),
+        .cpu_status(cpu_bus_status), .cpu_address(cpu_address),
+        .cpu_data_in(cpu_data_in), .backend_accept(backend_accept),
+        .backend_ready(backend_ready), .backend_read_valid(backend_read_data_valid),
+        .backend_code(backend_code_fetch), .backend_write(backend_write),
+        .backend_owner(backend_owner), .backend_be(backend_byte_enable),
+        .backend_address(backend_address), .backend_data_in(backend_read_data),
+        .backend_data_out(backend_data_out), .kf_address(sdram_owner.debug_kf_address),
+        .kf_data(sdram_owner.debug_kf_data_out), .kf_read_request(sdram_owner.debug_kf_read_request),
+        .kf_read_flag(sdram_owner.debug_kf_read_flag),
+        .sdram_read_command(!sdram_cs && sdram_ras && !sdram_cas && sdram_we),
+        .owner_state(sdram_owner.debug_owner_state), .sdram_dqm({sdram_udqm, sdram_ldqm}),
+        .select_page(ram_trace_page), .selected_words(ram_trace_words),
+        .captured(ram_trace_captured), .armed(ram_trace_armed),
+        .comparisons(ram_trace_comparisons)
+    );
+
     spk286_at_boot_trace boot_trace (
         .clk(clk), .reset(reset | cpu_boot_reset),
         .cpu_valid(cpu_bus_valid), .cpu_write(cpu_bus_write), .cpu_status(cpu_bus_status),
@@ -341,8 +424,6 @@ module spk286_at_bios_first_fetch_tb;
                     port81_writes <= port81_writes + 1;
                 if (cpu_address[15:0] == 16'h0040) begin
                     pit_data_writes <= pit_data_writes + 1;
-                    if (pit_data_writes == 1)
-                        pit_clock_active <= 1'b1;
                 end
             end
         end
@@ -359,6 +440,231 @@ module spk286_at_bios_first_fetch_tb;
         if (loaded_bytes != 65536)
             $fatal(1, "AT system ROM must be exactly 65536 bytes, got %0d",
                    loaded_bytes);
+        if ($value$plusargs("LANDMARK_CASE=%d", landmark_case)) begin
+            if (rom[16'hfff0] != 8'hea || rom[16'h8d85] != 8'hee ||
+                rom[16'h8c50] != 8'he6 || rom[16'h8c51] != 8'hda)
+                $fatal(1,"Landmark diagnostic image signature mismatch");
+            // Preserve the on-disk checksum residues before selecting an entry.
+            // Case 18 later neutralizes only the fixture's own ROM-byte delta.
+            for(integer lane=0;lane<2;lane=lane+1) begin
+                source_lane_sum[lane]=0;
+                for(integer off=16'h8000+lane;off<65536;off=off+2)
+                    source_lane_sum[lane]=(source_lane_sum[lane]+int'(rom[off])) & 255;
+            end
+            case (landmark_case)
+                1: begin rom[16'hfff1]=8'h4b; rom[16'hfff2]=8'h8c; end
+                2: begin rom[16'hfff1]=8'h74; rom[16'hfff2]=8'h8d; end
+                3,15: begin end // Original reset entry; 15 continues through the first RAM test.
+                4,5,6,7,8,9,11,12,13,14,16,17,18,19,20,21,22,23: begin
+                    // Test fixture only: set SS like POST, gate timer2 on,
+                    // then execute untouched diagnostic instructions in ROM.
+                    case(landmark_case)
+                        4: routine_entry=16'h8dcb; // Parity precheck
+                        5: routine_entry=16'h8df6; // Full 16 KiB, five patterns
+                        6: routine_entry=16'h8a45; // PIT0
+                        7: routine_entry=16'h8adb; // PIT1
+                        8: routine_entry=16'h8af3; // PIT2
+                        9: routine_entry=16'h8e48; // Original refresh status loops
+                        11: routine_entry=16'h8ddd; // Clear 64 KiB and print original RAM test header
+                        16: routine_entry=16'h8e62; // Real-mode entry to PROTECTED MODE CPU
+                        17: routine_entry=16'h94cd; // Later protected-mode RAM entry
+                        18: routine_entry=16'h89cb; // Both original ROM checksum routines
+                        19: routine_entry=16'h9191; // 8042 AA/55 self-test and AB/00 interface test
+                        20: routine_entry=16'h91c0; // 8042 command-byte write and quiet scan lines
+                        21,22: routine_entry=16'h923f; // Floppy adapter, then read
+                        23: routine_entry=16'h91f6; // CMOS RAM save, 55h/AAh test and restore
+                        12,13,14: routine_entry=16'h8df6; // Same isolated test with DS != ES
+                    endcase
+                    rom[16'hfff1]=0; rom[16'hfff2]=8'hff;
+                    // CLI; MOV AX,F000; MOV SS,AX; XOR CX,CX;
+                    // MOV AL,1; OUT 61,AL; JMP FAR F000:entry.
+                    rom[16'hff00]=8'hfa; rom[16'hff01]=8'hb8;
+                    rom[16'hff02]=0; rom[16'hff03]=8'hf0;
+                    rom[16'hff04]=8'h8e; rom[16'hff05]=8'hd0;
+                    rom[16'hff06]=8'h31; rom[16'hff07]=8'hc9;
+                    rom[16'hff08]=8'hb0; rom[16'hff09]=1;
+                    rom[16'hff0a]=8'he6; rom[16'hff0b]=8'h61;
+                    rom[16'hff0c]=8'hea;
+                    rom[16'hff0d]=routine_entry[7:0];
+                    rom[16'hff0e]=routine_entry[15:8];
+                    rom[16'hff0f]=0; rom[16'hff10]=8'hf0;
+                    if(landmark_case==17) begin
+                        // This later POST entry uses CALL, with writable SS:SP
+                        // 0000:0800 established by the PM CPU continuation.
+                        // CLI; MOV AX,0; MOV SS,AX; MOV SP,0800; JMP FAR F000:94CD.
+                        rom[16'hff03]=0;
+                        rom[16'hff06]=8'hbc; rom[16'hff07]=0; rom[16'hff08]=8'h08;
+                        rom[16'hff09]=8'hea; rom[16'hff0a]=8'hcd; rom[16'hff0b]=8'h94;
+                        rom[16'hff0c]=0; rom[16'hff0d]=8'hf0;
+                    end
+                    if(landmark_case==19 || landmark_case==20 ||
+                       landmark_case==21 || landmark_case==22 ||
+                       landmark_case==23) begin
+                        // These routines call the shared 8042 helpers. Give
+                        // their isolated fixture a writable real-mode stack;
+                        // an SS in the F000 ROM window cannot retain CALL's
+                        // return address through the production memory path.
+                        // CLI; MOV AX,0; MOV SS,AX; MOV SP,0800;
+                        // JMP FAR F000:routine_entry.
+                        rom[16'hff03]=0;
+                        rom[16'hff06]=8'hbc; rom[16'hff07]=0; rom[16'hff08]=8'h08;
+                        rom[16'hff09]=8'hea;
+                        rom[16'hff0a]=routine_entry[7:0];
+                        rom[16'hff0b]=routine_entry[15:8];
+                        rom[16'hff0c]=0; rom[16'hff0d]=8'hf0;
+                    end
+                    if(landmark_case>=12 && landmark_case<=14) begin
+                        // MOV AX,B800; MOV DS,AX; JMP FAR F000:8DF6.
+                        rom[16'hff0c]=8'hb8; rom[16'hff0d]=0; rom[16'hff0e]=8'hb8;
+                        rom[16'hff0f]=8'h8e; rom[16'hff10]=8'hd8;
+                        rom[16'hff11]=8'hea; rom[16'hff12]=8'hf6; rom[16'hff13]=8'h8d;
+                        rom[16'hff14]=0; rom[16'hff15]=8'hf0;
+                    end
+                    if(landmark_case==9) begin
+                        // POST normally leaves PIT1 in mode2, count18.
+                        rom[16'hff0c]=8'hb0; rom[16'hff0d]=8'h74;
+                        rom[16'hff0e]=8'he6; rom[16'hff0f]=8'h43;
+                        rom[16'hff10]=8'hb0; rom[16'hff11]=8'h12;
+                        rom[16'hff12]=8'he6; rom[16'hff13]=8'h41;
+                        rom[16'hff14]=8'hb0; rom[16'hff15]=0;
+                        rom[16'hff16]=8'he6; rom[16'hff17]=8'h41;
+                        rom[16'hff18]=8'hea; rom[16'hff19]=8'h48;
+                        rom[16'hff1a]=8'h8e; rom[16'hff1b]=0; rom[16'hff1c]=8'hf0;
+                    end
+                    if(landmark_case==19) begin
+                        // Keep the original commands and comparisons, but
+                        // shorten only the no-response timeout in helper
+                        // F000:A39B. A missing AB reply must fail quickly in
+                        // simulation instead of consuming 20*65536 polls.
+                        rom[16'ha3a6]=8'h90; rom[16'ha3a7]=8'h90;
+                    end
+                    if(landmark_case==20) begin
+                        // Preserve the scan-lines test and its two timeout
+                        // phases while reducing each empty poll loop to one
+                        // status read per outer iteration.
+                        rom[16'h91da]=8'h90; rom[16'h91db]=8'h90;
+                        rom[16'h91e8]=8'h90; rom[16'h91e9]=8'h90;
+                    end
+                    if(landmark_case==21 || landmark_case==22) begin
+                        // Keep every FDC operation and comparison intact while
+                        // shortening four pure 65536-iteration settle loops.
+                        rom[16'ha29c]=8'h90; rom[16'ha29d]=8'h90;
+                        rom[16'ha2a1]=8'h90; rom[16'ha2a2]=8'h90;
+                        rom[16'h9291]=8'h90; rom[16'h9292]=8'h90;
+                        rom[16'h92ea]=8'h90; rom[16'h92eb]=8'h90;
+
+                        // Install IRQ6 at vector 0Eh, initialize a single
+                        // master 8259 at base 08h, unmask IRQ6 and enter the
+                        // original adapter routine with a writable stack.
+                        rom[16'hff00]=8'hfa;
+                        rom[16'hff01]=8'h31; rom[16'hff02]=8'hc0;
+                        rom[16'hff03]=8'h8e; rom[16'hff04]=8'hd8;
+                        rom[16'hff05]=8'h8e; rom[16'hff06]=8'hd0;
+                        rom[16'hff07]=8'hbc; rom[16'hff08]=8'h00; rom[16'hff09]=8'h08;
+                        rom[16'hff0a]=8'hc7; rom[16'hff0b]=8'h06;
+                        rom[16'hff0c]=8'h38; rom[16'hff0d]=8'h00;
+                        rom[16'hff0e]=8'h60; rom[16'hff0f]=8'hff;
+                        rom[16'hff10]=8'hc7; rom[16'hff11]=8'h06;
+                        rom[16'hff12]=8'h3a; rom[16'hff13]=8'h00;
+                        rom[16'hff14]=8'h00; rom[16'hff15]=8'hf0;
+                        rom[16'hff16]=8'hba; rom[16'hff17]=8'h20; rom[16'hff18]=8'h00;
+                        rom[16'hff19]=8'hb0; rom[16'hff1a]=8'h13; rom[16'hff1b]=8'hee;
+                        rom[16'hff1c]=8'h42;
+                        rom[16'hff1d]=8'hb0; rom[16'hff1e]=8'h08; rom[16'hff1f]=8'hee;
+                        rom[16'hff20]=8'hb0; rom[16'hff21]=8'h01; rom[16'hff22]=8'hee;
+                        rom[16'hff23]=8'hb0; rom[16'hff24]=8'hbf; rom[16'hff25]=8'hee;
+                        rom[16'hff26]=8'hea; rom[16'hff27]=8'h3f;
+                        rom[16'hff28]=8'h92; rom[16'hff29]=8'h00; rom[16'hff2a]=8'hf0;
+
+                        // IRQ6: set Landmark's flag, send non-specific EOI,
+                        // preserve AX and return through the real INTA frame.
+                        rom[16'hff60]=8'h50;
+                        rom[16'hff61]=8'hc6; rom[16'hff62]=8'h06;
+                        rom[16'hff63]=8'h00; rom[16'hff64]=8'h04; rom[16'hff65]=8'h01;
+                        rom[16'hff66]=8'hb0; rom[16'hff67]=8'h20;
+                        rom[16'hff68]=8'he6; rom[16'hff69]=8'h20;
+                        rom[16'hff6a]=8'h58; rom[16'hff6b]=8'hcf;
+                    end
+                end
+                10: begin // Integration fixture: pending parity -> RTC unmask -> one NMI -> IRET.
+                    rom[16'hfff1]=0; rom[16'hfff2]=8'hff;
+                    rom[16'hff00]=8'hfa;
+                    rom[16'hff01]=8'hb8;
+                    rom[16'hff02]=8'h00;
+                    rom[16'hff03]=8'h00;
+                    rom[16'hff04]=8'h8e;
+                    rom[16'hff05]=8'hd8;
+                    rom[16'hff06]=8'h8e;
+                    rom[16'hff07]=8'hd0;
+                    rom[16'hff08]=8'hbc;
+                    rom[16'hff09]=8'h00;
+                    rom[16'hff0a]=8'h10;
+                    rom[16'hff0b]=8'hc7;
+                    rom[16'hff0c]=8'h06;
+                    rom[16'hff0d]=8'h08;
+                    rom[16'hff0e]=8'h00;
+                    rom[16'hff0f]=8'h40;
+                    rom[16'hff10]=8'hff;
+                    rom[16'hff11]=8'hc7;
+                    rom[16'hff12]=8'h06;
+                    rom[16'hff13]=8'h0a;
+                    rom[16'hff14]=8'h00;
+                    rom[16'hff15]=8'h00;
+                    rom[16'hff16]=8'hf0;
+                    rom[16'hff17]=8'hb0;
+                    rom[16'hff18]=8'h00;
+                    rom[16'hff19]=8'he6;
+                    rom[16'hff1a]=8'h61;
+                    rom[16'hff1b]=8'hb0;
+                    rom[16'hff1c]=8'h10;
+                    rom[16'hff1d]=8'he6;
+                    rom[16'hff1e]=8'h80;
+                    rom[16'hff1f]=8'h90;
+                    rom[16'hff20]=8'h90;
+                    rom[16'hff21]=8'h90;
+                    rom[16'hff22]=8'h90;
+                    rom[16'hff23]=8'h90;
+                    rom[16'hff24]=8'h90;
+                    rom[16'hff25]=8'h90;
+                    rom[16'hff26]=8'h90;
+                    rom[16'hff27]=8'hb0;
+                    rom[16'hff28]=8'h00;
+                    rom[16'hff29]=8'he6;
+                    rom[16'hff2a]=8'h70;
+                    rom[16'hff2b]=8'hb0;
+                    rom[16'hff2c]=8'h20;
+                    rom[16'hff2d]=8'he6;
+                    rom[16'hff2e]=8'h80;
+                    rom[16'hff2f]=8'hf4;
+                    rom[16'hff30]=8'heb;
+                    rom[16'hff31]=8'hfd;
+                    rom[16'hff40]=8'hb0;
+                    rom[16'hff41]=8'h30;
+                    rom[16'hff42]=8'he6;
+                    rom[16'hff43]=8'h80;
+                    rom[16'hff44]=8'hb0;
+                    rom[16'hff45]=8'h0c;
+                    rom[16'hff46]=8'he6;
+                    rom[16'hff47]=8'h61;
+                    rom[16'hff48]=8'hcf;
+                end
+                default: $fatal(1,"unsupported LANDMARK_CASE");
+            endcase
+            if(landmark_case==18) begin
+                // Changing the fixture reset vector must not invalidate a good
+                // ROM, nor repair a bad one. Keep the original lane residues.
+                for(integer lane=0;lane<2;lane=lane+1) begin
+                    if(rom[16'hb1f0+lane]!=0) $fatal(1,"CHECKSUM_FIXTURE_SPACE_NOT_EMPTY");
+                    fixture_lane_sum=0;
+                    for(integer off=16'h8000+lane;off<65536;off=off+2)
+                        fixture_lane_sum=(fixture_lane_sum+int'(rom[off])) & 255;
+                    rom[16'hb1f0+lane]=8'(source_lane_sum[lane]-fixture_lane_sum);
+                end
+                $display("CHECKSUM_SOURCE_RESIDUES even=%02h odd=%02h",8'(source_lane_sum[0]),8'(source_lane_sum[1]));
+            end
+            max_cpu_cycles = landmark_case==15 ? 200000000 : 50000000;
+            $display("LANDMARK_CASE=%0d entry=f000:%02h%02h",landmark_case,rom[16'hfff2],rom[16'hfff1]);
+        end
         for (index = 0; index < 4; index = index + 1)
             port80_sequence[index] = 8'h00;
     end
@@ -434,9 +740,14 @@ module spk286_at_bios_first_fetch_tb;
     );
 
     spk286_at_machine dut (
-        .clk(clk), .reset(reset | cpu_boot_reset), .cpu_reset(reset | cpu_boot_reset), .clk_video(clk_video), .splashscreen(1'b0),
+        .clk(clk), .reset(reset | machine_boot_reset), .cpu_reset(reset | cpu_boot_reset), .clk_video(clk_video), .splashscreen(1'b0),
         .execute_enable(execute_enable),
         .counter_clock(counter_clock), .refresh_enable(refresh_enable),
+        .mgmt_address(mgmt_address), .mgmt_writedata(mgmt_writedata),
+        .mgmt_write(mgmt_write), .mgmt_read(mgmt_read),
+        .mgmt_readdata(mgmt_readdata),
+        .floppy_write_protect(2'b00), .floppy_present(floppy_present),
+        .floppy_request(floppy_request),
         .keyboard_byte_valid(keyboard_byte_valid), .keyboard_byte(keyboard_byte),
         .periodic_tick(periodic_tick), .second_tick(second_tick),
         .parity_event(parity_event), .channel_check_event(channel_check_event),
@@ -496,12 +807,300 @@ module spk286_at_bios_first_fetch_tb;
         if($value$plusargs("WAVE=%s",wave_path)) begin
             $dumpfile(wave_path); $dumpvars(0,spk286_at_bios_first_fetch_tb);
         end
-        cpu_boot_reset=0;
-        for(cycles=0;cycles<200000;cycles=cycles+1) begin
+        machine_boot_reset=0;
+        if(landmark_case==21 || landmark_case==22) begin
+            // 1.2 MB AT drive: 80 cylinders, 15 sectors, two heads.
+            floppy_mgmt_write(16'hF200,16'h0001);
+            floppy_mgmt_write(16'hF201,16'h0000);
+            floppy_mgmt_write(16'hF202,16'd80);
+            floppy_mgmt_write(16'hF203,16'd15);
+            floppy_mgmt_write(16'hF204,16'd2400);
+            floppy_mgmt_write(16'hF205,16'd2);
+            if(!floppy_present[0]) $fatal(1,"LANDMARK_FLOPPY_MEDIA_NOT_PRESENT");
+            if(landmark_case==22) fork
+                begin : serve_landmark_floppy_sector
+                    integer byte_index;
+                    wait(floppy_request[0]);
+                    for(byte_index=0;byte_index<512;byte_index=byte_index+1)
+                        floppy_mgmt_write(16'hF20F,{8'h00,byte_index[7:0]});
+                end
+            join_none
+        end
+        // Match the top: devices run while the splash still holds the CPU.
+        repeat (1024) begin
             @(negedge clk);
-            if(cpu_fault || protocol_error || memory_port_protocol_error || sdram_owner_protocol_error || loader_error || cpu_shutdown)
+            if (cpu_fault || protocol_error)
+                $fatal(1,"fault during CPU splash hold bridge=%b pic=%b pit=%b dma=%b devices=%b",dut.bridge_protocol_error,dut.pic_protocol_error,dut.pit_protocol_error,dut.dma_protocol_error,dut.devices_protocol_error);
+        end
+        cpu_boot_reset=0;
+        for(cycles=0;cycles<max_cpu_cycles;cycles=cycles+1) begin
+            @(negedge clk);
+            if (landmark_case>=16 && landmark_case<=18) begin
+                if (dut.u_cpu.cpu.msw_q[0] || cpu_reset_request)
+                    $fatal(1,"PM_SKIP_ACTIVATED_PE_OR_RESET case=%0d",landmark_case);
+                if (dut.at_ready && dut.at_write && !dut.at_io && dut.at_byte_enable[0]) begin
+                    for (integer ch=0; ch<7; ch=ch+1) begin
+                        if(dut.at_address == 24'h0B0000 + 24'(skip_screen_offset) + 24'(2*ch))
+                            skip_mono[ch*8 +: 8] = dut.at_data_out[7:0];
+                        if(dut.at_address == 24'h0B8000 + 24'(skip_screen_offset) + 24'(2*ch))
+                            skip_color[ch*8 +: 8] = dut.at_data_out[7:0];
+                    end
+                end
+                if (dut.u_cpu.cpu.opcode_start && debug_cs==16'hf000) begin
+                    if ((debug_ip>=16'ha3b3 && debug_ip<=16'ha657) ||
+                        (debug_ip>=16'h94db && debug_ip<=16'h972c))
+                        $fatal(1,"PM_SKIP_ENTERED_UNSUPPORTED_PATH case=%0d ip=%h",landmark_case,debug_ip);
+                    if(debug_ip==16'h9b68)
+                        $fatal(1,"PM_SKIP_REACHED_FAIL_HANDLER case=%0d",landmark_case);
+                    if (landmark_case==18 && debug_ip==16'h9cb5) begin
+                        if (dut.debug_gpr[32 +: 16] !== (checksum_pass_count==0 ? 16'hab45 : 16'hab67))
+                            $fatal(1,"CHECKSUM_WRONG_PASS_CONTEXT");
+                        checksum_pass_count=checksum_pass_count+1;
+                    end
+                    if ((landmark_case==16 && debug_ip==16'h8ea8) ||
+                        (landmark_case==17 && debug_ip==16'h973e)) begin
+                        if(skip_mono !== SKIPPED_TEXT || skip_color !== SKIPPED_TEXT)
+                            $fatal(1,"PM_SKIP_VIDEO_TEXT mono=%h color=%h",skip_mono,skip_color);
+                        if (cpu_fault || protocol_error)
+                            $fatal(1,"PM_SKIP_FAULT");
+                        if(landmark_case==16 && dut.debug_segment_selectors[32 +: 16]!==16'h0000)
+                            $fatal(1,"PM_SKIP_STACK_SEGMENT");
+                        $display("AT_LANDMARK_PM_SKIP_PASS case=%0d next_ip=%h mono_color_SKIPPED=1 PE=0 reset=0 cycles=%0d",landmark_case,debug_ip,cycles);
+                        $finish;
+                    end
+                    if(landmark_case==18 && debug_ip==16'h8a22) begin
+                        if(checksum_pass_count!=2 || cpu_fault || protocol_error)
+                            $fatal(1,"CHECKSUM_MISSING_PASSES count=%0d",checksum_pass_count);
+                        $display("AT_LANDMARK_ROM_CHECKSUMS_PASS U27=PASS U47=PASS cycles=%0d",cycles);
+                        $finish;
+                    end
+                end
+            end
+            if (landmark_case==10) begin
+                if(parity_pulse_cycles>0) begin
+                    parity_pulse_cycles=parity_pulse_cycles-1;
+                    if(parity_pulse_cycles==0) parity_event=0;
+                end
+                if(nmi && !nmi_prev) begin
+                    nmi_pulses=nmi_pulses+1;
+                    if(nmi_mask || !dut.system_check_pending) $fatal(1,"NMI_SOURCE_OR_MASK");
+                end
+                nmi_prev=nmi;
+                if(cpu_bus_valid && cpu_ready && cpu_bus_write && cpu_bus_status==4'ha && cpu_address==24'h80) begin
+                    case(cpu_data_out[7:0])
+                        8'h10: begin
+                            if(!nmi_mask) $fatal(1,"NMI_NOT_MASKED_AT_RESET");
+                            parity_event=1; parity_pulse_cycles=4;
+                        end
+                        8'h30: nmi_markers=nmi_markers+1;
+                        8'h20: resumed_after_nmi=1;
+                    endcase
+                end
+                if(cpu_halted && resumed_after_nmi) begin
+                    if(nmi_pulses!=1 || nmi_markers!=1 || dut.system_check_pending || protocol_error || cpu_fault)
+                        $fatal(1,"NMI_INTEGRATION_FAIL pulses=%0d handlers=%0d pending=%b",nmi_pulses,nmi_markers,dut.system_check_pending);
+                    $display("AT_PORT61_NMI_INTEGRATION_PASS pending_masked_unmask_handler_clear_iret cycles=%0d",cycles);
+                    $finish;
+                end
+            end
+            if((landmark_case==5 || landmark_case>=11) && dut.u_cpu.cpu.opcode_start && debug_ip==16'h9f14) begin
+                ram_test_active=1;
+                // ES is about to be loaded from SI by the original routine.
+                // Also check the known context, not merely addresses relative to an arbitrary CPU value.
+                oracle_base=(landmark_case==11 || landmark_case==15) ? 24'h006e40 : 24'd0;
+                if(dut.debug_gpr[96 +: 16] !== ((landmark_case==11 || landmark_case==15) ? 16'h06e4 : 16'd0))
+                    $fatal(1,"RAM_ENTRY_SEGMENT case=%0d SI=%h",landmark_case,dut.debug_gpr[96 +: 16]);
+                ram_reads=0; ram_writes=0;
+            end
+            if((landmark_case==13 || landmark_case==14) && !injected && ram_test_active && backend_accept &&
+               backend_owner==0 && !backend_code_fetch && !backend_write && backend_address==inject_address) begin
+                if(ram_writes!=16384) $fatal(1,"RAM_INJECTION_BEFORE_PATTERN_COMPLETE");
+                // Inject one real storage bit before the pin model observes READ.
+                pins.mem[0] = pins.mem[0] ^ (landmark_case==14 ? 16'h0100 : 16'h0001);
+                injected=1;
+                $display("RAM_INJECT address=%h storage_word=%h",inject_address,pins.mem[0]);
+            end
+            if(landmark_case>=11 && dut.u_cpu.cpu.opcode_start &&
+                (debug_ip==16'h8df6 || debug_ip==16'h9f14 || debug_ip==16'h9f3b ||
+                 debug_ip==16'h9f4d || debug_ip==16'h9e49 || debug_ip==16'h9e93))
+                $display("RAM_CONTEXT ip=%h gpr=%h seg=%h bases=%h flags=%h",debug_ip,
+                    dut.debug_gpr,dut.debug_segment_selectors,dut.debug_segment_bases,dut.debug_flags);
+            if (landmark_case != 0) begin
+                if(landmark_case==21 || landmark_case==22) begin
+                    if(irq_request[6] && !floppy_irq_previous)
+                        floppy_irq_edges=floppy_irq_edges+1;
+                    floppy_irq_previous=irq_request[6];
+                    if(dma_memory_valid && dma_memory_accept) begin
+                        if(landmark_case==22 &&
+                           (dma_memory_address !== 24'h000A00 + 24'(floppy_dma_beats) ||
+                            dma_memory_byte_enable !==
+                              (dma_memory_address[0] ? 2'b10 : 2'b01) ||
+                            (dma_memory_address[0] ? dma_memory_data_out[15:8] :
+                                                   dma_memory_data_out[7:0]) !==
+                              8'(floppy_dma_beats)))
+                            $fatal(1,"LANDMARK_FLOPPY_DMA_BYTE beat=%0d addr=%h be=%b data=%h",
+                                   floppy_dma_beats,dma_memory_address,
+                                   dma_memory_byte_enable,dma_memory_data_out);
+                        floppy_dma_beats=floppy_dma_beats+1;
+                    end
+                end
+                if (cpu_bus_valid && cpu_ready && (cpu_bus_status==4'ha || cpu_bus_status==4'h9)) begin
+                    io_completed=io_completed+1;
+                    if (io_completed<10 || cpu_address[15:0]==16'hd0)
+                        $display("LANDMARK_IO count=%0d ip=%04h port=%04h wr=%b data_out=%04h data_in=%04h",io_completed,debug_ip,cpu_address[15:0],cpu_bus_write,cpu_data_out,cpu_data_in);
+                end
+                if (cpu_bus_valid && !cpu_ready && (cpu_bus_status==4'ha || cpu_bus_status==4'h9))
+                    io_wait_cycles=io_wait_cycles+1;
+                else io_wait_cycles=0;
+                if (protocol_error && !protocol_reported) begin
+                    protocol_reported=1;
+                    $display("LANDMARK_PROTOCOL ip=%h bridge=%b arb=%b pic=%b pit=%b dma=%b refresh=%b dev=%b",debug_ip,dut.bridge_protocol_error,dut.arbiter_protocol_error,dut.pic_protocol_error,dut.pit_protocol_error,dut.dma_protocol_error,dut.refresh_protocol_error,dut.devices_protocol_error);
+                end
+                if (landmark_case==3 && protocol_error)
+                    $fatal(1,"LANDMARK_EARLY_BOOT_FAULT csip=%h:%h io=%h",debug_cs,debug_ip,cpu_address);
+                if (landmark_case==3 && debug_ip==16'h8a45) begin
+                    $display("LANDMARK_EARLY_BOOT_PASS cycles=%0d io=%0d",cycles,io_completed);
+                    $finish;
+                end
+                if (cpu_bus_valid && cpu_ready && cpu_bus_status==4'h9 && cpu_address==24'h61)
+                    last_port61=cpu_data_in[15:8];
+                if (ram_test_active && backend_ready && backend_owner==0 && !backend_code_fetch && backend_address<24'h0a0000) begin
+                    if(backend_address<oracle_base || backend_address>=oracle_base+24'h4000)
+                        $fatal(1,"RAM_ADDRESS_OUTSIDE_TEST_WINDOW addr=%h base=%h",backend_address,oracle_base);
+                    if(landmark_case==5 || landmark_case==11 || landmark_case==12 || landmark_case==15) begin
+                        // Independent of CPU flags and the SDRAM model: verify
+                        // every address, byte lane and each original ROM pattern.
+                        if(backend_byte_enable !== (backend_address[0] ? 2'b10 : 2'b01))
+                            $fatal(1,"RAM_BYTE_LANE addr=%h be=%b",backend_address,backend_byte_enable);
+                        if(backend_write) begin
+                            if(backend_address !== oracle_base+24'(ram_writes % 16384) ||
+                               (backend_address[0] ? backend_data_out[15:8] : backend_data_out[7:0]) !== memory_pattern(ram_writes))
+                                $fatal(1,"RAM_WRITE_ORACLE beat=%0d addr=%h data=%h",ram_writes,backend_address,backend_data_out);
+                        end else begin
+                            if(!backend_read_data_valid || backend_address !== oracle_base+24'(ram_reads % 16384) ||
+                               (backend_address[0] ? backend_read_data[15:8] : backend_read_data[7:0]) !== memory_pattern(ram_reads))
+                                $fatal(1,"RAM_READ_ORACLE beat=%0d addr=%h data=%h",ram_reads,backend_address,backend_read_data);
+                            if(ram_reads % 16384 == 16383)
+                                $display("LANDMARK_RAM_PATTERN_PASS pattern=%02h bytes=16384 addresses_and_lanes_checked",memory_pattern(ram_reads));
+                        end
+                    end
+                    if(backend_write) ram_writes=ram_writes+1;
+                    else ram_reads=ram_reads+1;
+                end
+                // Observe instruction admission, not speculative prefetch past RET.
+                // The header ends at 9B67, immediately before the fail handler.
+                if(landmark_case>=4 && landmark_case<=15 && (landmark_case!=15 || ram_test_active) && dut.u_cpu.cpu.opcode_start && debug_cs==16'hf000) begin
+                    if((landmark_case==13 || landmark_case==14) && debug_ip==16'h9e49) begin
+                        if(!injected || !ram_trace_captured || !ram_trace_armed)
+                            $fatal(1,"RAM_TRACE_MISSING_CAPTURE");
+                        if(ram_trace.frozen_q[31:0] !== 32'hC1FFFEFE ||
+                           ram_trace.frozen_q[63:32] !== 32'hF0009F37 ||
+                           ram_trace.frozen_q[64 +: 16] !== 16'(inject_address+1) ||
+                           ram_trace.frozen_q[128 +: 24] !== inject_address ||
+                           ram_trace.frozen_q[160 +: 24] !== inject_address ||
+                           ram_trace.frozen_q[192 +: 24] !== 24'd0 ||
+                           ram_trace.frozen_q[224 +: 16] !== (landmark_case==14 ? 16'hFEFF : 16'hFFFE) ||
+                           ram_trace.frozen_q[240 +: 16] !== (landmark_case==14 ? 16'hFE00 : 16'h00FE) ||
+                           ram_trace.frozen_q[256 +: 16] !== (landmark_case==14 ? 16'h0A00 : 16'h0600) ||
+                           ram_trace.frozen_q[184 +: 8] !== (landmark_case==14 ? 8'hE8 : 8'hE4) ||
+                           ram_trace.frozen_q[216 +: 8] !== 8'hF0 ||
+                           ram_trace.frozen_q[272 +: 16] !== (landmark_case==14 ? 16'hFEFF : 16'hFFFE))
+                            $fatal(1,"RAM_TRACE_WRONG_VALUES words=%0128h",ram_trace.frozen_q);
+                        if(protocol_error || cpu_fault) $fatal(1,"RAM_INJECTION_INTERNAL_FAULT");
+                        for(integer pg=0;pg<4;pg=pg+1) begin
+                            ram_trace_page=2'(pg);
+                            repeat(3) @(negedge clk);
+                            if(ram_trace_words !== ram_trace.frozen_q[pg*128 +: 128]) $fatal(1,"RAM_TRACE_PAGE_SELECTION");
+                            $display("RAM_TRACE_PAGE page=%0d words=%032h",pg,ram_trace_words);
+                        end
+                        $display("AT_RAM_TRACE_INJECTION_PASS case=%0d address=%h expected=FF received=FE native_backend_KF_checked",landmark_case,inject_address);
+                        $finish;
+                    end
+                    if(debug_ip==16'h9b68 || ((landmark_case==5 || landmark_case>=11) &&
+                       (debug_ip==16'h9e49 || debug_ip==16'h9e93)))
+                        $fatal(1,"LANDMARK_PERIPHERAL_FAIL case=%0d target=%h port61=%h ram_reads=%0d writes=%0d gpr=%h seg=%h",landmark_case,backend_address,last_port61,ram_reads,ram_writes,dut.debug_gpr,dut.debug_segment_selectors);
+                    if(debug_ip==16'h9cb5) begin
+                        if(protocol_error || cpu_fault) $fatal(1,"routine passed with fault");
+                        if((landmark_case==13 || landmark_case==14)) $fatal(1,"RAM_INJECTION_NOT_DETECTED");
+                        if((landmark_case==5 || landmark_case>=11) && (!ram_trace_armed || ram_trace_captured || ram_trace_comparisons!=16'hFFFF))
+                            $fatal(1,"RAM_TRACE_FALSE_POSITIVE_OR_MISSING_COMPARISONS captured=%b count=%h",ram_trace_captured,ram_trace_comparisons);
+                        if((landmark_case==5 || landmark_case==11 || landmark_case==12 || landmark_case==15) && (ram_reads!=81920 || ram_writes!=81920))
+                            $fatal(1,"memory coverage incomplete reads=%0d writes=%0d",ram_reads,ram_writes);
+                        $display("LANDMARK_PERIPHERAL_PASS case=%0d cycles=%0d io=%0d port61=%h ram_reads=%0d writes=%0d",landmark_case,cycles,io_completed,last_port61,ram_reads,ram_writes);
+                        $finish;
+                    end
+                end
+                if (io_wait_cycles>1000)
+                    $fatal(1,"LANDMARK_IO_STALL case=%0d csip=%h:%h port=%h at=%h be=%b accept=%b ready=%b bridge=%0d io_completed=%0d",landmark_case,debug_cs,debug_ip,cpu_address,dut.at_address,dut.at_byte_enable,dut.at_accept,dut.at_ready,dut.u_bridge.state_q,io_completed);
+                if (debug_opcode==8'hba && ((landmark_case==1 && debug_ip==16'h8d1a) ||
+                    (landmark_case==2 && debug_ip==16'h8dad)))
+                    $fatal(1,"LANDMARK_ROUTINE_FAIL case=%0d ip=%h io_completed=%0d dma0_address=%h",landmark_case,debug_ip,io_completed,dut.u_dma.current_address_q[4]);
+                if (debug_opcode==8'hba && ((landmark_case==1 && debug_ip==16'h8d20) ||
+                    (landmark_case==2 && debug_ip==16'h8da7))) begin
+                    if (protocol_error || cpu_fault)
+                        $fatal(1,"Landmark routine passed with sticky fault");
+                    $display("LANDMARK_ROUTINE_PASS case=%0d io_completed=%0d cycles=%0d",landmark_case,io_completed,cycles);
+                    $finish;
+                end
+                if ((landmark_case==19 || landmark_case==20) &&
+                    dut.u_cpu.cpu.opcode_start && debug_cs==16'hf000) begin
+                    if (debug_ip==16'h9b68)
+                        $fatal(1,"LANDMARK_KEYBOARD_FAIL case=%0d io_completed=%0d",landmark_case,io_completed);
+                    if (debug_ip==16'h9cb5) begin
+                        if (protocol_error || cpu_fault)
+                            $fatal(1,"Landmark keyboard routine passed with sticky fault");
+                        $display("LANDMARK_KEYBOARD_PASS case=%0d io_completed=%0d cycles=%0d",landmark_case,io_completed,cycles);
+                        $finish;
+                    end
+                end
+                if ((landmark_case==21 || landmark_case==22) &&
+                    dut.u_cpu.cpu.opcode_start && debug_cs==16'hf000) begin
+                    if (debug_ip==16'h9b68)
+                        $fatal(1,"LANDMARK_FLOPPY_FAIL case=%0d passes=%0d irq6=%0d dma=%0d io=%0d",
+                               landmark_case,floppy_pass_count,floppy_irq_edges,
+                               floppy_dma_beats,io_completed);
+                    if (debug_ip==16'h9cb5) begin
+                        floppy_pass_count=floppy_pass_count+1;
+                        if(landmark_case==21) begin
+                            if(floppy_irq_edges<1 || protocol_error || cpu_fault)
+                                $fatal(1,"LANDMARK_FLOPPY_ADAPTER_EVIDENCE");
+                            $display("AT_LANDMARK_FLOPPY_ADAPTER_PASS irq6=%0d io=%0d cycles=%0d",
+                                     floppy_irq_edges,io_completed,cycles);
+                            $finish;
+                        end
+                        if(landmark_case==22 && floppy_pass_count==2) begin
+                            if(floppy_dma_beats!=512 || floppy_irq_edges<4 ||
+                               protocol_error || cpu_fault)
+                                $fatal(1,"LANDMARK_FLOPPY_READ_EVIDENCE dma=%0d irq6=%0d",
+                                       floppy_dma_beats,floppy_irq_edges);
+                            for(integer sector_word=0;sector_word<256;
+                                sector_word=sector_word+1)
+                                if(pins.mem[16'h0500+sector_word] !==
+                                   {8'(sector_word*2+1),8'(sector_word*2)})
+                                    $fatal(1,"LANDMARK_FLOPPY_SDRAM_WORD word=%0d data=%h",
+                                           sector_word,pins.mem[16'h0500+sector_word]);
+                            $display("AT_LANDMARK_FLOPPY_READ_PASS dma_bytes=%0d irq6=%0d io=%0d cycles=%0d",
+                                     floppy_dma_beats,floppy_irq_edges,io_completed,cycles);
+                            $finish;
+                        end
+                    end
+                end
+                if (landmark_case==23 && dut.u_cpu.cpu.opcode_start &&
+                    debug_cs==16'hf000) begin
+                    if (debug_ip==16'h9b68)
+                        $fatal(1,"LANDMARK_CMOS_RAM_FAIL io_completed=%0d",io_completed);
+                    if (debug_ip==16'h9cb5) begin
+                        if (protocol_error || cpu_fault)
+                            $fatal(1,"Landmark CMOS RAM routine passed with sticky fault");
+                        $display("AT_LANDMARK_CMOS_RAM_PASS bytes_10_3f=48 patterns=55_AA_restore io=%0d cycles=%0d",
+                                 io_completed,cycles);
+                        $finish;
+                    end
+                end
+            end
+            if((landmark_case==0 && (cpu_fault || protocol_error)) || memory_port_protocol_error || sdram_owner_protocol_error || loader_error || cpu_shutdown)
                 $fatal(1,"first fetch fault cycle=%0d csip=%h:%h op=%h",cycles,debug_cs,debug_ip,debug_opcode);
-            if(fetch_returns>=32 && cpu_fetch_returns>=16 && saw_opcode && saw_low_rom_fetch) begin
+            if(landmark_case==0 && fetch_returns>=32 && cpu_fetch_returns>=16 && saw_opcode && saw_low_rom_fetch) begin
                 if(!boot_valid || boot_count<16 || boot_words[23:0]!==24'hfffff0 ||
                    boot_words[55:32]!==24'h07fff8 || boot_words[95:64]!==32'hf000fff0 ||
                    boot_words[127:112]!=={rom[16'hfff1],rom[16'hfff0]})
@@ -511,9 +1110,9 @@ module spk286_at_bios_first_fetch_tb;
                 $finish;
             end
         end
-        $fatal(1,"watchdog reads=%0d cpu=%0d csip=%h:%h hlt=%b",fetch_returns,cpu_fetch_returns,debug_cs,debug_ip,cpu_halted);
+        $fatal(1,"watchdog reads=%0d cpu=%0d csip=%h:%h hlt=%b ram_reads=%0d ram_writes=%0d gpr=%h",fetch_returns,cpu_fetch_returns,debug_cs,debug_ip,cpu_halted,ram_reads,ram_writes,dut.debug_gpr);
     end
     initial begin
-        #100000000; $fatal(1,"HPS/SDRAM startup watchdog");
+        #(64'd5000000000); $fatal(1,"HPS/SDRAM startup watchdog");
     end
 endmodule

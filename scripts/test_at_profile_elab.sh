@@ -46,13 +46,33 @@ if ! grep -q '"P1O7,Boot Splash Screen,Yes,No;"' \
   exit 1
 fi
 
+if ! grep -q '"S0,IMGIMAVFD,Floppy A:;"' \
+     "$ROOT_DIR/rtl/spk286_integration/spk286_at_emu.sv" || \
+   ! grep -q '"S1,IMGIMAVFD,Floppy B:;"' \
+     "$ROOT_DIR/rtl/spk286_integration/spk286_at_emu.sv" || \
+   ! grep -q '"OJK,Write Protect,None,A:,B:,A: & B:;"' \
+     "$ROOT_DIR/rtl/spk286_integration/spk286_at_emu.sv" || \
+   ! grep -q '\.floppy_write_protect   (hps_status\[20:19\])' \
+     "$ROOT_DIR/rtl/spk286_integration/spk286_at_emu.sv"; then
+  echo "AT_PROFILE floppy image slots/write-protect bits must match XT" >&2
+  exit 1
+fi
+
 mapfile -t AT_SOURCES < <(
   sed -n 's/.*SYSTEMVERILOG_FILE "\([^"]*\.sv\)".*/\1/p' \
     "$ROOT_DIR/rtl/spk286_integration/spk286_integration.qip"
 )
 
 KF8259_DIR="$ROOT_DIR/rtl/KFPC-XT/HDL/KF8259/HDL"
+KF8253_DIR="$ROOT_DIR/rtl/KFPC-XT/HDL/KF8253/HDL"
 SOURCE_FILES=(
+  "$ROOT_DIR/rtl/common/simple_ram.v"
+  "$ROOT_DIR/rtl/common/simple_fifo.v"
+  "$ROOT_DIR/rtl/common/floppy.v"
+  "$ROOT_DIR/rtl/hps_ext.v"
+  "$KF8253_DIR/KF8253.sv"
+  "$KF8253_DIR/KF8253_Counter.sv"
+  "$KF8253_DIR/KF8253_Control_Logic.sv"
   "$ROOT_DIR/sim/spk286_integration/hps_io_elab_stub.sv"
   "$ROOT_DIR/sim/spk286_integration/pll_system_elab_stub.sv"
   "$ROOT_DIR/rtl/common/jtframe_ram.v"
@@ -76,7 +96,7 @@ for source in "$ROOT_DIR"/rtl/video/*.v "$ROOT_DIR"/rtl/video/*.sv; do
   SOURCE_FILES+=("$source")
 done
 
-iverilog -g2012 -Wall -Wno-timescale \
+iverilog -g2012 -I"$KF8253_DIR" -Wall -Wno-timescale \
   -t null \
   -s emu_at \
   -I"$ROOT_DIR" \

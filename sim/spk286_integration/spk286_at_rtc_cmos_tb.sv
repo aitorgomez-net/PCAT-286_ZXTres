@@ -1,0 +1,306 @@
+`timescale 1ns/1ps
+
+module spk286_at_rtc_cmos_tb;
+    logic clk = 1'b0;
+    logic reset = 1'b1;
+    always #5 clk = ~clk;
+
+    logic request_valid = 1'b0;
+    logic request_command_valid = 1'b0;
+    logic request_write = 1'b0;
+    logic request_io = 1'b1;
+    logic [23:0] request_address = 24'h000070;
+    logic [1:0] request_byte_enable = 2'b01;
+    logic [15:0] request_data_out = 16'h0000;
+    wire request_accept;
+    wire request_ready;
+    wire [15:0] request_read_data;
+    wire request_read_data_valid;
+
+    logic [15:0] mgmt_address = 16'h0000;
+    logic [15:0] mgmt_writedata = 16'h0000;
+    logic mgmt_write = 1'b0;
+    logic periodic_tick = 1'b0;
+    logic second_tick = 1'b0;
+    wire irq8;
+    wire nmi_mask;
+    wire [15:0] side_effect_count;
+    wire [6:0] selected_index;
+    wire protocol_error;
+    logic [7:0] saved_cmos [0:47];
+    integer cmos_test_index;
+
+    spk286_at_rtc_cmos dut (
+        .clk(clk), .reset(reset),
+        .request_valid(request_valid),
+        .request_command_valid(request_command_valid),
+        .request_write(request_write), .request_io(request_io),
+        .request_address(request_address),
+        .request_byte_enable(request_byte_enable),
+        .request_data_out(request_data_out),
+        .request_accept(request_accept), .request_ready(request_ready),
+        .request_read_data(request_read_data),
+        .request_read_data_valid(request_read_data_valid),
+        .mgmt_address(mgmt_address), .mgmt_writedata(mgmt_writedata),
+        .mgmt_write(mgmt_write),
+        .periodic_tick(periodic_tick), .second_tick(second_tick),
+        .irq8(irq8), .nmi_mask(nmi_mask),
+        .side_effect_count(side_effect_count),
+        .selected_index(selected_index), .protocol_error(protocol_error)
+    );
+
+    task automatic check(input logic condition, input string message);
+        if (!condition)
+            $fatal(1, "CHECK_FAIL: %s", message);
+    endtask
+
+    task automatic io_write_byte(input logic [15:0] port,
+                                 input logic [7:0] value);
+        begin
+            @(negedge clk);
+            request_address = {8'h00, port};
+            request_byte_enable = port[0] ? 2'b10 : 2'b01;
+            request_data_out = port[0] ? {value, 8'h00} : {8'h00, value};
+            request_write = 1'b1;
+            request_valid = 1'b1;
+            request_command_valid = 1'b1;
+            #1;
+            check(request_accept, "RTC write was not accepted");
+            @(posedge clk);
+            @(negedge clk);
+            request_valid = 1'b0;
+            request_command_valid = 1'b0;
+            request_write = 1'b0;
+            #1;
+            check(request_ready, "RTC write did not complete");
+            @(posedge clk);
+        end
+    endtask
+
+    task automatic io_read_byte(input logic [15:0] port,
+                                output logic [7:0] value);
+        begin
+            @(negedge clk);
+            request_address = {8'h00, port};
+            request_byte_enable = port[0] ? 2'b10 : 2'b01;
+            request_write = 1'b0;
+            request_valid = 1'b1;
+            request_command_valid = 1'b1;
+            #1;
+            check(request_accept, "RTC read was not accepted");
+            @(posedge clk);
+            @(negedge clk);
+            request_valid = 1'b0;
+            request_command_valid = 1'b0;
+            #1;
+            check(request_ready && request_read_data_valid,
+                  "RTC read did not return valid data");
+            value = port[0] ? request_read_data[15:8] :
+                              request_read_data[7:0];
+            @(posedge clk);
+        end
+    endtask
+
+    task automatic cmos_write(input logic [6:0] index,
+                              input logic [7:0] value);
+        begin
+            io_write_byte(16'h0070, {1'b0, index});
+            io_write_byte(16'h0071, value);
+        end
+    endtask
+
+    task automatic cmos_read(input logic [6:0] index,
+                             output logic [7:0] value);
+        begin
+            io_write_byte(16'h0070, {1'b0, index});
+            io_read_byte(16'h0071, value);
+        end
+    endtask
+
+    task automatic mgmt_write_byte(input logic [15:0] address,
+                                   input logic [7:0] value);
+        begin
+            @(negedge clk);
+            mgmt_address = address;
+            mgmt_writedata = {8'h00, value};
+            mgmt_write = 1'b1;
+            @(posedge clk);
+            @(negedge clk);
+            mgmt_write = 1'b0;
+        end
+    endtask
+
+    task automatic pulse_second;
+        begin
+            @(negedge clk);
+            second_tick = 1'b1;
+            @(posedge clk);
+            @(negedge clk);
+            second_tick = 1'b0;
+        end
+    endtask
+
+    task automatic check_cmos(input logic [6:0] index,
+                              input logic [7:0] expected,
+                              input string message);
+        logic [7:0] value;
+        begin
+            cmos_read(index, value);
+            check(value == expected, message);
+        end
+    endtask
+
+    initial begin
+        logic [7:0] value;
+
+        repeat (4) @(posedge clk);
+        reset = 1'b0;
+        repeat (2) @(posedge clk);
+
+        // The CMOS description and actual decode agree on a 1 MiB AT:
+        // 640 KiB conventional plus 384 KiB above 1 MiB.
+        check_cmos(7'h15, 8'h80, "base-memory low byte was not 640 KiB");
+        check_cmos(7'h16, 8'h02, "base-memory high byte was not 640 KiB");
+        check_cmos(7'h17, 8'h80, "extended-memory low byte was not 384 KiB");
+        check_cmos(7'h18, 8'h01, "extended-memory high byte was not 384 KiB");
+        check_cmos(7'h30, 8'h80, "duplicate extended-memory low byte differed");
+        check_cmos(7'h31, 8'h01, "duplicate extended-memory high byte differed");
+        check_cmos(7'h34, 8'h00, "memory above 16 MiB was advertised");
+        check_cmos(7'h35, 8'h00, "memory above 16 MiB was advertised");
+        check_cmos(7'h2E, 8'h01, "initial CMOS checksum high byte was wrong");
+        check_cmos(7'h2F, 8'h03, "initial CMOS checksum low byte was wrong");
+
+        // Exact Landmark CMOS RAM algorithm (F000:A26C): save 10h-3Fh,
+        // write/read 55h, write/read AAh, then restore all 48 bytes. This
+        // includes the memory geometry and checksum bytes 2Eh/2Fh.
+        for (cmos_test_index = 0; cmos_test_index < 48;
+             cmos_test_index = cmos_test_index + 1)
+            cmos_read(7'h10 + cmos_test_index[6:0],
+                      saved_cmos[cmos_test_index]);
+        for (cmos_test_index = 0; cmos_test_index < 48;
+             cmos_test_index = cmos_test_index + 1)
+            cmos_write(7'h10 + cmos_test_index[6:0], 8'h55);
+        for (cmos_test_index = 0; cmos_test_index < 48;
+             cmos_test_index = cmos_test_index + 1)
+            check_cmos(7'h10 + cmos_test_index[6:0], 8'h55,
+                       "Landmark 55h CMOS pattern did not read back");
+        for (cmos_test_index = 0; cmos_test_index < 48;
+             cmos_test_index = cmos_test_index + 1)
+            cmos_write(7'h10 + cmos_test_index[6:0], 8'hAA);
+        for (cmos_test_index = 0; cmos_test_index < 48;
+             cmos_test_index = cmos_test_index + 1)
+            check_cmos(7'h10 + cmos_test_index[6:0], 8'hAA,
+                       "Landmark AAh CMOS pattern did not read back");
+        for (cmos_test_index = 0; cmos_test_index < 48;
+             cmos_test_index = cmos_test_index + 1)
+            cmos_write(7'h10 + cmos_test_index[6:0],
+                       saved_cmos[cmos_test_index]);
+        check_cmos(7'h2E, 8'h01, "restored CMOS checksum high byte was wrong");
+        check_cmos(7'h2F, 8'h03, "restored CMOS checksum low byte was wrong");
+
+        // F4xx is the hps_ext RTC window used by ao486/z486. Values written
+        // there must be the values visible through ports 70h/71h.
+        mgmt_write_byte(16'hF400, 8'h59);
+        mgmt_write_byte(16'hF402, 8'h59);
+        mgmt_write_byte(16'hF404, 8'h23);
+        mgmt_write_byte(16'hF406, 8'h03);
+        mgmt_write_byte(16'hF407, 8'h31);
+        mgmt_write_byte(16'hF408, 8'h12);
+        mgmt_write_byte(16'hF409, 8'h24);
+        mgmt_write_byte(16'hF432, 8'h20);
+        check_cmos(7'h00, 8'h59, "MiSTer seconds did not reach CMOS");
+        check_cmos(7'h04, 8'h23, "MiSTer hour did not reach CMOS");
+        check_cmos(7'h32, 8'h20, "MiSTer century did not reach CMOS");
+
+        pulse_second();
+        check_cmos(7'h00, 8'h00, "seconds did not roll over");
+        check_cmos(7'h02, 8'h00, "minutes did not roll over");
+        check_cmos(7'h04, 8'h00, "hours did not roll over");
+        check_cmos(7'h06, 8'h04, "day of week did not advance");
+        check_cmos(7'h07, 8'h01, "day of month did not roll over");
+        check_cmos(7'h08, 8'h01, "month did not roll over");
+        check_cmos(7'h09, 8'h25, "year did not roll over");
+
+        // Gregorian leap day and month transition.
+        mgmt_write_byte(16'hF400, 8'h59);
+        mgmt_write_byte(16'hF402, 8'h59);
+        mgmt_write_byte(16'hF404, 8'h23);
+        mgmt_write_byte(16'hF406, 8'h04);
+        mgmt_write_byte(16'hF407, 8'h28);
+        mgmt_write_byte(16'hF408, 8'h02);
+        mgmt_write_byte(16'hF409, 8'h24);
+        pulse_second();
+        check_cmos(7'h07, 8'h29, "2024 leap day was skipped");
+        check_cmos(7'h08, 8'h02, "leap day changed month early");
+        mgmt_write_byte(16'hF400, 8'h59);
+        mgmt_write_byte(16'hF402, 8'h59);
+        mgmt_write_byte(16'hF404, 8'h23);
+        pulse_second();
+        check_cmos(7'h07, 8'h01, "leap day did not roll to day one");
+        check_cmos(7'h08, 8'h03, "leap day did not roll to March");
+
+        // Century rollover and the Gregorian exception for 2100.
+        mgmt_write_byte(16'hF400, 8'h59);
+        mgmt_write_byte(16'hF402, 8'h59);
+        mgmt_write_byte(16'hF404, 8'h23);
+        mgmt_write_byte(16'hF407, 8'h31);
+        mgmt_write_byte(16'hF408, 8'h12);
+        mgmt_write_byte(16'hF409, 8'h99);
+        mgmt_write_byte(16'hF432, 8'h20);
+        pulse_second();
+        check_cmos(7'h09, 8'h00, "year 2099 did not roll to 00");
+        check_cmos(7'h32, 8'h21, "century did not roll from 20 to 21");
+        mgmt_write_byte(16'hF400, 8'h59);
+        mgmt_write_byte(16'hF402, 8'h59);
+        mgmt_write_byte(16'hF404, 8'h23);
+        mgmt_write_byte(16'hF407, 8'h28);
+        mgmt_write_byte(16'hF408, 8'h02);
+        pulse_second();
+        check_cmos(7'h07, 8'h01, "2100 was incorrectly treated as leap year");
+        check_cmos(7'h08, 8'h03, "2100 February did not roll to March");
+
+        // SET freezes calendar updates. Alarm and update-ended interrupts use
+        // the MC146818 status-C bits and clear together when C is read.
+        cmos_write(7'h0B, 8'h82);
+        mgmt_write_byte(16'hF400, 8'h10);
+        pulse_second();
+        check_cmos(7'h00, 8'h10, "SET did not freeze RTC updates");
+        cmos_write(7'h0B, 8'h32);
+        mgmt_write_byte(16'hF401, 8'h11);
+        mgmt_write_byte(16'hF403, 8'h00);
+        mgmt_write_byte(16'hF405, 8'h00);
+        mgmt_write_byte(16'hF402, 8'h00);
+        mgmt_write_byte(16'hF404, 8'h00);
+        pulse_second();
+        check(irq8, "alarm/update interrupt did not assert IRQ8");
+        cmos_read(7'h0C, value);
+        check(value[7] && value[5] && value[4],
+              "status C did not report IRQF/AF/UF");
+        check(!irq8, "status-C read did not clear IRQ8");
+
+        // Memory geometry is hardware-owned. HPS/BIOS attempts to replace it
+        // cannot make CMOS advertise RAM the decoder does not expose.
+        mgmt_write_byte(16'hF415, 8'h00);
+        mgmt_write_byte(16'hF416, 8'h00);
+        mgmt_write_byte(16'hF417, 8'h00);
+        mgmt_write_byte(16'hF418, 8'h00);
+        check_cmos(7'h15, 8'h80, "HPS replaced fixed base-memory size");
+        check_cmos(7'h17, 8'h80, "HPS replaced fixed extended-memory size");
+
+        // Checksum follows writable configuration bytes while the fixed RAM
+        // fields remain included.
+        cmos_write(7'h14, 8'h01);
+        check_cmos(7'h2E, 8'h01, "updated CMOS checksum high byte was wrong");
+        check_cmos(7'h2F, 8'h04, "updated CMOS checksum low byte was wrong");
+        check_cmos(7'h0D, 8'h80, "RTC valid-RAM status was not set");
+        check(!protocol_error, "RTC reported a protocol error");
+
+        $display("AT_RTC_CMOS_PASS host_time=1 calendar=1 irq=1 memory_kib=1024 checksum=0104");
+        $finish;
+    end
+
+    initial begin
+        #200000;
+        $fatal(1, "AT RTC/CMOS watchdog expired");
+    end
+endmodule

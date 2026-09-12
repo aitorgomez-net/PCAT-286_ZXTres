@@ -1,5 +1,6 @@
 `timescale 1ns/1ps
 module spk286_at_sdram_capture_tb #(
+    parameter bit DQM_FROM_ADDRESS = 1'b1,
     parameter real SDRAM_CLOCK_SKEW_NS = 0.0,
     parameter real COMMAND_PIN_DELAY_NS = 1.0
 );
@@ -54,7 +55,8 @@ module spk286_at_sdram_capture_tb #(
         .sdram_ba(ba), .sdram_dq_in(dq_in), .sdram_dq_out(dq_out),
         .sdram_dq_io(dq_io), .sdram_ldqm(ldqm), .sdram_udqm(udqm)
     );
-    spk286_sdram_pin_model #(.MEM_WORDS(1048576)) memory (
+    spk286_sdram_pin_model #(.MEM_WORDS(4194304),
+        .DQM_FROM_ADDRESS(DQM_FROM_ADDRESS)) memory (
         .clk(model_clk), .reset(reset), .address(pin_a), .cke(pin_cke),
         .cs_n(pin_cs_n), .ras_n(pin_ras_n), .cas_n(pin_cas_n),
         .we_n(pin_we_n), .ba(pin_ba), .dq_from_controller(pin_dq_out),
@@ -113,6 +115,12 @@ module spk286_at_sdram_capture_tb #(
         transaction(0, 24'hFFFFF0, 2'b11, 16'h5BEA);
         transaction(0, 24'hFFFFF2, 2'b11, 16'h00E0);
         transaction(0, 24'h0FFFF4, 2'b11, 16'h30F0);
+        // Exact first failing Landmark RAM word seen in hardware. Both
+        // single-byte writes must preserve the other lane despite zero fill.
+        transaction(1, 24'h006E40, 2'b11, 16'h0000);
+        transaction(1, 24'h006E40, 2'b01, 16'h00FF);
+        transaction(1, 24'h006E41, 2'b10, 16'hFF00);
+        transaction(0, 24'h006E40, 2'b11, 16'hFFFF);
         transaction(1, 24'h0003FE, 2'b11, 16'hA55A);
         transaction(1, 24'h000400, 2'b11, 16'h77CC);
         transaction(0, 24'h0003FE, 2'b11, 16'hA55A);
@@ -121,11 +129,23 @@ module spk286_at_sdram_capture_tb #(
         transaction(0, 24'h0003FE, 2'b11, 16'h3C5A);
         transaction(1, 24'h0003FE, 2'b01, 16'h0081);
         transaction(0, 24'h0003FF, 2'b10, 16'h3C81);
+        // A11/A12 must remain ROW bits on ACTIVE, including byte writes.
+        // Distinct contents at all four row-bit combinations expose aliases.
+        transaction(1, 24'h200400, 2'b11, 16'h1234);
+        transaction(1, 24'h400400, 2'b11, 16'h5678);
+        transaction(1, 24'h600400, 2'b11, 16'h9ABC);
+        transaction(1, 24'h200401, 2'b10, 16'hDE00);
+        transaction(1, 24'h400400, 2'b01, 16'h00F0);
+        transaction(1, 24'h600401, 2'b10, 16'h1100);
+        transaction(0, 24'h000400, 2'b11, 16'h77CC);
+        transaction(0, 24'h200400, 2'b11, 16'hDE34);
+        transaction(0, 24'h400400, 2'b11, 16'h56F0);
+        transaction(0, 24'h600400, 2'b11, 16'h11BC);
         if (protocol_error) $fatal(1, "CAPTURE_TEST protocol_error");
         repeat (12) @(negedge clk);
         if (dq_in !== memory.INVALID_DATA || dq_valid !== 2'b00)
             $fatal(1, "CAPTURE_TEST model did not release DQ after burst");
-        $display("AT_SDRAM_CAPTURE_PASS transactions=%0d writes=%0d reads=%0d skew=%0.1f", transactions, writes, reads, SDRAM_CLOCK_SKEW_NS);
+        $display("AT_SDRAM_CAPTURE_PASS dqm_from_address=%0d transactions=%0d writes=%0d reads=%0d skew=%0.1f", DQM_FROM_ADDRESS, transactions, writes, reads, SDRAM_CLOCK_SKEW_NS);
         $finish;
     end
     initial begin
