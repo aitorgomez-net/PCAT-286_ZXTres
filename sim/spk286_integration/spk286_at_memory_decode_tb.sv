@@ -65,10 +65,17 @@ module spk286_at_memory_decode_tb;
         classify(24'h0FFFFF, 4'h6, 1'b1);
         check(system_bios_select && rom_write_blocked && !write_allowed,
               "BIOS upper limit was writable");
+        classify(24'hFFFFF0, 4'hD, 1'b0);
+        check(system_bios_select && memory_cycle && !extended_ram_select &&
+              !unmapped_request,
+              "reset-vector BIOS alias was not decoded");
+        classify(24'hFFFFFF, 4'h6, 1'b1);
+        check(system_bios_select && rom_write_blocked && !write_allowed,
+              "reset-vector BIOS alias was writable");
         classify(24'h100000, 4'h5, 1'b0);
         check(extended_ram_select && memory_cycle,
               "extended RAM start lost the 24-bit boundary");
-        classify(24'hFFFFFF, 4'h6, 1'b1);
+        classify(24'hFFEFFF, 4'h6, 1'b1);
         check(extended_ram_select && write_allowed,
               "extended RAM upper limit was not decoded");
 

@@ -22,7 +22,13 @@ module spk286_at_memory_decode (
     output logic         rom_write_blocked,
     output logic         unmapped_request
 );
+    localparam logic [23:0] SYSTEM_BIOS_BASE       = 24'h0F0000;
+    localparam logic [23:0] SYSTEM_BIOS_LIMIT      = 24'h0FFFFF;
+    localparam logic [23:0] SYSTEM_BIOS_ALIAS_BASE = 24'hFFF000;
+    localparam logic [23:0] SYSTEM_BIOS_ALIAS_LIMIT = 24'hFFFFFF;
+
     logic valid_memory_class;
+    logic system_bios_alias_select;
 
     always_comb begin
         case (cycle_class)
@@ -40,11 +46,16 @@ module spk286_at_memory_decode (
         option_region_select     = valid_memory_class &&
                                    (address >= 24'h0C0000) &&
                                    (address <= 24'h0EFFFF);
+        system_bios_alias_select = valid_memory_class &&
+                                   (address >= SYSTEM_BIOS_ALIAS_BASE) &&
+                                   (address <= SYSTEM_BIOS_ALIAS_LIMIT);
         system_bios_select       = valid_memory_class &&
-                                   (address >= 24'h0F0000) &&
-                                   (address <= 24'h0FFFFF);
+                                   (((address >= SYSTEM_BIOS_BASE) &&
+                                     (address <= SYSTEM_BIOS_LIMIT)) ||
+                                    system_bios_alias_select);
         extended_ram_select      = valid_memory_class &&
-                                   (address >= 24'h100000);
+                                   (address >= 24'h100000) &&
+                                   !system_bios_alias_select;
 
         memory_cycle = conventional_ram_select || video_aperture_select ||
                        option_region_select || system_bios_select ||

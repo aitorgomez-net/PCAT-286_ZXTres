@@ -1260,15 +1260,21 @@ end
 `endif
 
 wire hdmi_tx_clk;
-`ifndef MISTER_DEBUG_NOHDMI
+`ifdef AT_PROFILE
+	// The AT source video runs from CLK_50M, but the HDMI pipeline and OSD
+	// still run from the standard HDMI PLL clock. Sampling hdmi_data_osd with
+	// clk_vid would cross from the 148.5 MHz pipeline into 50 MHz and makes
+	// the physical HDMI link unstable.
+	assign hdmi_tx_clk = hdmi_clk_out;
+`elsif MISTER_DEBUG_NOHDMI
+	assign hdmi_tx_clk = clk_vid;
+`else
 	cyclonev_clkselect hdmi_clk_sw
 	( 
 		.clkselect({1'b1, ~vga_fb & direct_video}),
 		.inclk({clk_vid, hdmi_clk_out, 2'b00}),
 		.outclk(hdmi_tx_clk)
 	);
-`else
-	assign hdmi_tx_clk = clk_vid;
 `endif
 
 altddio_out
@@ -1340,15 +1346,19 @@ assign HDMI_TX_D  = hdmi_out_d;
 
 `ifndef MISTER_DUAL_SDRAM
 	wire vga_tx_clk;
-	`ifndef MISTER_DEBUG_NOHDMI
+	`ifdef AT_PROFILE
+		// AT_PROFILE currently drives blank video; use its safe CLK_VIDEO path
+		// and avoid feeding CLK_50M into the legacy clock selector.
+		assign vga_tx_clk = clk_vid;
+	`elsif MISTER_DEBUG_NOHDMI
+		assign vga_tx_clk = clk_vid;
+	`else
 		cyclonev_clkselect vga_clk_sw
 		( 
 			.clkselect({1'b1, ~vga_fb & ~vga_scaler}),
 			.inclk({clk_vid, hdmi_clk_out, 2'b00}),
 			.outclk(vga_tx_clk)
 		);
-	`else
-		assign vga_tx_clk = clk_vid;
 	`endif
 
 	wire VGA_TX_CLK;
@@ -1753,7 +1763,11 @@ wire [13:0] fb_stride;
 	assign fb_stride = 0;
 `endif
 
+`ifdef AT_PROFILE
+emu_at emu
+`else
 emu emu
+`endif
 (
 	.CLK_50M(FPGA_CLK2_50),
 	.RESET(reset),

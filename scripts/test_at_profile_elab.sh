@@ -1,0 +1,91 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+BUILD_DIR="$ROOT_DIR/build/at-profile-elab"
+mkdir -p "$BUILD_DIR"
+
+if ! grep -q '`ifdef AT_PROFILE' "$ROOT_DIR/sys/sys_top.v" || \
+   ! grep -q 'emu_at emu' "$ROOT_DIR/sys/sys_top.v"; then
+  echo "AT_PROFILE selector is missing" >&2
+  exit 1
+fi
+
+if ! grep -q 'assign hdmi_tx_clk = hdmi_clk_out;' "$ROOT_DIR/sys/sys_top.v"; then
+  echo "AT_PROFILE HDMI clock must use the HDMI PLL" >&2
+  exit 1
+fi
+
+if ! grep -q '\.clk_sys              (CLK_50M)' \
+     "$ROOT_DIR/rtl/spk286_integration/spk286_at_emu.sv"; then
+  echo "AT_PROFILE HPS clock must remain on CLK_50M" >&2
+  exit 1
+fi
+
+if ! grep -q '"P1,System & BIOS;"' \
+     "$ROOT_DIR/rtl/spk286_integration/spk286_at_emu.sv" || \
+   ! grep -q '"V,v"' \
+     "$ROOT_DIR/rtl/spk286_integration/spk286_at_emu.sv"; then
+  echo "AT_PROFILE OSD configuration must declare a page and video marker" >&2
+  exit 1
+fi
+
+if ! grep -q '"P1O7,Boot Splash Screen,Yes,No;"' \
+     "$ROOT_DIR/rtl/spk286_integration/spk286_at_emu.sv" || \
+   ! grep -q '"P1FC0,ROM,PCAT BIOS:;"' \
+     "$ROOT_DIR/rtl/spk286_integration/spk286_at_emu.sv" || \
+   ! grep -q '"P1FC2,ROM,EC00 BIOS:;"' \
+     "$ROOT_DIR/rtl/spk286_integration/spk286_at_emu.sv" || \
+   ! grep -q '"P1FC3,ROM,EGA BIOS:;"' \
+     "$ROOT_DIR/rtl/spk286_integration/spk286_at_emu.sv" || \
+   ! grep -q '"P1O\[71\],SPK286 Debug,Off,On;"' \
+     "$ROOT_DIR/rtl/spk286_integration/spk286_at_emu.sv" || \
+   ! grep -q '"P1O\[73:72\],Debug Page,CPU,Registers,Bus,Trace;"' \
+     "$ROOT_DIR/rtl/spk286_integration/spk286_at_emu.sv"; then
+  echo "AT_PROFILE OSD bits/file slots must match PCAT-286.sv" >&2
+  exit 1
+fi
+
+mapfile -t AT_SOURCES < <(
+  sed -n 's/.*SYSTEMVERILOG_FILE "\([^"]*\.sv\)".*/\1/p' \
+    "$ROOT_DIR/rtl/spk286_integration/spk286_integration.qip"
+)
+
+KF8259_DIR="$ROOT_DIR/rtl/KFPC-XT/HDL/KF8259/HDL"
+SOURCE_FILES=(
+  "$ROOT_DIR/sim/spk286_integration/hps_io_elab_stub.sv"
+  "$ROOT_DIR/sim/spk286_integration/pll_system_elab_stub.sv"
+  "$ROOT_DIR/rtl/common/jtframe_ram.v"
+  "$ROOT_DIR/rtl/common/spk286_debug_overlay.sv"
+  "$ROOT_DIR/rtl/KFPC-XT/HDL/ega_vram_bram_frontend.sv"
+  "$ROOT_DIR/rtl/KFPC-XT/HDL/KFSDRAM/HDL/KFSDRAM.sv"
+  "$KF8259_DIR/KF8259_Common_Package.svh"
+  "$KF8259_DIR/KF8259_Priority_Resolver.sv"
+  "$KF8259_DIR/KF8259_Interrupt_Request.sv"
+  "$KF8259_DIR/KF8259_In_Service.sv"
+  "$KF8259_DIR/KF8259_Control_Logic.sv"
+  "$KF8259_DIR/KF8259_Bus_Control_Logic.sv"
+  "$KF8259_DIR/KF8259.sv"
+)
+for source in "${AT_SOURCES[@]}"; do
+  SOURCE_FILES+=("$ROOT_DIR/$source")
+done
+
+# Match the Quartus source closure for the real EGA raster.
+for source in "$ROOT_DIR"/rtl/video/*.v "$ROOT_DIR"/rtl/video/*.sv; do
+  SOURCE_FILES+=("$source")
+done
+
+iverilog -g2012 -Wall -Wno-timescale \
+  -t null \
+  -s emu_at \
+  -I"$ROOT_DIR" \
+  -I"$KF8259_DIR" \
+  "${SOURCE_FILES[@]}" \
+  >"$BUILD_DIR/compile.log" 2>&1 || {
+    cat "$BUILD_DIR/compile.log"
+    exit 1
+  }
+
+echo "AT_PROFILE_SELECTOR_PASS"
+echo "AT_PROFILE_ELAB_PASS"

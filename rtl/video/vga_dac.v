@@ -285,16 +285,20 @@ module vga_dac(
     always @(posedge clock or posedge reset) begin
         if (reset) begin
             for (reset_index = 0; reset_index < 256; reset_index = reset_index + 1) begin
-                red_ram[reset_index] <= default_component(reset_index[7:0], 2'd0);
-                green_ram[reset_index] <= default_component(reset_index[7:0], 2'd1);
-                blue_ram[reset_index] <= default_component(reset_index[7:0], 2'd2);
+                // Blocking assignments keep this reset-time table fill
+                // compatible with Verilator's synthesizable array model;
+                // the loop is still unrolled as a reset initializer by
+                // Quartus and no run-time ordering is observable here.
+                red_ram[reset_index] = default_component(reset_index[7:0], 2'd0);
+                green_ram[reset_index] = default_component(reset_index[7:0], 2'd1);
+                blue_ram[reset_index] = default_component(reset_index[7:0], 2'd2);
             end
             entry_valid <= 256'd0;
         end else if (load_defaults) begin
             for (reset_index = 0; reset_index < 256; reset_index = reset_index + 1) begin
-                red_ram[reset_index] <= default_component(reset_index[7:0], 2'd0);
-                green_ram[reset_index] <= default_component(reset_index[7:0], 2'd1);
-                blue_ram[reset_index] <= default_component(reset_index[7:0], 2'd2);
+                red_ram[reset_index] = default_component(reset_index[7:0], 2'd0);
+                green_ram[reset_index] = default_component(reset_index[7:0], 2'd1);
+                blue_ram[reset_index] = default_component(reset_index[7:0], 2'd2);
             end
             entry_valid <= {256{1'b1}};
         end else if (invalidate) begin

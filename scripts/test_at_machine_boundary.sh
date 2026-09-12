@@ -27,9 +27,17 @@ sources+=(
   rtl/spk286_integration/spk286_at_8042.sv
   rtl/spk286_integration/spk286_at_rtc_cmos.sv
   rtl/spk286_integration/spk286_at_storage_video.sv
+  rtl/spk286_integration/spk286_at_video_adapter.sv
+  rtl/KFPC-XT/HDL/ega_vram_bram_frontend.sv
   rtl/spk286_integration/spk286_at_device_router.sv
   rtl/spk286_integration/spk286_at_machine.sv
+  rtl/spk286_integration/spk286_at_mister_memory_port.sv
+  rtl/KFPC-XT/HDL/KFSDRAM/HDL/KFSDRAM.sv
+  rtl/spk286_integration/spk286_at_mister_sdram_owner.sv
 )
+for source in rtl/video/*.v rtl/video/*.sv; do
+  sources+=("$source")
+done
 pic_sources=()
 for source in rtl/KFPC-XT/HDL/KF8259/HDL/*.sv; do
   pic_sources+=("$source")

@@ -43,6 +43,7 @@ module spk286_at_8042 (
     logic [7:0] command_byte_q;
     logic [7:0] output_port_q;
     logic       write_output_port_q;
+    logic       reset_pulse_q;
     logic       keyboard_enabled_q;
     logic [7:0] request_byte;
     logic [7:0] current_read_data;
@@ -72,9 +73,13 @@ module spk286_at_8042 (
     assign keyboard_output_byte = output_buffer_q;
     assign irq1 = output_buffer_valid_q && command_byte_q[0];
     assign a20_enable = output_port_q[1];
-    // The 8042 output-port reset bit is active low.  Reset initializes it high
-    // so the controller itself does not hold the CPU in reset.
-    assign cpu_reset_request = !output_port_q[0];
+    // A real 8042 asserts the CPU reset line either through command FE or by
+    // writing a zero to output-port bit 0 after command D1.  The CPU-facing
+    // boundary models that electrical action as a one-clock pulse; keeping
+    // the stored output-port bit high after the pulse lets the emulated CPU
+    // leave reset without requiring a full chipset reset (and preserves CMOS,
+    // PIT and PIC state exactly as a warm hardware reset would).
+    assign cpu_reset_request = reset_pulse_q;
 
     always_comb begin
         if (request_address[15:0] == 16'h0064)
@@ -96,12 +101,14 @@ module spk286_at_8042 (
             command_byte_q <= 8'h01;
             output_port_q <= 8'h01;
             write_output_port_q <= 1'b0;
+            reset_pulse_q <= 1'b0;
             keyboard_enabled_q <= 1'b1;
             side_effect_count <= 16'h0000;
             protocol_error <= 1'b0;
         end else begin
             if (io_state_q == IO_DONE)
                 io_state_q <= IO_IDLE;
+            reset_pulse_q <= 1'b0;
 
             if (request_accept) begin
                 io_state_q <= IO_DONE;
@@ -126,10 +133,12 @@ module spk286_at_8042 (
                         8'hAD: keyboard_enabled_q <= 1'b0;
                         8'hAE: keyboard_enabled_q <= 1'b1;
                         8'hD1: write_output_port_q <= 1'b1;
+                        8'hFE: reset_pulse_q <= 1'b1;
                         default: begin end
                     endcase
                 end else if (write_output_port_q) begin
-                    output_port_q <= request_byte;
+                    output_port_q <= request_byte | 8'h01;
+                    reset_pulse_q <= !request_byte[0];
                     write_output_port_q <= 1'b0;
                 end
             end

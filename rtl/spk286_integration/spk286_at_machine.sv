@@ -10,6 +10,11 @@
 module spk286_at_machine (
     input  logic         clk,
     input  logic         reset,
+    // CPU-local reset.  The AT splash holds the 286/BIU in reset while the
+    // device router and EGA raster remain alive to render the splash itself.
+    input  logic         cpu_reset,
+    input  logic         clk_video,
+    input  logic         splashscreen,
     input  logic         execute_enable,
     input  logic         counter_clock,
     input  logic         refresh_enable,
@@ -71,6 +76,22 @@ module spk286_at_machine (
     output logic         floppy_selected,
     output logic         video_io_selected,
     output logic         video_memory_selected,
+    output logic [5:0]   video_red,
+    output logic [5:0]   video_green,
+    output logic [5:0]   video_blue,
+    output logic         video_hsync,
+    output logic         video_hblank,
+    output logic         video_dbl_hsync,
+    output logic         video_vsync,
+    output logic         video_vblank,
+    output logic         video_vblank_border,
+    output logic         video_de,
+    output logic         video_dot_toggle,
+    output logic         video_scandouble_active,
+    output logic         video_vmode_toggle,
+    output logic         video_mode350,
+    output logic [11:0]  video_active_dots,
+    output logic [9:0]   video_active_lines,
 
     output logic         cpu_hold_request,
     output logic         cpu_hlda,
@@ -93,11 +114,55 @@ module spk286_at_machine (
     output logic         cpu_halted,
     output logic         cpu_shutdown,
     output logic         cpu_fault,
+    output logic         debug_control_error,
+    output logic         debug_unsupported_opcode,
+    output logic         debug_microcode_fault,
+    output logic         debug_operand_blocked,
+    output logic         debug_event_completed,
     output logic [7:0]   debug_event_vector,
     output logic [7:0]   debug_opcode,
     output logic [15:0]  debug_cs,
     output logic [15:0]  debug_ip,
     output logic [3:0]   debug_bus_state,
+    output logic [2:0]   debug_event_kind,
+    output logic [23:0]  debug_cs_base,
+    output logic [15:0]  debug_flags,
+    output logic [127:0] debug_gpr,
+    output logic [63:0]  debug_segment_selectors,
+    output logic         debug_fetch_blocked,
+    output logic [16:0]  debug_fetch_cursor,
+    output logic [11:0]  debug_micro_pc,
+    output logic [11:0]  debug_micro_entry,
+    output logic [7:0]   debug_micro_instruction,
+    output logic         debug_micro_active,
+    output logic [3:0]   debug_prefetch_count,
+    output logic [7:0]   debug_biu_detail,
+    output logic [7:0]   debug_last_post,
+    output logic [15:0]  debug_cpu_cycle_count,
+    output logic [15:0]  debug_at_cycle_count,
+    output logic [31:0]  debug_trace0,
+    output logic [31:0]  debug_trace1,
+    output logic [31:0]  debug_trace2,
+    output logic [31:0]  debug_trace3,
+    output logic [7:0]   debug_keyboard_keycode,
+    output logic         debug_keyboard_irq,
+    output logic [7:0]   debug_keyboard_port_b,
+    output logic         debug_keyboard_pic_int,
+    output logic [3:0]   debug_dma_request,
+    output logic [3:0]   debug_dma_acknowledge_n,
+    output logic [19:0]  debug_at_address,
+    output logic [7:0]   debug_at_data_out,
+    output logic [7:0]   debug_at_data_in,
+    output logic [2:0]   debug_at_status,
+    output logic         debug_at_valid,
+    output logic         debug_at_write,
+    output logic         debug_at_io,
+    output logic         debug_at_inta,
+    output logic         debug_at_code,
+    output logic         debug_at_byte_high,
+    output logic         debug_at_memory_projection,
+    output logic         debug_at_cycle_active,
+    output logic         debug_at_ready,
     output logic [15:0]  refresh_count,
     output logic [15:0]  dma_side_effect_count,
     output logic [15:0]  device_side_effect_count,
@@ -217,6 +282,7 @@ module spk286_at_machine (
     logic        devices_dma_transfer_ready;
     logic [15:0] devices_dma_transfer_data_out;
     logic [7:0]  devices_dma_request;
+    logic        devices_cpu_reset_request;
     logic        irq6;
     logic        irq8;
     logic        irq14;
@@ -243,6 +309,13 @@ module spk286_at_machine (
     logic        dma_memory_accept_q;
     logic        nmi_source_active_q;
 
+    logic [15:0] debug_cpu_cycle_count_q;
+    logic [15:0] debug_at_cycle_count_q;
+    logic [31:0] debug_trace0_q;
+    logic [31:0] debug_trace1_q;
+    logic [31:0] debug_trace2_q;
+    logic [31:0] debug_trace3_q;
+
     logic        a5_io_candidate;
     logic        pic_io_candidate;
     logic        pit_io_candidate;
@@ -252,6 +325,11 @@ module spk286_at_machine (
     logic        cpu_owner_active;
     logic        cpu_memory_candidate;
     logic        device_request_candidate;
+
+    // The 8042 reset is a CPU-local warm reset.  It must flush the CPU and
+    // its retained bus transaction, but must not reset CMOS or the other AT
+    // devices because the BIOS uses CMOS shutdown codes to resume POST.
+    wire       cpu_core_reset = reset | cpu_reset | devices_cpu_reset_request;
 
     function automatic logic is_pic_port(input logic [15:0] port);
         begin
@@ -305,7 +383,7 @@ module spk286_at_machine (
 
     spk286_machine_cpu u_cpu (
         .clk                    (clk),
-        .reset                  (reset),
+        .reset                  (cpu_core_reset),
         .execute_enable         (execute_enable),
         .ready                  (cpu_ready_i),
         .data_in                (cpu_data_in_i),
@@ -354,7 +432,7 @@ module spk286_at_machine (
 
     spk286_at_bus_bridge u_bridge (
         .clk                    (clk),
-        .reset                  (reset),
+        .reset                  (cpu_core_reset),
         .cpu_bus_valid          (cpu_bus_valid),
         .cpu_address            (cpu_address),
         .cpu_data_out           (cpu_data_out),
@@ -423,6 +501,8 @@ module spk286_at_machine (
     spk286_at_device_router u_devices (
         .clk                    (clk),
         .reset                  (reset),
+        .clk_video              (clk_video),
+        .splashscreen           (splashscreen),
         .request_valid          (device_request_candidate),
         .request_command_valid  (at_command_valid),
         .request_write          (at_write),
@@ -442,7 +522,7 @@ module spk286_at_machine (
         .keyboard_output_byte   (keyboard_output_byte),
         .irq1                   (),
         .a20_enable             (a20_enable),
-        .cpu_reset_request      (cpu_reset_request),
+        .cpu_reset_request      (devices_cpu_reset_request),
         .periodic_tick          (periodic_tick),
         .second_tick            (second_tick),
         .irq8                   (irq8),
@@ -461,6 +541,22 @@ module spk286_at_machine (
         .floppy_selected        (floppy_selected),
         .video_io_selected      (video_io_selected),
         .video_memory_selected  (video_memory_selected),
+        .video_red              (video_red),
+        .video_green            (video_green),
+        .video_blue             (video_blue),
+        .video_hsync            (video_hsync),
+        .video_hblank           (video_hblank),
+        .video_dbl_hsync        (video_dbl_hsync),
+        .video_vsync            (video_vsync),
+        .video_vblank           (video_vblank),
+        .video_vblank_border    (video_vblank_border),
+        .video_de               (video_de),
+        .video_dot_toggle       (video_dot_toggle),
+        .video_scandouble_active(video_scandouble_active),
+        .video_vmode_toggle     (video_vmode_toggle),
+        .video_mode350          (video_mode350),
+        .video_active_dots      (video_active_dots),
+        .video_active_lines     (video_active_lines),
         .side_effect_count      (device_side_effect_count),
         .irq_request             (devices_irq_request),
         .protocol_error          (devices_protocol_error)
@@ -566,6 +662,8 @@ module spk286_at_machine (
     assign dma_memory_byte_enable = dma_transfer_byte_enable;
     assign dma_memory_data_out = dma_transfer_data_out;
 
+    assign cpu_reset_request = devices_cpu_reset_request;
+
     spk286_at_refresh u_refresh (
         .clk                    (clk),
         .reset                  (reset),
@@ -585,6 +683,87 @@ module spk286_at_machine (
 
     assign refresh_memory_valid = refresh_bus_valid && refresh_grant;
     assign refresh_memory_address = refresh_address;
+
+    // The overlay consumes a compact, source-domain snapshot.  Keep the
+    // architectural CPU state and the normalized AT transaction visible at
+    // the profile boundary instead of reaching through this wrapper from the
+    // MiSTer top level.
+    assign debug_event_kind        = spk_debug_event_kind;
+    assign cpu_halted              = spk_halted;
+    assign cpu_shutdown            = spk_shutdown;
+    assign debug_control_error     = spk_control_error;
+    assign debug_unsupported_opcode = spk_unsupported_opcode;
+    assign debug_microcode_fault   = spk_microcode_fault;
+    assign debug_operand_blocked   = spk_operand_blocked;
+    assign debug_event_completed   = spk_event_completed;
+    assign debug_cs_base           = spk_debug_cs_base;
+    assign debug_flags             = spk_debug_flags;
+    assign debug_gpr               = spk_debug_gpr;
+    assign debug_segment_selectors = spk_debug_segment_selectors;
+    assign debug_fetch_blocked     = spk_fetch_blocked;
+    assign debug_fetch_cursor      = spk_debug_fetch_cursor;
+    assign debug_micro_pc          = spk_debug_micro_pc;
+    assign debug_micro_entry       = spk_debug_micro_entry;
+    assign debug_micro_instruction = spk_debug_micro_instruction;
+    assign debug_micro_active      = spk_debug_micro_active;
+    assign debug_prefetch_count    = spk_debug_prefetch_count;
+    assign debug_biu_detail        = spk_debug_biu_detail;
+    assign debug_last_post         = debug_event_vector;
+    assign debug_cpu_cycle_count   = debug_cpu_cycle_count_q;
+    assign debug_at_cycle_count    = debug_at_cycle_count_q;
+    assign debug_trace0            = debug_trace0_q;
+    assign debug_trace1            = debug_trace1_q;
+    assign debug_trace2            = debug_trace2_q;
+    assign debug_trace3            = debug_trace3_q;
+    assign debug_keyboard_keycode  = keyboard_byte;
+    assign debug_keyboard_irq      = keyboard_byte_valid;
+    assign debug_keyboard_port_b   = 8'h00;
+    assign debug_keyboard_pic_int  = intr;
+    assign debug_dma_request       = devices_dma_request[3:0];
+    assign debug_dma_acknowledge_n = 4'hF;
+
+    assign debug_at_address        = at_address[19:0];
+    assign debug_at_data_out       = at_byte_enable[1] ?
+                                     at_data_out[15:8] : at_data_out[7:0];
+    assign debug_at_data_in        = at_byte_enable[1] ?
+                                     at_read_data[15:8] : at_read_data[7:0];
+    assign debug_at_status         = at_cycle_class[2:0];
+    assign debug_at_valid          = at_valid;
+    assign debug_at_write          = at_write;
+    assign debug_at_io             = at_io;
+    assign debug_at_inta           = at_inta;
+    assign debug_at_code           = at_code_fetch;
+    assign debug_at_byte_high      = at_byte_enable[1];
+    assign debug_at_memory_projection = conventional_ram_select |
+                                        video_aperture_select |
+                                        option_region_select |
+                                        system_bios_select |
+                                        extended_ram_select;
+    assign debug_at_cycle_active   = at_valid;
+    assign debug_at_ready         = at_ready;
+
+    always_ff @(posedge clk or posedge reset) begin
+        if (reset) begin
+            debug_cpu_cycle_count_q <= 16'h0000;
+            debug_at_cycle_count_q  <= 16'h0000;
+            debug_trace0_q          <= 32'h0000_0000;
+            debug_trace1_q          <= 32'h0000_0000;
+            debug_trace2_q          <= 32'h0000_0000;
+            debug_trace3_q          <= 32'h0000_0000;
+        end else begin
+            if (at_completed) begin
+                debug_cpu_cycle_count_q <= debug_cpu_cycle_count_q + 16'd1;
+                debug_trace3_q <= debug_trace2_q;
+                debug_trace2_q <= debug_trace1_q;
+                debug_trace1_q <= debug_trace0_q;
+                debug_trace0_q <= {at_address[19:0],
+                                   at_data_out[7:0],
+                                   at_cycle_class[2:0], at_write};
+            end
+            if (at_accepted)
+                debug_at_cycle_count_q <= debug_at_cycle_count_q + 16'd1;
+        end
+    end
 
     spk286_at_arbiter u_arbiter (
         .clk                    (clk),

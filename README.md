@@ -1,9 +1,9 @@
 # PCAT-286 for MiSTer
 
-Introduce the normalized AT bridge, memory decode, arbitration, cascaded interrupts, DMA, refresh, PIT and device routing as a composed machine boundary.
+Add native MiSTer memory ownership, KFSDRAM arbitration, BIOS loading and the optional AT top-level profile through the first board-booting integration checkpoint.
 
 This development snapshot is part of the consolidated chronological
-history. Its source state comes from 2026-09-11.
+history. Its source state comes from 2026-09-12.
 The latest revision contains the common technical reference and current
 validation instructions. Historical reports and compiled candidates are
 kept in the original development archive, outside this branch.

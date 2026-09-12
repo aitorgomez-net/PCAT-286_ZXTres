@@ -4,6 +4,8 @@ module spk286_at_devices_tb;
     logic clk = 1'b0;
     logic reset = 1'b1;
     always #5 clk = ~clk;
+    logic clk_video = 1'b0;
+    always #17.45 clk_video = ~clk_video;
 
     // CPU-facing normalized request.
     logic        request_valid = 1'b0;
@@ -27,6 +29,7 @@ module spk286_at_devices_tb;
     wire         irq1;
     wire         a20_enable;
     wire         cpu_reset_request;
+    integer      cpu_reset_pulse_count = 0;
     logic        periodic_tick = 1'b0;
     logic        second_tick = 1'b0;
     wire         irq8;
@@ -98,6 +101,7 @@ module spk286_at_devices_tb;
 
     spk286_at_device_router devices (
         .clk(clk), .reset(reset),
+        .clk_video(clk_video), .splashscreen(1'b0),
         .request_valid(request_valid),
         .request_command_valid(request_command_valid),
         .request_write(request_write), .request_io(request_io),
@@ -208,7 +212,7 @@ module spk286_at_devices_tb;
             request_write = 1'b0;
             request_io = 1'b0;
             cycles = 0;
-            while (!request_ready && cycles < 12) begin
+            while (!request_ready && cycles < 64) begin
                 @(negedge clk);
                 cycles = cycles + 1;
             end
@@ -255,7 +259,7 @@ module spk286_at_devices_tb;
             request_command_valid = 1'b0;
             request_io = 1'b0;
             cycles = 0;
-            while (!request_ready && cycles < 12) begin
+            while (!request_ready && cycles < 64) begin
                 @(negedge clk);
                 cycles = cycles + 1;
             end
@@ -292,7 +296,7 @@ module spk286_at_devices_tb;
             request_command_valid = 1'b0;
             request_io = 1'b0;
             cycles = 0;
-            while (!request_ready && cycles < 12) begin
+            while (!request_ready && cycles < 64) begin
                 @(negedge clk);
                 cycles = cycles + 1;
             end
@@ -365,6 +369,9 @@ module spk286_at_devices_tb;
         end
     end
 
+    always @(posedge cpu_reset_request)
+        cpu_reset_pulse_count = cpu_reset_pulse_count + 1;
+
     initial begin : run
         logic [7:0] value;
         logic [15:0] word_value;
@@ -390,6 +397,19 @@ module spk286_at_devices_tb;
               "8042 output port did not enable A20 safely");
         router_read(16'h0064, value);
         check(value[2] && !value[0], "8042 status register was incorrect");
+
+        // Both documented AT reset forms must produce a CPU-local pulse.
+        cycles = cpu_reset_pulse_count;
+        router_write(16'h0064, 8'hFE);
+        #1;
+        check(cpu_reset_pulse_count > cycles,
+              "8042 FE reset command did not pulse CPU reset");
+        cycles = cpu_reset_pulse_count;
+        router_write(16'h0064, 8'hD1);
+        router_write(16'h0060, 8'hFE);
+        #1;
+        check(cpu_reset_pulse_count > cycles,
+              "8042 D1/FE reset sequence did not pulse CPU reset");
 
         // RTC index/data, NMI mask, periodic IRQ8 and deterministic seconds.
         router_write(16'h0070, 8'h0B);
@@ -418,11 +438,19 @@ module spk286_at_devices_tb;
         router_read(16'h01F7, value);
         check(value == 8'h58 && !irq14, "ATA status read did not clear IRQ14");
 
-        // EGA register and A0000 aperture shadow are routed by the same table.
+        // EGA register and A0000 aperture are routed by the same table.
         router_write(16'h03C0, 8'hAA);
-        router_read(16'h03C0, value);
-        check(value == 8'hAA && video_io_selected == 1'b0,
-              "EGA I/O register routing/readback failed");
+        router_write(16'h03C2, 8'h63);
+        router_read(16'h03CC, value);
+        check(value == 8'h63 && video_io_selected == 1'b0,
+              "EGA register programming/readback failed");
+        // Enable all four planes before exercising the planar aperture.  The
+        // frontend intentionally waits for the sequencer configuration toggle
+        // instead of guessing a CPU write mask at reset.
+        router_write(16'h03C4, 8'h02);
+        router_write(16'h03C5, 8'h0F);
+        router_write(16'h03C4, 8'h04);
+        router_write(16'h03C5, 8'h06);
         @(negedge clk);
         request_address = 24'h0A0000;
         request_byte_enable = 2'b01;

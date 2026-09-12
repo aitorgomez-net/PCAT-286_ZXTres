@@ -10,11 +10,16 @@ sources=(
   rtl/spk286_integration/spk286_at_8042.sv
   rtl/spk286_integration/spk286_at_rtc_cmos.sv
   rtl/spk286_integration/spk286_at_storage_video.sv
+  rtl/spk286_integration/spk286_at_video_adapter.sv
+  rtl/KFPC-XT/HDL/ega_vram_bram_frontend.sv
   rtl/spk286_integration/spk286_at_device_router.sv
   rtl/spk286_integration/spk286_at_arbiter.sv
   rtl/spk286_integration/spk286_at_dma.sv
   sim/spk286_integration/spk286_at_devices_tb.sv
 )
+for source in rtl/video/*.v rtl/video/*.sv; do
+  sources+=("$source")
+done
 
 iverilog -g2012 -s spk286_at_devices_tb \
   -o "$build_dir/a5_iv" "${sources[@]}" \
