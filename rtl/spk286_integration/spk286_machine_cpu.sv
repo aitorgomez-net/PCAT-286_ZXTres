@@ -72,6 +72,22 @@ module spk286_machine_cpu (
     logic [1:0]  unused_fetch_count;
     logic [63:0] unused_debug_segment_limits;
     logic [31:0] unused_debug_segment_access;
+    logic [15:0] unused_debug_protected_msw;
+    logic [15:0] unused_debug_gdtr_limit;
+    logic [15:0] unused_debug_idtr_limit;
+    logic [23:0] unused_debug_gdtr_base;
+    logic [23:0] unused_debug_idtr_base;
+    logic [15:0] unused_debug_ldtr_selector;
+    logic [15:0] unused_debug_tr_selector;
+    logic [15:0] unused_debug_ldtr_limit;
+    logic [15:0] unused_debug_tr_limit;
+    logic [23:0] unused_debug_ldtr_base;
+    logic [23:0] unused_debug_tr_base;
+    logic [3:0]  unused_debug_bus_transaction;
+
+    // Preserve the existing 8-bit integration diagnostic while the CPU
+    // exposes the bus state and protected transaction class separately.
+    assign debug_biu_detail = {debug_bus_state, unused_debug_bus_transaction};
 
     spk286 cpu (
         .clk(clk),
@@ -147,7 +163,6 @@ module spk286_machine_cpu (
         .bus_status(bus_status),
         .bus_lock(bus_lock),
         .hlda(hlda),
-        .debug_biu_detail(debug_biu_detail),
 
         .debug_cs(debug_cs),
         .debug_cs_base(debug_cs_base),
@@ -158,12 +173,24 @@ module spk286_machine_cpu (
         .debug_segment_bases(debug_segment_bases),
         .debug_segment_limits(unused_debug_segment_limits),
         .debug_segment_access(unused_debug_segment_access),
+        .debug_protected_msw(unused_debug_protected_msw),
+        .debug_gdtr_limit(unused_debug_gdtr_limit),
+        .debug_idtr_limit(unused_debug_idtr_limit),
+        .debug_gdtr_base(unused_debug_gdtr_base),
+        .debug_idtr_base(unused_debug_idtr_base),
+        .debug_ldtr_selector(unused_debug_ldtr_selector),
+        .debug_tr_selector(unused_debug_tr_selector),
+        .debug_ldtr_limit(unused_debug_ldtr_limit),
+        .debug_tr_limit(unused_debug_tr_limit),
+        .debug_ldtr_base(unused_debug_ldtr_base),
+        .debug_tr_base(unused_debug_tr_base),
         .debug_fetch_cursor(debug_fetch_cursor),
         .debug_micro_pc(debug_micro_pc),
         .debug_micro_entry(debug_micro_entry),
         .debug_micro_instruction(debug_micro_instruction),
         .debug_micro_active(debug_micro_active),
         .debug_prefetch_count(debug_prefetch_count),
-        .debug_bus_state(debug_bus_state)
+        .debug_bus_state(debug_bus_state),
+        .debug_bus_transaction(unused_debug_bus_transaction)
     );
 endmodule

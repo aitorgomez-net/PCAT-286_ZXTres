@@ -78,6 +78,30 @@ module spk286_at_video_adapter (
     wire [7:0] request_byte = request_byte_enable[1] ?
                               request_data_out[15:8] : request_data_out[7:0];
 
+    // EGA Input Status Register 0 is read at 3C2h.  Its selector is the
+    // value most recently written to Miscellaneous Output, so it must be
+    // sampled in this ISA-clock domain rather than inferred from the posted
+    // video-domain mailbox.  The shared decoder models the real EGA switch
+    // sense pins used by the AT BIOS probe.
+    wire ega_switch_request = request_valid && request_command_valid &&
+                              request_io &&
+                              ((request_address[15:0] == 16'h03C2) ||
+                               (request_address[15:0] == 16'h02C2));
+    wire [7:0] ega_switch_host_data;
+
+    ega_switch_sense_host u_ega_switch_sense_host (
+        .clock             (clk),
+        .reset             (reset),
+        .monitor_profile   (2'b00),
+        .io_address        (request_address[14:0]),
+        .io_data           (request_byte),
+        .io_write_n        (!(ega_switch_request && request_write)),
+        .io_read_n         (!(ega_switch_request && !request_write)),
+        .address_enable_n  (!ega_switch_request),
+        .data_out          (ega_switch_host_data),
+        .output_enable     ()
+    );
+
     logic       io_busy_q;
     logic       io_write_q;
     logic       io_read_q;
@@ -89,6 +113,8 @@ module spk286_at_video_adapter (
     logic       io_ack_sync2_q;
     logic [7:0] io_read_data_sync1_q;
     logic [7:0] io_read_data_sync2_q;
+    logic       io_switch_read_q;
+    logic [7:0] io_switch_read_data_q;
 
     logic       memory_busy_q;
     logic       memory_write_q;
@@ -111,9 +137,13 @@ module spk286_at_video_adapter (
                             (video_memory_request && io_idle && memory_idle);
     assign request_ready = io_complete || memory_complete;
     assign request_read_data = io_complete ?
-                               (io_byte_enable_q[1] ?
-                                {io_read_data_sync2_q, 8'h00} :
-                                {8'h00, io_read_data_sync2_q}) :
+                               (io_switch_read_q ?
+                                (io_byte_enable_q[1] ?
+                                 {io_switch_read_data_q, 8'h00} :
+                                 {8'h00, io_switch_read_data_q}) :
+                                (io_byte_enable_q[1] ?
+                                 {io_read_data_sync2_q, 8'h00} :
+                                 {8'h00, io_read_data_sync2_q})) :
                                (memory_byte_enable_q[1] ?
                                 {memory_read_data, 8'h00} :
                                 {8'h00, memory_read_data});
@@ -134,6 +164,8 @@ module spk286_at_video_adapter (
             io_ack_sync2_q <= 1'b0;
             io_read_data_sync1_q <= 8'h00;
             io_read_data_sync2_q <= 8'h00;
+            io_switch_read_q <= 1'b0;
+            io_switch_read_data_q <= 8'h00;
             memory_busy_q <= 1'b0;
             memory_write_q <= 1'b0;
             memory_read_q <= 1'b0;
@@ -154,6 +186,8 @@ module spk286_at_video_adapter (
                 io_address_q <= request_address[14:0];
                 io_data_q <= request_byte;
                 io_byte_enable_q <= request_byte_enable;
+                io_switch_read_q <= ega_switch_request && !request_write;
+                io_switch_read_data_q <= ega_switch_host_data;
                 io_request_toggle_q <= ~io_request_toggle_q;
             end else if (io_complete) begin
                 io_busy_q <= 1'b0;

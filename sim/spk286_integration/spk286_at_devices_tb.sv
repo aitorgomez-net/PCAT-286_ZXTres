@@ -56,6 +56,8 @@ module spk286_at_devices_tb;
     logic [1:0]  floppy_write_protect = 2'b00;
     wire [1:0]   floppy_present;
     wire [1:0]   floppy_request;
+    logic [1:0]  use_mmc = 2'b00;
+    wire [2:0]   ide_request;
 
     // A4 DMA controller, driven by the A5 storage device's channel-2 request.
     logic        dma_config_valid = 1'b0;
@@ -144,7 +146,8 @@ module spk286_at_devices_tb;
         .mgmt_readdata(mgmt_readdata),
         .floppy_write_protect(floppy_write_protect),
         .floppy_present(floppy_present), .floppy_request(floppy_request),
-        .ata_selected(ata_selected), .floppy_selected(floppy_selected),
+        .use_mmc(use_mmc), .ide_request(ide_request),
+         .ata_selected(ata_selected), .floppy_selected(floppy_selected),
         .video_io_selected(video_io_selected),
         .video_memory_selected(video_memory_selected),
         .side_effect_count(side_effect_count), .irq_request(irq_request),
@@ -568,6 +571,20 @@ module spk286_at_devices_tb;
         check(word_value == 16'h0040, "ATA IDENTIFY data was not deterministic");
         router_read(16'h01F7, value);
         check(value == 8'h58 && !irq14, "ATA status read did not clear IRQ14");
+
+        // XT2IDE-compatible secondary window: management presence, command
+        // status, high-byte latch at 308h, and the single 309h hole.
+        mgmt_write_word(16'hF006, 16'h0009);
+        router_read(16'h0307, value);
+        check(value == 8'h80 && ide_request == 3'b110,
+              "XT-IDE status/presence path was incorrect");
+        router_write(16'h0308, 8'hA5);
+        router_read(16'h0308, value);
+        check(value == 8'hA5, "XT-IDE high-byte latch did not round-trip");
+        router_read(16'h0309, value);
+        check(value == 8'hFF, "XT-IDE 309h hole was unexpectedly decoded");
+        router_read(16'h030E, value);
+        check(value == 8'h80, "XT-IDE alternate status was not decoded");
 
         // EGA register and A0000 aperture are routed by the same table.
         router_write(16'h03C0, 8'hAA);

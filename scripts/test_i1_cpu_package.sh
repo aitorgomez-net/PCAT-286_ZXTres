@@ -16,7 +16,23 @@ fi
 sources=(
   vendor/spk286/microcode/generated/spk286_microcode_pkg.sv
   vendor/spk286/microcode/generated/spk286_microcode_rom.sv
-  vendor/spk286/rtl/*.sv
+  vendor/spk286/rtl/spk286_protected_pkg.sv
+  vendor/spk286/rtl/spk286_tss_pkg.sv
+)
+
+# Package declarations must precede the RTL glob. Keep this manifest aligned
+# with the Quartus QIP so protected/TSS services do not depend on shell order.
+for source in vendor/spk286/rtl/*.sv; do
+  case "$source" in
+    vendor/spk286/rtl/spk286_protected_pkg.sv|vendor/spk286/rtl/spk286_tss_pkg.sv)
+      ;;
+    *)
+      sources+=("$source")
+      ;;
+  esac
+done
+
+sources+=(
   rtl/spk286_integration/spk286_machine_cpu.sv
   sim/spk286_integration/spk286_machine_cpu_elab_tb.sv
 )

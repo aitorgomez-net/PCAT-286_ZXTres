@@ -1,9 +1,9 @@
 # PCAT-286 for MiSTer
 
-Correct DMA, PIT, parity and SDRAM byte masks; implement 8042 diagnostics, the floppy controller, RTC and CMOS behavior.
+Integrate the protected-mode CPU update, POST port, speaker, EGA switch sense, XT-IDE storage and AT keyboard translation.
 
 This development snapshot is part of the consolidated chronological
-history. Its source state comes from 2026-09-12.
+history. Its source state comes from 2026-09-13.
 The latest revision contains the common technical reference and current
 validation instructions. Historical reports and compiled candidates are
 kept in the original development archive, outside this branch.

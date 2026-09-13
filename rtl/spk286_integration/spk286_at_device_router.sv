@@ -27,6 +27,8 @@ module spk286_at_device_router (
 
     input  logic        keyboard_byte_valid,
     input  logic [7:0]  keyboard_byte,
+    output logic        keyboard_byte_ready,
+    output logic        keyboard_translate_set1,
     output logic        keyboard_output_valid,
     output logic [7:0]  keyboard_output_byte,
     output logic        irq1,
@@ -57,6 +59,8 @@ module spk286_at_device_router (
     output logic [1:0]  floppy_request,
     output logic        irq6,
     output logic        irq14,
+    input  logic [1:0]  use_mmc,
+    output logic [2:0]  ide_request,
     output logic        ata_selected,
     output logic        floppy_selected,
     output logic        video_io_selected,
@@ -126,6 +130,7 @@ module spk286_at_device_router (
     logic       storage_read_data_valid;
     logic       storage_protocol_error;
     logic [15:0] storage_side_effect_count;
+    logic [2:0]  storage_ide_request;
 
     always_comb begin
         device_8042_candidate = request_valid && request_command_valid &&
@@ -143,7 +148,11 @@ module spk286_at_device_router (
                                       ((request_address[15:0] >= 16'h03B0) &&
                                        (request_address[15:0] <= 16'h03DF)) ||
                                       ((request_address[15:0] >= 16'h03F0) &&
-                                       (request_address[15:0] <= 16'h03F7)))) ||
+                                       (request_address[15:0] <= 16'h03F7)) ||
+                                      ((request_address[15:4] == 12'h030) &&
+                                       ((!request_address[3]) ||
+                                        (request_address[3:0] == 4'h8) ||
+                                        (request_address[2:1] != 2'b00))))) ||
                                     (!request_io &&
                                      (request_address[23:0] >= 24'h0A0000) &&
                                      (request_address[23:0] <= 24'h0BFFFF)));
@@ -155,6 +164,9 @@ module spk286_at_device_router (
                       (request_byte_enable == 2'b10)) ||
                      (device_storage_candidate && request_io &&
                       (request_address[15:0] == 16'h01F0) &&
+                      (request_byte_enable == 2'b11)) ||
+                     (device_storage_candidate && request_io &&
+                      (request_address[15:0] == 16'h0300) &&
                       (request_byte_enable == 2'b11));
 
         selected_device = DEVICE_NONE;
@@ -186,6 +198,8 @@ module spk286_at_device_router (
         .request_read_data_valid(kbd_read_data_valid),
         .keyboard_byte_valid(keyboard_byte_valid),
         .keyboard_byte(keyboard_byte),
+        .keyboard_byte_ready(keyboard_byte_ready),
+        .keyboard_translate_set1(keyboard_translate_set1),
         .keyboard_output_valid(keyboard_output_valid),
         .keyboard_output_byte(keyboard_output_byte), .irq1(irq1),
         .a20_enable(a20_enable), .cpu_reset_request(cpu_reset_request),
@@ -215,6 +229,7 @@ module spk286_at_device_router (
     spk286_at_storage_video u_storage_video (
         .clk(clk), .reset(reset),
         .clk_video(clk_video), .splashscreen(splashscreen),
+        .use_mmc(use_mmc),
         .request_valid(device_storage_candidate),
         .request_command_valid(request_command_valid),
         .request_write(request_write), .request_io(request_io),
@@ -240,6 +255,7 @@ module spk286_at_device_router (
         .floppy_write_protect(floppy_write_protect),
         .floppy_present(floppy_present), .floppy_request(floppy_request),
         .ata_irq14(irq14), .floppy_irq6(irq6),
+        .ide_request(storage_ide_request),
         .ata_selected(ata_selected), .floppy_selected(floppy_selected),
         .video_io_selected(video_io_selected),
         .video_memory_selected(video_memory_selected),
@@ -288,6 +304,7 @@ module spk286_at_device_router (
         irq_request[6] = irq6;
         irq_request[8] = irq8;
         irq_request[14] = irq14;
+        ide_request = storage_ide_request;
     end
 
     assign debug_fault_sources = {storage_protocol_error, rtc_protocol_error,

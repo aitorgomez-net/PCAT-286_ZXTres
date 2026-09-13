@@ -10,9 +10,12 @@ sources=(
   rtl/common/simple_ram.v
   rtl/common/simple_fifo.v
   rtl/common/floppy.v
+  rtl/common/ide.v
+  sim/spk286_integration/dpram_model.sv
   rtl/spk286_integration/spk286_at_8042.sv
   rtl/spk286_integration/spk286_at_rtc_cmos.sv
   rtl/spk286_integration/spk286_at_fdc.sv
+  rtl/spk286_integration/spk286_at_xtide.sv
   rtl/spk286_integration/spk286_at_storage_video.sv
   rtl/spk286_integration/spk286_at_video_adapter.sv
   rtl/KFPC-XT/HDL/ega_vram_bram_frontend.sv

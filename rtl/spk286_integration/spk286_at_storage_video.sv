@@ -11,6 +11,7 @@ module spk286_at_storage_video (
     input  logic        reset,
     input  logic        clk_video,
     input  logic        splashscreen,
+    input  logic [1:0]  use_mmc,
 
     input  logic        request_valid,
     input  logic        request_command_valid,
@@ -44,6 +45,7 @@ module spk286_at_storage_video (
     output logic [1:0]  floppy_request,
 
     output logic        ata_irq14,
+    output logic [2:0]  ide_request,
     output logic        floppy_irq6,
     output logic        ata_selected,
     output logic        floppy_selected,
@@ -80,6 +82,8 @@ module spk286_at_storage_video (
     logic [7:0] request_byte;
     logic       lane_valid;
     logic       ata_data_word;
+    logic       xtide_selected;
+    logic       xtide_data_word;
     logic       device_selected;
 
     logic [7:0]  ata_status_q;
@@ -94,6 +98,7 @@ module spk286_at_storage_video (
     logic [7:0]  ata_data_index_q;
     logic       video_active_q;
     logic       floppy_active_q;
+    logic       xtide_active_q;
     logic       video_request_accept;
     logic       video_request_ready;
     logic [15:0] video_read_data;
@@ -109,6 +114,15 @@ module spk286_at_storage_video (
     logic       floppy_irq;
     logic [15:0] floppy_command_count_i;
     logic       floppy_protocol_error;
+    logic       xtide_request_accept;
+    logic       xtide_request_ready;
+    logic [15:0] xtide_read_data;
+    logic       xtide_read_data_valid;
+    logic [15:0] xtide_mgmt_readdata;
+    logic [2:0]  xtide_ide_request;
+    logic       xtide_irq14;
+    logic       xtide_protocol_error;
+    logic [15:0] floppy_mgmt_readdata;
     logic       protocol_error_q;
     integer i;
 
@@ -126,8 +140,17 @@ module spk286_at_storage_video (
                                 !request_io &&
                                 (request_address[23:0] >= 24'h0A0000) &&
                                 (request_address[23:0] <= 24'h0BFFFF);
+        // Match XT2IDE: 308h is the data high-byte latch, 309h is the only
+        // hole, and 30Ah-30Fh form the control block.
+        xtide_selected = request_valid && request_command_valid &&
+                         request_io &&
+                         (request_address[15:4] == 12'h030) &&
+                         ((!request_address[3]) ||
+                          (request_address[3:0] == 4'h8) ||
+                          (request_address[2:1] != 2'b00));
         device_selected = ata_selected || floppy_selected ||
-                          video_io_selected || video_memory_selected;
+                          video_io_selected || video_memory_selected ||
+                          xtide_selected;
 
         lane_valid = ((request_address[0] == 1'b0) &&
                       (request_byte_enable == 2'b01)) ||
@@ -136,6 +159,9 @@ module spk286_at_storage_video (
         ata_data_word = ata_selected &&
                         (request_address[15:0] == 16'h01F0) &&
                         (request_byte_enable == 2'b11);
+        xtide_data_word = xtide_selected &&
+                          (request_address[15:0] == 16'h0300) &&
+                          (request_byte_enable == 2'b11);
         request_byte = request_byte_enable[1] ?
                        request_data_out[15:8] : request_data_out[7:0];
 
@@ -168,25 +194,33 @@ module spk286_at_storage_video (
     assign request_accept = (video_io_selected || video_memory_selected) ?
                             video_request_accept :
                             (floppy_selected ? floppy_request_accept :
-                             ((io_state_q == IO_IDLE) && ata_selected &&
-                              (lane_valid || ata_data_word)));
+                             (xtide_selected ? xtide_request_accept :
+                              ((io_state_q == IO_IDLE) && ata_selected &&
+                               (lane_valid || ata_data_word))));
     assign request_ready = video_active_q ? video_request_ready :
                            (floppy_active_q ? floppy_request_ready :
-                            (io_state_q == IO_DONE));
+                            (xtide_active_q ? xtide_request_ready :
+                             (io_state_q == IO_DONE)));
     assign request_read_data_valid = video_active_q ? video_read_data_valid :
                                      (floppy_active_q ? floppy_read_data_valid :
-                                      (request_ready && io_read_data_valid_q));
+                                      (xtide_active_q ? xtide_read_data_valid :
+                                       (request_ready && io_read_data_valid_q)));
     assign request_read_data = video_active_q ? video_read_data :
                                (floppy_active_q ? floppy_read_data :
-                                io_read_data_q);
+                                (xtide_active_q ? xtide_read_data :
+                                 io_read_data_q));
     assign dma_request = floppy_dma_request;
     assign dma_transfer_accept = floppy_dma_transfer_accept;
     assign dma_transfer_ready = floppy_dma_transfer_ready;
     assign dma_transfer_data_out = floppy_dma_transfer_data_out;
-    assign ata_irq14 = ata_irq14_q;
+    assign ata_irq14 = ata_irq14_q | xtide_irq14;
+    assign ide_request = xtide_ide_request;
     assign floppy_irq6 = floppy_irq;
     assign floppy_command_count = floppy_command_count_i;
-    assign protocol_error = protocol_error_q || floppy_protocol_error;
+    assign mgmt_readdata = (mgmt_address[15:8] == 8'hF0) ?
+                           xtide_mgmt_readdata : floppy_mgmt_readdata;
+    assign protocol_error = protocol_error_q || floppy_protocol_error ||
+                            xtide_protocol_error;
 
     logic ata_irq14_q;
 
@@ -211,6 +245,7 @@ module spk286_at_storage_video (
             protocol_error_q <= 1'b0;
             video_active_q <= 1'b0;
             floppy_active_q <= 1'b0;
+            xtide_active_q <= 1'b0;
         end else begin
             if (io_state_q == IO_DONE)
                 io_state_q <= IO_IDLE;
@@ -219,12 +254,17 @@ module spk286_at_storage_video (
                 video_active_q <= 1'b0;
             if (floppy_active_q && floppy_request_ready)
                 floppy_active_q <= 1'b0;
+            if (xtide_active_q && xtide_request_ready)
+                xtide_active_q <= 1'b0;
 
             if (request_accept && (video_io_selected || video_memory_selected)) begin
                 video_active_q <= 1'b1;
                 side_effect_count <= side_effect_count + 16'h0001;
             end else if (floppy_request_accept) begin
                 floppy_active_q <= 1'b1;
+                side_effect_count <= side_effect_count + 16'h0001;
+            end else if (xtide_request_accept) begin
+                xtide_active_q <= 1'b1;
                 side_effect_count <= side_effect_count + 16'h0001;
             end else if (request_accept) begin
                 io_state_q <= IO_DONE;
@@ -261,7 +301,8 @@ module spk286_at_storage_video (
                 end
             end
 
-            if (device_selected && !(lane_valid || ata_data_word))
+            if (device_selected && !(lane_valid || ata_data_word ||
+                                     xtide_data_word))
                 protocol_error_q <= 1'b1;
         end
     end
@@ -294,13 +335,38 @@ module spk286_at_storage_video (
         .mgmt_writedata         (mgmt_writedata),
         .mgmt_write             (mgmt_write),
         .mgmt_read              (mgmt_read),
-        .mgmt_readdata          (mgmt_readdata),
+        .mgmt_readdata          (floppy_mgmt_readdata),
         .floppy_write_protect   (floppy_write_protect),
         .floppy_present         (floppy_present),
         .floppy_request         (floppy_request),
         .side_effect_count      (),
         .command_count          (floppy_command_count_i),
         .protocol_error         (floppy_protocol_error)
+    );
+
+    spk286_at_xtide u_xtide (
+        .clk                    (clk),
+        .reset                  (reset),
+        .use_mmc                (use_mmc),
+        .request_valid          (request_valid),
+        .request_command_valid  (request_command_valid),
+        .request_write          (request_write),
+        .request_io             (request_io),
+        .request_address        (request_address),
+        .request_byte_enable    (request_byte_enable),
+        .request_data_out       (request_data_out),
+        .request_accept         (xtide_request_accept),
+        .request_ready          (xtide_request_ready),
+        .request_read_data      (xtide_read_data),
+        .request_read_data_valid(xtide_read_data_valid),
+        .mgmt_address           (mgmt_address),
+        .mgmt_writedata         (mgmt_writedata),
+        .mgmt_write             (mgmt_write),
+        .mgmt_read              (mgmt_read),
+        .mgmt_readdata          (xtide_mgmt_readdata),
+        .ide_request            (xtide_ide_request),
+        .irq14                  (xtide_irq14),
+        .protocol_error         (xtide_protocol_error)
     );
 
     spk286_at_video_adapter u_video (

@@ -28,10 +28,7 @@ module spk286_biu (
     output logic [23:0] address,
     output logic [15:0] data_out,
     output logic data_oe, bus_valid, bus_write, bus_bhe_n,
-    output logic [3:0] bus_status,
-    // Passive ownership diagnostics. These bits never feed the BIU; they
-    // expose the internal reason a pending HOLD may still await a boundary.
-    output logic [7:0] debug_detail
+    output logic [3:0] bus_status
 );
     logic data_active_q, write_q, second_q, canceled_q, byte_q, io_q;
     logic [23:0] address_q;
@@ -59,11 +56,6 @@ module spk286_biu (
     assign code_ready = bus_valid && !select_data && !select_ack && ready;
     assign data_complete = bus_valid && select_data && ready;
     assign bus_lock = !reset && (lock_request || lock_chain_q || (bus_valid && select_ack));
-    // [7] data active, [6] INTA active, [5] retained owner, [4] LOCK chain,
-    // [3] data response, [2] INTA response, [1] physical bus valid, [0] READY.
-    assign debug_detail = {data_active_q, ack_active_q, owner_valid_q,
-                           lock_chain_q, data_response_valid,
-                           ack_response_valid, bus_valid, ready};
 
     always_ff @(posedge clk) begin
         if (reset) hlda <= 1'b0;

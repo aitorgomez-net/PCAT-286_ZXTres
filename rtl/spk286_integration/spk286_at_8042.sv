@@ -1,8 +1,8 @@
 // Functional AT 8042 keyboard-controller boundary.
 //
-// The physical PS/2 receiver is intentionally supplied through
-// keyboard_byte_valid/keyboard_byte.  This keeps the CPU-visible controller
-// contract independent of the existing XT-only KFPS2KB/PPI path.
+// CPU-visible keyboard bytes are supplied through a ready/valid handshake.
+// The HPS event adapter uses keyboard_translate_set1 to format them according
+// to command-byte bit 6. Controller replies bypass that conversion.
 `timescale 1ns/1ps
 
 module spk286_at_8042 (
@@ -23,6 +23,8 @@ module spk286_at_8042 (
 
     input  logic        keyboard_byte_valid,
     input  logic [7:0]  keyboard_byte,
+    output logic        keyboard_byte_ready,
+    output logic        keyboard_translate_set1,
     output logic        keyboard_output_valid,
     output logic [7:0]  keyboard_output_byte,
     output logic        irq1,
@@ -51,7 +53,6 @@ module spk286_at_8042 (
     logic [7:0] current_read_data;
     logic       port_selected;
     logic       lane_valid;
-    logic       controller_reply_write;
 
     always_comb begin
         port_selected = request_valid && request_command_valid && request_io &&
@@ -63,14 +64,6 @@ module spk286_at_8042 (
                       (request_byte_enable == 2'b10));
         request_byte = request_byte_enable[1] ?
                        request_data_out[15:8] : request_data_out[7:0];
-        controller_reply_write = request_accept && request_write &&
-                                 (request_address[15:0] == 16'h0064) &&
-                                 ((request_byte == 8'h20) ||
-                                  (request_byte == 8'hAA) ||
-                                  (request_byte == 8'hAB) ||
-                                  (request_byte == 8'hC0) ||
-                                  (request_byte == 8'hD0) ||
-                                  (request_byte == 8'hE0));
     end
 
     assign request_accept = (io_state_q == IO_IDLE) && port_selected &&
@@ -82,6 +75,13 @@ module spk286_at_8042 (
                                {8'h00, io_read_data_q};
     assign keyboard_output_valid = output_buffer_valid_q;
     assign keyboard_output_byte = output_buffer_q;
+    assign keyboard_translate_set1 = command_byte_q[6];
+    // Hold queued keyboard bytes while OBF is full or the interface is
+    // inhibited. Host writes have priority, including changes to the command
+    // byte and commands that generate their own output-buffer reply.
+    assign keyboard_byte_ready = !reset && keyboard_enabled_q &&
+                                 !output_buffer_valid_q &&
+                                 !(request_accept && request_write);
     assign irq1 = output_buffer_valid_q && command_byte_q[0];
     assign a20_enable = output_port_q[1];
     // A real 8042 asserts the CPU reset line either through command FE or by
@@ -203,8 +203,7 @@ module spk286_at_8042 (
             // A host byte is accepted only when the output buffer is free.
             // Reading port 60h therefore remains the sole operation that
             // releases a pending keyboard IRQ.
-            if (keyboard_byte_valid && keyboard_enabled_q &&
-                !output_buffer_valid_q && !controller_reply_write) begin
+            if (keyboard_byte_valid && keyboard_byte_ready) begin
                 output_buffer_q <= keyboard_byte;
                 output_buffer_valid_q <= 1'b1;
             end

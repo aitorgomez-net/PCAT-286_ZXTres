@@ -21,6 +21,8 @@ module spk286_at_machine (
 
     input  logic         keyboard_byte_valid,
     input  logic [7:0]   keyboard_byte,
+    output logic         keyboard_byte_ready,
+    output logic         keyboard_translate_set1,
     input  logic         periodic_tick,
     input  logic         second_tick,
     input  logic         parity_event,
@@ -33,9 +35,11 @@ module spk286_at_machine (
     input  logic         mgmt_write,
     input  logic         mgmt_read,
     output logic [15:0]  mgmt_readdata,
+    input  logic [1:0]   use_mmc,
     input  logic [1:0]   floppy_write_protect,
     output logic [1:0]   floppy_present,
     output logic [1:0]   floppy_request,
+    output logic [2:0]   ide_request,
 
     // CPU memory/code-fetch target.  The request metadata is retained by the
     // bridge and remains stable from command through READY.
@@ -79,6 +83,8 @@ module spk286_at_machine (
     output logic         nmi,
     output logic [15:0]  irq_request,
     output logic         nmi_mask,
+    output logic         speaker_active,
+    output logic         speaker_level,
 
     output logic [3:0]   selected_device,
     output logic         unmapped_request,
@@ -272,7 +278,7 @@ module spk286_at_machine (
     logic sys_request_accept, sys_request_ready, sys_read_valid;
     logic [15:0] sys_read_data;
     logic [7:0] sys_port_b;
-    logic timer_2_gate, system_check_pending, sys_protocol_error;
+    logic timer_2_gate, speaker_enable, system_check_pending, sys_protocol_error;
     logic        pit_request_accept;
     logic        pit_request_ready;
     logic [15:0] pit_read_data;
@@ -342,6 +348,7 @@ module spk286_at_machine (
     logic [31:0] debug_trace1_q;
     logic [31:0] debug_trace2_q;
     logic [31:0] debug_trace3_q;
+    logic [7:0]  debug_last_post_q;
 
     logic        a5_io_candidate;
     logic        pic_io_candidate;
@@ -385,6 +392,10 @@ module spk286_at_machine (
             is_a5_io_port = (port == 16'h0060) || (port == 16'h0064) ||
                             (port == 16'h0070) || (port == 16'h0071) ||
                             ((port >= 16'h01F0) && (port <= 16'h01F7)) ||
+                            // Forward XT-IDE before the unmapped-I/O FFh sink.
+                            // 308h is the high-byte latch; 309h stays unmapped.
+                            ((port >= 16'h0300) && (port <= 16'h030F) &&
+                             (port != 16'h0309)) ||
                             ((port >= 16'h03B0) && (port <= 16'h03DF)) ||
                             ((port >= 16'h03F0) && (port <= 16'h03F7));
         end
@@ -551,6 +562,8 @@ module spk286_at_machine (
         .unmapped_request       (devices_unmapped_request),
         .keyboard_byte_valid    (keyboard_byte_valid),
         .keyboard_byte          (keyboard_byte),
+        .keyboard_byte_ready    (keyboard_byte_ready),
+        .keyboard_translate_set1(keyboard_translate_set1),
         .keyboard_output_valid  (keyboard_output_valid),
         .keyboard_output_byte   (keyboard_output_byte),
         .irq1                   (),
@@ -582,6 +595,8 @@ module spk286_at_machine (
         .floppy_write_protect   (floppy_write_protect),
         .floppy_present         (floppy_present),
         .floppy_request         (floppy_request),
+        .use_mmc                (use_mmc),
+        .ide_request            (ide_request),
         .irq6                   (irq6),
         .irq14                  (irq14),
         .ata_selected           (ata_selected),
@@ -651,7 +666,8 @@ module spk286_at_machine (
         .request_read_data(sys_read_data), .request_read_data_valid(sys_read_valid),
         .timer_1_out(pit_counter_out[1]), .timer_2_out(pit_counter_out[2]),
         .parity_event(parity_event), .channel_check_event(channel_check_event),
-        .timer_2_gate(timer_2_gate), .speaker_enable(), .check_pending(system_check_pending),
+        .timer_2_gate(timer_2_gate), .speaker_enable(speaker_enable),
+        .check_pending(system_check_pending),
         .port_b(sys_port_b), .protocol_error(sys_protocol_error)
     );
     spk286_at_pit u_pit (
@@ -725,6 +741,13 @@ module spk286_at_machine (
 
     assign cpu_reset_request = devices_cpu_reset_request;
 
+    // Minimal IBM AT PC speaker path.  The speaker only produces a waveform
+    // when both port 61h's speaker-enable and GATE2 are asserted; PIT channel
+    // 2 supplies the square-wave level.  Audio conversion remains at the
+    // profile boundary, so the machine still exposes the native logic level.
+    assign speaker_active = speaker_enable && timer_2_gate;
+    assign speaker_level  = speaker_active && pit_counter_out[2];
+
     spk286_at_refresh u_refresh (
         .clk                    (clk),
         .reset                  (reset),
@@ -769,7 +792,10 @@ module spk286_at_machine (
     assign debug_micro_active      = spk_debug_micro_active;
     assign debug_prefetch_count    = spk_debug_prefetch_count;
     assign debug_biu_detail        = spk_debug_biu_detail;
-    assign debug_last_post         = debug_event_vector;
+    // Port 80h is a write-only diagnostic port on a conventional AT.  Keep
+    // this observer separate from the CPU event vector: the latter is shown
+    // as EVT on the overlay and must not masquerade as a BIOS POST code.
+    assign debug_last_post         = debug_last_post_q;
     assign debug_cpu_cycle_count   = debug_cpu_cycle_count_q;
     assign debug_at_cycle_count    = debug_at_cycle_count_q;
     assign debug_trace0            = debug_trace0_q;
@@ -811,6 +837,7 @@ module spk286_at_machine (
             debug_trace1_q          <= 32'h0000_0000;
             debug_trace2_q          <= 32'h0000_0000;
             debug_trace3_q          <= 32'h0000_0000;
+            debug_last_post_q       <= 8'h00;
         end else begin
             if (at_completed) begin
                 debug_cpu_cycle_count_q <= debug_cpu_cycle_count_q + 16'd1;
@@ -820,6 +847,17 @@ module spk286_at_machine (
                 debug_trace0_q <= {at_address[19:0],
                                    at_data_out[7:0],
                                    at_cycle_class[2:0], at_write};
+
+                // Observe a completed byte write to the standard POST
+                // diagnostic port.  The normalized bridge presents the
+                // active byte on the selected lane, including the second
+                // beat of an aligned two-byte request.
+                if (at_io && at_write &&
+                    (at_address[15:0] == 16'h0080)) begin
+                    debug_last_post_q <= at_byte_enable[1] ?
+                                         at_data_out[15:8] :
+                                         at_data_out[7:0];
+                end
             end
             if (at_accepted)
                 debug_at_cycle_count_q <= debug_at_cycle_count_q + 16'd1;
