@@ -474,6 +474,23 @@ module spk286_at_machine (
     assign cpu_ready = cpu_ready_i;
     assign cpu_data_in = cpu_data_in_i;
 
+    // Determine target width before the bridge snapshots A0/BHE. Reuse the
+    // authoritative map, including the high reset-ROM alias. The ordinary
+    // decode below continues to own routing and write protection.
+    wire cpu_memory_word_capable;
+    spk286_at_memory_decode u_cpu_width_decode (
+        .request_valid          (cpu_bus_valid),
+        .request_write          (cpu_bus_write),
+        .cycle_class            (cpu_bus_status),
+        .address                (cpu_address),
+        .word_capable           (cpu_memory_word_capable),
+        .memory_cycle           (),
+        .conventional_ram_select(), .video_aperture_select(),
+        .option_region_select   (), .system_bios_select(),
+        .extended_ram_select    (), .write_allowed(),
+        .rom_write_blocked      (), .unmapped_request()
+    );
+
     spk286_at_bus_bridge u_bridge (
         .clk                    (clk),
         .reset                  (cpu_core_reset),
@@ -485,6 +502,7 @@ module spk286_at_machine (
         .cpu_bus_bhe_n          (cpu_bus_bhe_n),
         .cpu_bus_status         (cpu_bus_status),
         .cpu_bus_lock           (cpu_bus_lock),
+        .cpu_memory_word_capable (cpu_memory_word_capable),
         .cpu_ready              (cpu_ready_i),
         .cpu_data_in            (cpu_data_in_i),
         .at_valid               (at_valid),
@@ -524,6 +542,7 @@ module spk286_at_machine (
         .option_region_select   (option_region_select),
         .system_bios_select     (system_bios_select),
         .extended_ram_select    (extended_ram_select),
+        .word_capable           (),
         .write_allowed          (memory_write_allowed),
         .rom_write_blocked      (rom_write_blocked),
         .unmapped_request       (memory_unmapped_request)

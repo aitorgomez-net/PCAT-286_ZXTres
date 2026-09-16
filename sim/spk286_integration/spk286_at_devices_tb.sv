@@ -5,6 +5,7 @@ module spk286_at_devices_tb;
     logic reset = 1'b1;
     always #5 clk = ~clk;
     logic clk_video = 1'b0;
+    logic splashscreen = 1'b0;
     always #17.45 clk_video = ~clk_video;
 
     // CPU-facing normalized request.
@@ -113,7 +114,7 @@ module spk286_at_devices_tb;
 
     spk286_at_device_router devices (
         .clk(clk), .reset(reset),
-        .clk_video(clk_video), .splashscreen(1'b0),
+        .clk_video(clk_video), .splashscreen(splashscreen),
         .request_valid(request_valid),
         .request_command_valid(request_command_valid),
         .request_write(request_write), .request_io(request_io),
@@ -453,6 +454,45 @@ module spk286_at_devices_tb;
 
         repeat (3) @(negedge clk);
         reset = 1'b0;
+
+        // P05: request changes between raster edges must never directly
+        // change the EGA selector. Exercise both transitions and a reset
+        // pulse shorter than one video period, then run the device suite.
+        repeat (4) @(negedge clk_video);
+        splashscreen = 1'b1;
+        #1;
+        check(!devices.u_storage_video.u_video.u_ega.splashscreen,
+              "splash changed asynchronously at EGA");
+        @(posedge clk_video); #1;
+        check(!devices.u_storage_video.u_video.u_ega.splashscreen,
+              "splash skipped the second synchronizer stage");
+        @(posedge clk_video); #1;
+        check(devices.u_storage_video.u_video.u_ega.splashscreen,
+              "splash did not reach EGA after synchronization");
+        @(negedge clk_video);
+        splashscreen = 1'b0;
+        #1;
+        check(devices.u_storage_video.u_video.u_ega.splashscreen,
+              "splash deassertion bypassed synchronization");
+        repeat (2) @(posedge clk_video);
+        #1;
+        check(!devices.u_storage_video.u_video.u_ega.splashscreen,
+              "splash failed to deassert");
+        @(negedge clk_video);
+        #2 reset = 1'b1;
+        #1;
+        check(devices.u_storage_video.u_video.video_reset,
+              "video reset did not assert between video edges");
+        #2 reset = 1'b0;
+        #1;
+        check(devices.u_storage_video.u_video.video_reset,
+              "video reset released without a video edge");
+        @(posedge clk_video); #1;
+        check(devices.u_storage_video.u_video.video_reset,
+              "video reset released before two local edges");
+        @(posedge clk_video); #1;
+        check(!devices.u_storage_video.u_video.video_reset,
+              "video reset did not release after two local edges");
 
         // IBM 5170 8042 command protocol exercised by the Landmark U126 and
         // keyboard-scan-lines diagnostics.

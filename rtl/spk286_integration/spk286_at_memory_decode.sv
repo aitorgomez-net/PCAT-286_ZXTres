@@ -18,6 +18,7 @@ module spk286_at_memory_decode (
     output logic         option_region_select,
     output logic         system_bios_select,
     output logic         extended_ram_select,
+    output logic         word_capable,
     output logic         write_allowed,
     output logic         rom_write_blocked,
     output logic         unmapped_request
@@ -63,6 +64,10 @@ module spk286_at_memory_decode (
         memory_cycle = conventional_ram_select || video_aperture_select ||
                        option_region_select || system_bios_select ||
                        extended_ram_select;
+        // These regions share the x16 SDRAM backend. EGA and unmapped
+        // targets retain byte-lane transactions at the CPU bridge.
+        word_capable = conventional_ram_select || option_region_select ||
+                       system_bios_select || extended_ram_select;
         rom_write_blocked = valid_memory_class && request_write &&
                             (option_region_select || system_bios_select);
         write_allowed = valid_memory_class && request_write &&

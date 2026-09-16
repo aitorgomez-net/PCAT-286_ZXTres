@@ -166,8 +166,13 @@ module spk286_tss_service (
     always_comb begin
         load_offset = 16'(spk286_tss_pkg::TSS_IP + {11'd0, index_q, 1'b0});
         loaded_ip = load_words_q[0];
+        // Supersoft's two-task loop relies on the incoming TSS image's NT
+        // surviving a JMP task transfer so the later IRET performs a nested
+        // task return.  CALL/INT still force NT as required for nesting;
+        // JMP now preserves the target image instead of unconditionally
+        // clearing it.
         loaded_flags = nested_call_q ? (load_words_q[1] | 16'h4000) :
-                       jump_task_q ? (load_words_q[1] & ~16'h4000) : load_words_q[1];
+                       load_words_q[1];
         loaded_gpr = {load_words_q[9], load_words_q[8], load_words_q[7], load_words_q[6],
                       load_words_q[5], load_words_q[4], load_words_q[3], load_words_q[2]};
         loaded_segments = {load_words_q[13], load_words_q[12], load_words_q[11], load_words_q[10]};

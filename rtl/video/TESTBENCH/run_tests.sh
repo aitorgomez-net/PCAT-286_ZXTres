@@ -40,15 +40,11 @@ done
 cd "$(dirname "$0")/.." || exit 1
 mkdir -p "$BUILD_DIR"
 
-# ega_io_stretch and the BRAM frontend live in the chipset tree; three benches
-# need them. video_monochrome_converter is left out on purpose: it assigns whole
-# arrays, which Icarus 12 cannot elaborate, and ega_top does not need it.
+# The BRAM frontend lives in the chipset tree; the EGA VRAM benches need it.
+# video_monochrome_converter is left out on purpose: it assigns whole arrays,
+# which Icarus 12 cannot elaborate, and ega_top does not need it.
 SOURCES=(UM6845R.v ega_*.v vga_*.v video_scandoubler.v video_source_switch.v
-         ../KFPC-XT/HDL/ega_io_stretch.sv ../KFPC-XT/HDL/ega_vram_bram_frontend.sv)
-
-# The credits overlay is not part of the EGA path and stubs its own RAMs, so it
-# gets its own source list rather than being skipped.
-CREDITS_SOURCES=(../common/jtframe_credits.v)
+         ../KFPC-XT/HDL/ega_vram_bram_frontend.sv)
 
 pass=0; fail=0; skip=0
 
@@ -56,10 +52,7 @@ for tb in TESTBENCH/*.v TESTBENCH/*.sv; do
     name=$(basename "$tb"); stem=${name%.*}
     if [ -n "$FILTER" ] && [[ "$stem" != *"$FILTER"* ]]; then continue; fi
 
-    case "$name" in
-        jtframe*) SRC=("${CREDITS_SOURCES[@]}") ;;
-        *)        SRC=("${SOURCES[@]}") ;;
-    esac
+    SRC=("${SOURCES[@]}")
 
     log=$BUILD_DIR/$stem.log
 

@@ -10,6 +10,14 @@ derive_pll_clocks
 derive_clock_uncertainty
 
 # Decouple different clock groups (to simplify routing)
+# In the opt-in AT CDC experiment, remove clock-group exclusions between
+# the participating control domains. Keep all unrelated legacy exclusions;
+# do not introduce any new exclusions involving the AT video PLL outputs.
+set at_cdc_enabled 0
+foreach_in_collection a [get_all_global_assignments -name VERILOG_MACRO] {
+   if {[lindex $a 2] eq "SPK286_AT_CDC"} { set at_cdc_enabled 1 }
+}
+if {!$at_cdc_enabled} {
 set_clock_groups -exclusive \
    -group [get_clocks { *|pll|pll_inst|altera_pll_i|*[*].*|divclk}] \
    -group [get_clocks { pll_hdmi|pll_hdmi_inst|altera_pll_i|*[0].*|divclk}] \
@@ -20,6 +28,19 @@ set_clock_groups -exclusive \
    -group [get_clocks { FPGA_CLK1_50 }] \
    -group [get_clocks { FPGA_CLK2_50 }] \
    -group [get_clocks { FPGA_CLK3_50 }]
+} else {
+set at_groups [list set_clock_groups -exclusive]
+foreach names {
+   {*|pll|pll_inst|altera_pll_i|*[*].*|divclk}
+   {pll_audio|pll_audio_inst|altera_pll_i|*[0].*|divclk}
+   {spi_sck} {hdmi_sck} {FPGA_CLK3_50}
+   {FPGA_CLK1_50 FPGA_CLK2_50 *|h2f_user0_clk pll_hdmi|pll_hdmi_inst|altera_pll_i|*[0].*|divclk}
+} {
+   set clocks [get_clocks -nowarn $names]
+   if {[get_collection_size $clocks]} { lappend at_groups -group $clocks }
+}
+eval $at_groups
+}
 
 set_false_path -from [get_ports {KEY*}]
 set_false_path -from [get_ports {BTN_*}]
@@ -37,6 +58,7 @@ set_false_path -to   {wcalc[*] hcalc[*]}
 set_false_path -to   {hdmi_width[*] hdmi_height[*]}
 set_false_path -to   {deb_* btn_en btn_up}
 
+if {!$at_cdc_enabled} {
 set_multicycle_path -to {*_osd|osd_vcnt*} -setup 2
 set_multicycle_path -to {*_osd|osd_vcnt*} -hold 1
 
@@ -50,6 +72,7 @@ set_false_path -from {*_osd|h_osd_start*}
 set_false_path -from {*_osd|rot*}
 set_false_path -from {*_osd|dsp_width*}
 set_false_path -to   {*_osd|half}
+}
 
 set_false_path -to   {WIDTH[*] HFP[*] HS[*] HBP[*] HEIGHT[*] VFP[*] VS[*] VBP[*]}
 set_false_path -from {WIDTH[*] HFP[*] HS[*] HBP[*] HEIGHT[*] VFP[*] VS[*] VBP[*]}
@@ -62,16 +85,20 @@ set_false_path -from {arx* ary*}
 set_false_path -from {vs_line*}
 set_false_path -from {ColorBurst_Range* PhaseInc* pal_en cvbs yc_en}
 
+if {!$at_cdc_enabled} {
 set_false_path -from {ascal|o_ihsize*}
 set_false_path -from {ascal|o_ivsize*}
 set_false_path -from {ascal|o_format*}
 set_false_path -from {ascal|o_hdown}
 set_false_path -from {ascal|o_vdown}
+}
 set_false_path -from {ascal|o_hmin* ascal|o_hmax* ascal|o_vmin* ascal|o_vmax* ascal|o_vrrmax* ascal|o_vrr}
 set_false_path -from {ascal|o_hdisp* ascal|o_vdisp*}
 set_false_path -from {ascal|o_htotal* ascal|o_vtotal*}
 set_false_path -from {ascal|o_hsstart* ascal|o_vsstart* ascal|o_hsend* ascal|o_vsend*}
+if {!$at_cdc_enabled} {
 set_false_path -from {ascal|o_hsize* ascal|o_vsize*}
+}
 
 set_false_path -from {mcp23009|flg_*}
 set_false_path -to   {sysmem|fpga_interfaces|clocks_resets|f2h*}

@@ -15,7 +15,7 @@
 //  is several clocks behind the OUT that produced it.
 //
 //  The selector is captured from the live ISA cycle, not from the posted write
-//  in ega_io_stretch. ROM 6277356 issues OUT 3C2h,01h and then, two
+//  in the EGA I/O path. ROM 6277356 issues OUT 3C2h,01h and then, two
 //  instructions later, OUT 3C2h,0Dh followed almost immediately by IN 3C2h.
 //  The second OUT is still queued behind the first inside the stretcher when
 //  the ROM asks for the answer, so a selector taken from the posted side is

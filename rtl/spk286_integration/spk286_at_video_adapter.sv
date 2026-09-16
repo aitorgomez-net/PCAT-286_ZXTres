@@ -48,17 +48,35 @@ module spk286_at_video_adapter (
     // Release video-side state only on a video-clock edge. The machine reset
     // is generated in the 50 MHz domain and is also asserted while the
     // private PLL acquires lock.
+    (* altera_attribute = "-name SYNCHRONIZER_IDENTIFICATION FORCED_IF_ASYNCHRONOUS" *)
     logic video_reset_sync1_q;
+    (* altera_attribute = "-name SYNCHRONIZER_IDENTIFICATION FORCED_IF_ASYNCHRONOUS" *)
     logic video_reset_sync2_q;
     wire  video_reset = video_reset_sync2_q;
 
-    always_ff @(posedge clk_video) begin
+    always_ff @(posedge clk_video or posedge reset) begin
         if (reset) begin
             video_reset_sync1_q <= 1'b1;
             video_reset_sync2_q <= 1'b1;
         end else begin
             video_reset_sync1_q <= 1'b0;
             video_reset_sync2_q <= video_reset_sync1_q;
+        end
+    end
+
+    // P05: the splash lifetime is generated at 50 MHz, but selects raster
+    // state in the video domain. Only a synchronized level may reach EGA.
+    (* altera_attribute = "-name SYNCHRONIZER_IDENTIFICATION FORCED_IF_ASYNCHRONOUS" *)
+    logic splash_video_sync1_q;
+    (* altera_attribute = "-name SYNCHRONIZER_IDENTIFICATION FORCED_IF_ASYNCHRONOUS" *)
+    logic splash_video_sync2_q;
+    always_ff @(posedge clk_video) begin
+        if (video_reset) begin
+            splash_video_sync1_q <= 1'b0;
+            splash_video_sync2_q <= 1'b0;
+        end else begin
+            splash_video_sync1_q <= splashscreen;
+            splash_video_sync2_q <= splash_video_sync1_q;
         end
     end
 
@@ -475,7 +493,7 @@ module spk286_at_video_adapter (
         .ega_active_dots_out        (video_active_dots),
         .ega_active_lines_out       (video_active_lines),
         .ega_vmode_toggle_out       (video_vmode_toggle),
-        .splashscreen               (splashscreen),
+        .splashscreen               (splash_video_sync2_q),
         .thin_font                  (1'b0),
         .scandouble_en              (1'b0),
         .ega_enabled                (1'b1),

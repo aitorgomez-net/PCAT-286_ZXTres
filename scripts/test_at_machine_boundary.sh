@@ -10,15 +10,23 @@ cd "$root"
 sources=(
   vendor/spk286/microcode/generated/spk286_microcode_pkg.sv
   vendor/spk286/microcode/generated/spk286_microcode_rom.sv
+  vendor/spk286/rtl/spk286_protected_pkg.sv
+  vendor/spk286/rtl/spk286_tss_pkg.sv
 )
 for source in vendor/spk286/rtl/*.sv; do
-  [[ "$source" == "vendor/spk286/rtl/spk286_operand.sv" ]] || sources+=("$source")
+  case "$source" in
+    vendor/spk286/rtl/spk286_protected_pkg.sv|\
+    vendor/spk286/rtl/spk286_tss_pkg.sv)
+      ;;
+    *) sources+=("$source") ;;
+  esac
 done
 sources+=(
   rtl/common/simple_ram.v
   rtl/common/simple_fifo.v
   rtl/common/floppy.v
-  rtl/spk286_integration/spk286_operand_timing.sv
+  rtl/common/ide.v
+  sim/spk286_integration/dpram_model.sv
   rtl/spk286_integration/spk286_machine_cpu.sv
   rtl/spk286_integration/spk286_at_bus_bridge.sv
   rtl/spk286_integration/spk286_at_memory_decode.sv
@@ -35,6 +43,7 @@ sources+=(
   rtl/spk286_integration/spk286_at_8042.sv
   rtl/spk286_integration/spk286_at_rtc_cmos.sv
   rtl/spk286_integration/spk286_at_fdc.sv
+  rtl/spk286_integration/spk286_at_xtide.sv
   rtl/spk286_integration/spk286_at_storage_video.sv
   rtl/spk286_integration/spk286_at_video_adapter.sv
   rtl/KFPC-XT/HDL/ega_vram_bram_frontend.sv
@@ -52,12 +61,14 @@ for source in rtl/KFPC-XT/HDL/KF8259/HDL/*.sv; do
   pic_sources+=("$source")
 done
 
-iverilog -g2012 -Irtl/KFPC-XT/HDL/KF8253/HDL -t null -Irtl/KFPC-XT/HDL/KF8259/HDL \
+iverilog -g2012 -DSPK286_P05_PARALLEL_LIMIT_CHECK -DSPK286_AT_NO_DEBUG \
+  -Irtl/KFPC-XT/HDL/KF8253/HDL -t null -Irtl/KFPC-XT/HDL/KF8259/HDL \
   -s spk286_at_machine "${sources[@]}" "${pic_sources[@]}" \
   >"$build_dir/iverilog-build.log" 2>&1
 echo AT_MACHINE_ICARUS_ELAB_PASS
 
-verilator -Irtl/KFPC-XT/HDL/KF8253/HDL --lint-only --timing --top-module spk286_at_machine \
+verilator -DSPK286_P05_PARALLEL_LIMIT_CHECK -DSPK286_AT_NO_DEBUG \
+  -Irtl/KFPC-XT/HDL/KF8253/HDL --lint-only --timing --top-module spk286_at_machine \
   -Wno-fatal -Irtl/KFPC-XT/HDL/KF8259/HDL \
   "${sources[@]}" "${pic_sources[@]}" \
   >"$build_dir/verilator-production-lint.log" 2>&1

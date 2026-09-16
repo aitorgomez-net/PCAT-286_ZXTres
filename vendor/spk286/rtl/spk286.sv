@@ -8,6 +8,7 @@ module spk286 (
     input  logic         ready,
     input  logic [15:0]  data_in,
     input  logic         execute_enable,
+    input  logic [1:0]   timing_policy_request,
     input  logic         intr, nmi, hold_request,
     output logic         halted, shutdown, event_completed,
     output logic [7:0]   debug_event_vector,
@@ -93,7 +94,39 @@ module spk286 (
     output logic         debug_micro_active,
     output logic [3:0]   debug_prefetch_count,
     output logic [3:0]   debug_bus_state,
-    output logic [3:0]   debug_bus_transaction
+    output logic [3:0]   debug_bus_transaction,
+    output logic [63:0]  debug_timing_cycle_count,
+    output logic [63:0]  debug_timing_biu_busy_cycles,
+    output logic [63:0]  debug_timing_accepted_transfers,
+    output logic [63:0]  debug_timing_ready_wait_cycles,
+    output logic [63:0]  debug_timing_prefetch_requests,
+    output logic [63:0]  debug_timing_prefetch_responses,
+    output logic [63:0]  debug_timing_queue_consumes,
+    output logic [63:0]  debug_timing_queue_empty_cycles,
+    output logic [63:0]  debug_timing_redirects,
+    output logic [63:0]  debug_timing_cancels,
+    output logic [63:0]  debug_timing_operand_wait_cycles,
+    output logic [63:0]  debug_timing_event_requests,
+    output logic [63:0]  debug_timing_event_completes,
+    output logic [63:0]  debug_timing_compatibility_delay_cycles,
+    output logic [3:0]   debug_timing_queue_count,
+    output logic [7:0]   debug_timing_schema_version,
+    output logic [1:0]   debug_timing_policy,
+    output logic         debug_timing_policy_error,
+    output logic         debug_timing_policy_locked,
+    output logic         debug_timing_trace_valid,
+    output logic [63:0]  debug_timing_trace_cycle,
+    output logic [23:0]  debug_timing_trace_address,
+    output logic [3:0]   debug_timing_trace_status,
+    output logic [15:0]  debug_timing_trace_data,
+    output logic [1:0]   debug_timing_trace_lane_mask,
+    output logic         debug_timing_trace_write,
+    output logic [1:0]   debug_timing_trace_owner,
+    output logic         debug_timing_trace_lock,
+    output logic         debug_timing_trace_hold,
+    output logic         debug_timing_trace_hlda,
+    output logic         debug_timing_trace_ready,
+    output logic [2:0]   debug_timing_trace_phase
 );
     logic commit_allowed;
     logic restart, stream_restart, internal_redirect;
@@ -109,6 +142,7 @@ module spk286 (
     logic fetch_response_valid;
     logic [15:0] fetch_response_data, fetch_response_ip;
     logic [1:0] fetch_response_count;
+    logic [1:0] timing_policy_active;
 
     logic queue_flush, queue_fill_ready;
     logic queue_consume_valid, queue_consume_ready;
@@ -165,6 +199,7 @@ module spk286 (
     logic [23:0] operand_memory_address;
     logic [15:0] operand_memory_write_data;
     logic operand_memory_response_ready;
+    logic operand_service_wait;
     logic task_memory_request, task_memory_write, task_memory_byte;
     logic [23:0] task_memory_address;
     logic [15:0] task_memory_write_data;
@@ -214,6 +249,7 @@ module spk286 (
     logic semantic_cancel;
     logic [3:0] biu_status;
     logic [23:0] biu_address;
+    logic timing_prefetch_response_accept, timing_queue_consume;
     logic [15:0] protected_msw, protected_gdtr_limit, protected_idtr_limit;
     logic [23:0] protected_gdtr_base, protected_idtr_base;
     logic protected_msw_load_en, protected_gdtr_load_en, protected_idtr_load_en;
@@ -370,6 +406,30 @@ module spk286 (
     assign protected_segment_is_readable = selected_segment_access[1];
     assign protected_segment_is_writable = !protected_segment_is_code && selected_segment_access[1];
     assign protected_segment_is_expand_down = !protected_segment_is_code && selected_segment_access[2];
+`ifdef SPK286_P05_PARALLEL_LIMIT_CHECK
+    // P05: compare the starting offset in parallel with the late width bit.
+    // offset + !byte > limit iff offset > limit || (!byte && offset == limit).
+    assign protected_access_fault = operand_request && operand_select_rm && !operand_register_direct &&
+                                   !protected_descriptor_access && !protected_tss_access && !protected_event_access &&
+                                   !io_transfer && !vector_request &&
+                                    (protected_call_stack_access ?
+                                    (service_segment != 2'd2 ||
+                                     (protected_call_stack_expand_down ?
+                                      ({1'b0, service_offset} <= {1'b0, protected_call_stack_limit} ||
+                                       (!operand_byte && service_offset == 16'hFFFF)) :
+                                      (service_offset > protected_call_stack_limit ||
+                                       (!operand_byte && service_offset == protected_call_stack_limit)))) :
+                                    (protected_segment_is_loaded &&
+                                     (!protected_segment_is_valid || !protected_segment_is_present ||
+                                      (protected_segment_is_code ? (!protected_segment_is_readable || operand_write) :
+                                       (stack_request ? (!protected_segment_is_writable || service_segment != 2'd2) :
+                                        (operand_write && !protected_segment_is_writable))) ||
+                                      (protected_segment_is_expand_down ?
+                                       ({1'b0, service_offset} <= {1'b0, selected_segment_limit} ||
+                                        (!operand_byte && service_offset == 16'hFFFF)) :
+                                       (service_offset > selected_segment_limit ||
+                                        (!operand_byte && service_offset == selected_segment_limit))))));
+`else
     assign protected_access_fault = operand_request && operand_select_rm && !operand_register_direct &&
                                    !protected_descriptor_access && !protected_tss_access && !protected_event_access &&
                                    !io_transfer && !vector_request &&
@@ -387,7 +447,8 @@ module spk286 (
                                       (protected_segment_is_expand_down ?
                                        ({1'b0, service_offset} <= {1'b0, selected_segment_limit} ||
                                         ({1'b0, service_offset} + (operand_byte ? 17'd0 : 17'd1) > 17'h0FFFF)) :
-                                       ({1'b0, service_offset} + (operand_byte ? 17'd0 : 17'd1) > {1'b0, selected_segment_limit})))));
+                                        ({1'b0, service_offset} + (operand_byte ? 17'd0 : 17'd1) > {1'b0, selected_segment_limit})))));
+`endif
     assign protected_access_ss_fault = protected_access_fault && service_segment == 2'd2;
     assign protected_fetch_fault = protected_msw[0] && protected_segment_protected[2'd1] &&
                                    (!protected_segment_valid[2'd1] || !protected_segment_present[2'd1] ||
@@ -560,6 +621,60 @@ module spk286 (
         .data_response_valid(memory_response_valid), .data_response_ready(memory_response_ready),
         .data_read_data(memory_read_data), .address(biu_address), .data_out(data_out), .data_oe(data_oe),
         .bus_valid(bus_valid), .bus_write(bus_write), .bus_bhe_n(bus_bhe_n), .bus_status(biu_status)
+    );
+
+    assign timing_prefetch_response_accept = fetch_response_valid && fetch_response_ready;
+    assign timing_queue_consume = queue_consume_valid && queue_consume_ready;
+
+    spk286_timing_policy timing_policy (
+        .clk(clk), .reset(reset), .requested_policy(timing_policy_request),
+        .active_policy(timing_policy_active), .selection_error(debug_timing_policy_error),
+        .selection_locked(debug_timing_policy_locked)
+    );
+
+    spk286_timing_trace timing_trace (
+        .clk(clk), .reset(reset), .ready(ready),
+        .bus_valid(bus_valid), .bus_write(bus_write), .bus_bhe_n(bus_bhe_n),
+        .bus_status(biu_status), .address(biu_address), .data_in(data_in),
+        .data_out(data_out), .bus_lock(bus_lock), .hold_request(hold_request),
+        .hlda(hlda), .prefetch_request_valid(fetch_bus_valid),
+        .prefetch_response_accept(timing_prefetch_response_accept),
+        .queue_count(queue_count), .queue_consume(timing_queue_consume),
+        .execution_enable(execute_enable), .stream_restart(stream_restart),
+        .cancel_event(semantic_cancel),
+        .operand_wait(operand_service_wait),
+        .event_request(event_request), .event_complete(event_completed),
+        .timing_policy(timing_policy_active),
+        .cycle_count(debug_timing_cycle_count),
+        .biu_busy_cycles(debug_timing_biu_busy_cycles),
+        .accepted_transfers(debug_timing_accepted_transfers),
+        .ready_wait_cycles(debug_timing_ready_wait_cycles),
+        .prefetch_requests(debug_timing_prefetch_requests),
+        .prefetch_responses(debug_timing_prefetch_responses),
+        .queue_consume_count(debug_timing_queue_consumes),
+        .queue_empty_cycles(debug_timing_queue_empty_cycles),
+        .redirect_count(debug_timing_redirects),
+        .cancel_count(debug_timing_cancels),
+        .operand_wait_cycles(debug_timing_operand_wait_cycles),
+        .event_request_count(debug_timing_event_requests),
+        .event_complete_count(debug_timing_event_completes),
+        .compatibility_delay_cycles(debug_timing_compatibility_delay_cycles),
+        .trace_queue_count(debug_timing_queue_count),
+        .trace_schema_version(debug_timing_schema_version),
+        .trace_policy(debug_timing_policy),
+        .trace_valid(debug_timing_trace_valid),
+        .trace_cycle(debug_timing_trace_cycle),
+        .trace_address(debug_timing_trace_address),
+        .trace_status(debug_timing_trace_status),
+        .trace_data(debug_timing_trace_data),
+        .trace_lane_mask(debug_timing_trace_lane_mask),
+        .trace_write(debug_timing_trace_write),
+        .trace_owner(debug_timing_trace_owner),
+        .trace_lock(debug_timing_trace_lock),
+        .trace_hold(debug_timing_trace_hold),
+        .trace_hlda(debug_timing_trace_hlda),
+        .trace_ready(debug_timing_trace_ready),
+        .trace_phase(debug_timing_trace_phase)
     );
 
     spk286_decoder decoder (
@@ -775,6 +890,7 @@ module spk286 (
         .memory_request(operand_memory_request), .memory_request_ready(memory_request_ready),
         .memory_byte(operand_memory_byte), .memory_write(operand_memory_write), .memory_address(operand_memory_address), .memory_write_data(operand_memory_write_data),
         .memory_response_valid(memory_response_valid), .memory_response_ready(operand_memory_response_ready),
+        .timing_wait(operand_service_wait),
         .memory_read_data(memory_read_data)
     );
 

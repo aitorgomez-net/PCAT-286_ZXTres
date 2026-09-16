@@ -1285,7 +1285,13 @@ module spk286_micro_executor (
     assign flags_write_en = !reset && (task_commit_flags_write || arpl_commit || direct_flags || descriptor_verify_flags_write || descriptor_inspect_flags_write || commit_flags || restore_flags || set_if || clear_if_tf || clear_event_flags || iret_commit);
     assign task_flags_write_en = !reset && task_commit_flags_write;
     assign flags_write_data = task_commit_flags_write ? task_loaded_flags : arpl_commit ? (arpl_adjust ? 16'h0040 : 16'h0000) : direct_flags ? direct_flags_data : descriptor_verify_flags_write ? (descriptor_verify_success_live ? 16'h0040 : 16'h0000) : descriptor_inspect_flags_write ? (descriptor_inspect_success_live ? 16'h0040 : 16'h0000) : restore_flags ? tmp0_q : (iret_commit ? tmp2_q : (set_if ? {6'd0, if_value, 9'd0} : ((clear_if_tf || clear_event_flags) ? 16'd0 : flags_q)));
-    assign flags_write_mask = task_commit_flags_write ? 16'hFFFF : arpl_commit ? 16'h0040 : direct_flags ? direct_flags_mask : descriptor_verify_flags_write ? 16'h0040 : descriptor_inspect_flags_write ? 16'h0040 : restore_flags || iret_commit ? 16'h0FD5 : (set_if ? 16'h0200 : (clear_if_tf ? 16'h0300 : (clear_event_flags ? ((!protected_msw[0] || event_gate_class_q == spk286_protected_pkg::DESC_INT_GATE) ? 16'h0300 : 16'h0100) : flags_mask_q)));
+    // Real-mode POPF keeps NT and IOPL unchanged.  In protected mode POPF
+    // restores NT; IOPL is writable only at CPL0.  The register block still
+    // filters reserved bits, so this mask only expresses the instruction's
+    // mode/privilege policy before the architectural write.
+    assign flags_write_mask = task_commit_flags_write ? 16'hFFFF : arpl_commit ? 16'h0040 : direct_flags ? direct_flags_mask : descriptor_verify_flags_write ? 16'h0040 : descriptor_inspect_flags_write ? 16'h0040 : restore_flags ?
+                              (!protected_msw[0] ? 16'h0FD5 : (protected_cpl == 2'd0 ? 16'h7FD5 : 16'h4FD5)) :
+                              iret_commit ? 16'h0FD5 : (set_if ? 16'h0200 : (clear_if_tf ? 16'h0300 : (clear_event_flags ? ((!protected_msw[0] || event_gate_class_q == spk286_protected_pkg::DESC_INT_GATE) ? 16'h0300 : 16'h0100) : flags_mask_q)));
 
     always_ff @(posedge clk) begin
         if (reset || cancel || start) begin

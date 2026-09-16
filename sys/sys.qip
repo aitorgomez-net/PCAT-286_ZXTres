@@ -1,6 +1,7 @@
 set_global_assignment -name QIP_FILE           [join [list $::quartus(qip_path) pll_q [regexp -inline {[0-9]+} $quartus(version)] .qip] {}]
 set_global_assignment -name VERILOG_FILE       [file join $::quartus(qip_path) sys_top.v ]
 set_global_assignment -name SDC_FILE           [file join $::quartus(qip_path) sys_top.sdc ]
+set_global_assignment -name VHDL_FILE          [file join $::quartus(qip_path) at_cdc_snapshot.vhd ]
 set_global_assignment -name VHDL_FILE          [file join $::quartus(qip_path) ascal.vhd ]
 set_global_assignment -name VHDL_FILE          [file join $::quartus(qip_path) pll_hdmi_adj.vhd ]
 set_global_assignment -name SYSTEMVERILOG_FILE [file join $::quartus(qip_path) math.sv ]
@@ -32,4 +33,5 @@ set_global_assignment -name SYSTEMVERILOG_FILE [file join $::quartus(qip_path) d
 set_global_assignment -name SYSTEMVERILOG_FILE [file join $::quartus(qip_path) sysmem.sv ]
 set_global_assignment -name SYSTEMVERILOG_FILE [file join $::quartus(qip_path) sd_card.sv ]
 set_global_assignment -name SYSTEMVERILOG_FILE [file join $::quartus(qip_path) hps_io.sv ]
+set_global_assignment -name SYSTEMVERILOG_FILE [file join $::quartus(qip_path) at_cdc_snapshot.sv ]
 set_global_assignment -name SOURCE_FILE        [file join $::quartus(qip_path) emu_ports.vh ]

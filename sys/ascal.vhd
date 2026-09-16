@@ -113,6 +113,7 @@ USE ieee.numeric_std.ALL;
 
 ENTITY ascal IS
 	GENERIC (
+		AT_CDC       : boolean := false;
 		MASK         : unsigned(7 DOWNTO 0) :=x"FF";
 		RAMBASE      : unsigned(31 DOWNTO 0);
 		RAMSIZE      : unsigned(31 DOWNTO 0) := x"0080_0000"; -- =8MB
@@ -512,6 +513,12 @@ ARCHITECTURE rtl OF ascal IS
 	SIGNAL o_wr : unsigned(3 DOWNTO 0);
 	SIGNAL o_hcpt,o_vcpt,o_vcpt_pre,o_vcpt_pre2,o_vcpt_pre3,o_vcpt2 : uint12;
 	SIGNAL o_ihsize,o_ihsizem,o_ivsize : uint12;
+	SIGNAL cdc_input_meta : std_logic_vector(25 DOWNTO 0);
+	SIGNAL cdc_output_meta : std_logic_vector(23 DOWNTO 0);
+	SIGNAL cdc_input_data : std_logic_vector(25 DOWNTO 0);
+	SIGNAL cdc_output_data : std_logic_vector(23 DOWNTO 0);
+	SIGNAL cdc_hrsize,cdc_vrsize,cdc_ohsize,cdc_ovsize : uint12;
+	SIGNAL cdc_hdown,cdc_vdown : std_logic;
 	SIGNAL o_ihsize_temp, o_ihsize_temp2 : natural RANGE 0 TO 32767;
 
 	SIGNAL o_vfrac : unsigned(11 DOWNTO 0);
@@ -1155,6 +1162,42 @@ ARCHITECTURE rtl OF ascal IS
 	END FUNCTION;
 BEGIN
 
+	-- Transfer the effective geometry as a single acknowledged bundle.
+	-- Existing frame/bank allocation is unchanged; this is NOT a replacement
+	-- for the scaler's separate Avalon/bank-ownership protocols.
+	g_at_cdc : IF AT_CDC GENERATE
+		cdc_input_data <= std_logic_vector(to_unsigned(i_hrsize,12)) &
+		                  std_logic_vector(to_unsigned(i_vrsize,12)) & i_hdown & i_vdown;
+		cdc_output_data <= std_logic_vector(to_unsigned(o_hsize,12)) &
+		                   std_logic_vector(to_unsigned(o_vsize,12));
+		input_geometry : ENTITY work.at_cdc_snapshot_vhd
+			GENERIC MAP (WIDTH => 26)
+			PORT MAP (src_clk => i_clk, src_send => '1',
+				src_data => cdc_input_data,
+				src_ready => OPEN, dst_clk => o_clk,
+				dst_data => cdc_input_meta, dst_update => OPEN);
+		output_geometry : ENTITY work.at_cdc_snapshot_vhd
+			GENERIC MAP (WIDTH => 24)
+			PORT MAP (src_clk => o_clk, src_send => '1',
+				src_data => cdc_output_data,
+				src_ready => OPEN, dst_clk => i_clk,
+				dst_data => cdc_output_meta, dst_update => OPEN);
+		cdc_hrsize <= to_integer(unsigned(cdc_input_meta(25 DOWNTO 14)));
+		cdc_vrsize <= to_integer(unsigned(cdc_input_meta(13 DOWNTO 2)));
+		cdc_hdown <= cdc_input_meta(1);
+		cdc_vdown <= cdc_input_meta(0);
+		cdc_ohsize <= to_integer(unsigned(cdc_output_meta(23 DOWNTO 12)));
+		cdc_ovsize <= to_integer(unsigned(cdc_output_meta(11 DOWNTO 0)));
+	END GENERATE;
+	g_legacy_cdc : IF NOT AT_CDC GENERATE
+		cdc_hrsize <= i_hrsize;
+		cdc_vrsize <= i_vrsize;
+		cdc_hdown <= i_hdown;
+		cdc_vdown <= i_vdown;
+		cdc_ohsize <= o_hsize;
+		cdc_ovsize <= o_vsize;
+	END GENERATE;
+
 	-----------------------------------------------------------------------------
 	i_reset_na<='0'   WHEN reset_na='0' ELSE '1' WHEN rising_edge(i_clk);
 	o_reset_na<='0'   WHEN reset_na='0' ELSE '1' WHEN rising_edge(o_clk);
@@ -1329,8 +1372,8 @@ BEGIN
 					i_half <='0';
 				END IF;
 
-				i_ohsize<=o_hsize; -- <ASYNC>
-				i_ovsize<=o_vsize; -- <ASYNC>
+				i_ohsize<=cdc_ohsize;
+				i_ovsize<=cdc_ovsize;
 
 				----------------------------------------------------
 				-- Downscaling vertical
@@ -1944,17 +1987,17 @@ BEGIN
 			IF o_vsv(1)='1' AND o_vsv(0)='0' AND o_bufup1='1' THEN
 				o_obuf1<=buf_next(o_obuf1,o_ibuf1,o_freeze);
 				o_bufup1<='0';
-				o_ihsize<=i_hrsize; -- <ASYNC>
-				o_ivsize<=i_vrsize; -- <ASYNC>
-				o_hdown<=i_hdown; -- <ASYNC>
-				o_vdown<=i_vdown; -- <ASYNC>
+				o_ihsize<=cdc_hrsize;
+				o_ivsize<=cdc_vrsize;
+				o_hdown<=cdc_hdown;
+				o_vdown<=cdc_vdown;
 
 				IF (o_newres > 0) then
 					o_newres <= o_newres- 1;
 				END IF;
 			END IF;
 
-			IF (swblack = '1' and o_fb_ena = '0' and (o_ihsize /= i_hrsize or o_ivsize /= i_vrsize)) then
+			IF (swblack = '1' and o_fb_ena = '0' and (o_ihsize /= cdc_hrsize or o_ivsize /= cdc_vrsize)) then
 				o_newres <= 3;
 			END IF;
 

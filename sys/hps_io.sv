@@ -217,7 +217,13 @@ end
 /////////////////////////////////////////////////////////
 
 wire [15:0] vc_dout;
-video_calc video_calc
+video_calc #(
+`ifdef SPK286_AT_CDC
+	.AT_CDC(1)
+`else
+	.AT_CDC(0)
+`endif
+) video_calc
 (
 	.clk_100(HPS_BUS[43]),
 	.clk_vid(HPS_BUS[42]),
@@ -851,7 +857,7 @@ endmodule
 
 
 ///////////////// calc video parameters //////////////////
-module video_calc
+module video_calc #(parameter AT_CDC = 0)
 (
 	input clk_100,
 	input clk_vid,
@@ -870,28 +876,87 @@ module video_calc
 	output reg [15:0] dout
 );
 
+
+wire video_rotated_sys;
+wire [1:0] vid_int_sys;
+wire [7:0] vid_nres_sys, vid_pixrep_sys, vid_de_v_sys;
+wire [15:0] vid_de_h_sys;
+wire [23:0] vid_fclks_sys;
+wire [31:0] vid_hcnt_sys, vid_vcnt_sys, vid_ccnt_sys;
+wire [31:0] vid_htime_sys, vid_vtime_sys, vid_pix_sys, vid_vtime_hdmi_sys;
+wire [162:0] vid_bundle = {video_rotated, vid_int, vid_nres, vid_hcnt,
+    vid_vcnt, vid_ccnt, vid_pixrep, vid_de_h, vid_de_v, vid_fclks};
+wire [127:0] time_bundle = {vid_htime, vid_vtime, vid_pix, vid_vtime_hdmi};
+wire [162:0] vid_read;
+wire [127:0] time_read;
+generate if (AT_CDC) begin : g_at_cdc
+    wire [162:0] vid_snapshot;
+    wire [127:0] time_snapshot;
+    reg [162:0] vid_query = 0;
+    reg [127:0] time_query = 0;
+    at_cdc_snapshot #(.WIDTH(163)) video_stats (
+        .src_clk(clk_vid), .src_send(1'b1), .src_data(vid_bundle), .src_ready(),
+        .dst_clk(clk_sys), .dst_data(vid_snapshot), .dst_update());
+    at_cdc_snapshot #(.WIDTH(128)) time_stats (
+        .src_clk(clk_100), .src_send(1'b1), .src_data(time_bundle), .src_ready(),
+        .dst_clk(clk_sys), .dst_data(time_snapshot), .dst_update());
+    // HPS starts each command with byte_cnt=0. Hold all words of a query,
+    // including the low/high halves, until the next command.
+    always @(posedge clk_sys) if (par_num == 0) begin
+        vid_query <= vid_snapshot;
+        time_query <= time_snapshot;
+    end
+    assign vid_read = vid_query;
+    assign time_read = time_query;
+end else begin : g_legacy
+    assign vid_read = vid_bundle;
+    assign time_read = time_bundle;
+end endgenerate
+assign {video_rotated_sys, vid_int_sys, vid_nres_sys, vid_hcnt_sys,
+    vid_vcnt_sys, vid_ccnt_sys, vid_pixrep_sys, vid_de_h_sys,
+    vid_de_v_sys, vid_fclks_sys} = vid_read;
+assign {vid_htime_sys, vid_vtime_sys, vid_pix_sys, vid_vtime_hdmi_sys} = time_read;
+
+wire vs_100, hs_100, de_100, vs_hdmi_100;
+generate if (AT_CDC) begin : g_at_edges
+    (* altera_attribute = "-name SYNCHRONIZER_IDENTIFICATION FORCED_IF_ASYNCHRONOUS; -name DONT_MERGE_REGISTER ON", preserve *)
+    reg vs_meta = 0, hs_meta = 0, de_meta = 0, hdmi_meta = 0;
+    // The existing old_* registers are the second stages. old_*2 are
+    // histories; no edge detector or counter consumes these first stages.
+    always @(posedge clk_100) begin
+        vs_meta <= vs;
+        hs_meta <= hs;
+        de_meta <= de;
+        hdmi_meta <= vs_hdmi;
+    end
+    assign {vs_100, hs_100, de_100, vs_hdmi_100} =
+        {vs_meta, hs_meta, de_meta, hdmi_meta};
+end else begin : g_legacy_edges
+    assign {vs_100, hs_100, de_100, vs_hdmi_100} = {vs, hs, de, vs_hdmi};
+end endgenerate
+
 always @(posedge clk_sys) begin
 	case(par_num)
-		1: dout <= {video_rotated, |vid_int, vid_nres};
-		2: dout <= vid_hcnt[15:0];
-		3: dout <= vid_hcnt[31:16];
-		4: dout <= vid_vcnt[15:0];
-		5: dout <= vid_vcnt[31:16];
-		6: dout <= vid_htime[15:0];
-		7: dout <= vid_htime[31:16];
-		8: dout <= vid_vtime[15:0];
-		9: dout <= vid_vtime[31:16];
-	  10: dout <= vid_pix[15:0];
-	  11: dout <= vid_pix[31:16];
-	  12: dout <= vid_vtime_hdmi[15:0];
-	  13: dout <= vid_vtime_hdmi[31:16];
-	  14: dout <= vid_ccnt[15:0];
-	  15: dout <= vid_ccnt[31:16];
-	  16: dout <= vid_pixrep;
-	  17: dout <= vid_de_h;
-	  18: dout <= vid_de_v;
-	  19: dout <= vid_fclks[15:0];
-	  20: dout <= {8'd0, vid_fclks[23:16]};
+		1: dout <= {video_rotated_sys, |vid_int_sys, vid_nres_sys};
+		2: dout <= vid_hcnt_sys[15:0];
+		3: dout <= vid_hcnt_sys[31:16];
+		4: dout <= vid_vcnt_sys[15:0];
+		5: dout <= vid_vcnt_sys[31:16];
+		6: dout <= vid_htime_sys[15:0];
+		7: dout <= vid_htime_sys[31:16];
+		8: dout <= vid_vtime_sys[15:0];
+		9: dout <= vid_vtime_sys[31:16];
+	  10: dout <= vid_pix_sys[15:0];
+	  11: dout <= vid_pix_sys[31:16];
+	  12: dout <= vid_vtime_hdmi_sys[15:0];
+	  13: dout <= vid_vtime_hdmi_sys[31:16];
+	  14: dout <= vid_ccnt_sys[15:0];
+	  15: dout <= vid_ccnt_sys[31:16];
+	  16: dout <= vid_pixrep_sys;
+	  17: dout <= vid_de_h_sys;
+	  18: dout <= vid_de_v_sys;
+	  19: dout <= vid_fclks_sys[15:0];
+	  20: dout <= {8'd0, vid_fclks_sys[23:16]};
 	  default dout <= 0;
 	endcase
 end
@@ -982,8 +1047,8 @@ always @(posedge clk_100) begin
 	reg old_vs, old_hs, old_vs2, old_hs2, old_de, old_de2;
 	reg calch = 0;
 
-	old_vs <= vs;
-	old_hs <= hs;
+	old_vs <= vs_100;
+	old_hs <= hs_100;
 
 	old_vs2 <= old_vs;
 	old_hs2 <= old_hs;
@@ -1005,7 +1070,7 @@ always @(posedge clk_100) begin
 		htime <= 0;
 	end
 
-	old_de   <= de;
+	old_de   <= de_100;
 	old_de2  <= old_de;
 
 	if(calch & old_de) hcnt <= hcnt + 1;
@@ -1017,7 +1082,7 @@ always @(posedge clk_100) begin
 	integer vtime;
 	reg old_vs, old_vs2;
 
-	old_vs <= vs_hdmi;
+	old_vs <= vs_hdmi_100;
 	old_vs2 <= old_vs;
 
 	vtime <= vtime + 1'd1;

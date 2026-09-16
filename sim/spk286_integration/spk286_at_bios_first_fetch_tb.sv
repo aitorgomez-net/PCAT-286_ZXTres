@@ -127,6 +127,20 @@ module spk286_at_bios_first_fetch_tb;
     wire        memory_port_protocol_error;
     wire        sdram_owner_protocol_error;
 
+    wire        p03_out_valid, p03_out_command_valid;
+    wire [1:0]  p03_out_owner;
+    wire        p03_out_write, p03_out_refresh, p03_out_code_fetch, p03_out_burst;
+    wire [3:0]  p03_out_cycle_class;
+    wire [23:0] p03_out_address;
+    wire [1:0]  p03_out_byte_enable;
+    wire [15:0] p03_out_data_out;
+    wire        p03_in_accept, p03_in_ready;
+    wire [15:0] p03_in_read_data;
+    wire        p03_in_read_data_valid;
+    wire        p03_out_accept, p03_out_ready;
+    wire [15:0] p03_out_read_data;
+    wire        p03_out_read_data_valid;
+
     wire [12:0] sdram_address;
     wire        sdram_cke;
     wire        sdram_cs;
@@ -332,7 +346,7 @@ module spk286_at_bios_first_fetch_tb;
         if(!reset && sdram_owner.u_KFSDRAM.read_flag_comb && pin_dq_valid!==2'b11)
             $fatal(1,"KF samples invalid DQ addr=%h valid=%b",sdram_owner.kf_address,pin_dq_valid);
         if(!cpu_boot_reset) begin
-            if(dut.u_cpu.cpu.msw_q[0]) $fatal(1,"PE set during first-fetch test");
+            if(dut.u_cpu.cpu.debug_protected_msw[0]) $fatal(1,"PE set during first-fetch test");
             if(backend_accept && backend_code_fetch) captured_word_address<=sdram_owner.kf_address;
             if(backend_ready && backend_code_fetch && backend_owner==0) begin
                 if(!backend_read_data_valid) $fatal(1,"fetch without VLD");
@@ -708,28 +722,59 @@ module spk286_at_bios_first_fetch_tb;
         .backend_address(backend_address),
         .backend_byte_enable(backend_byte_enable),
         .backend_data_out(backend_data_out),
-        .backend_accept(backend_accept), .backend_ready(backend_ready),
-        .backend_read_data(backend_read_data),
-        .backend_read_data_valid(backend_read_data_valid),
+        .backend_accept(p03_in_accept), .backend_ready(p03_in_ready),
+        .backend_read_data(p03_in_read_data),
+        .backend_read_data_valid(p03_in_read_data_valid),
         .protocol_error(memory_port_protocol_error)
     );
+
+    spk286_at_sdram_read_buffer #(.ENABLE(1'b1)) p03_buffer (
+        .clk(clk), .reset(reset),
+        .cancel_cpu(cpu_boot_reset), .enable(1'b1),
+        .in_valid(backend_valid), .in_command_valid(backend_command_valid),
+        .in_owner(backend_owner), .in_write(backend_write),
+        .in_refresh(backend_refresh), .in_code_fetch(backend_code_fetch),
+        .in_cycle_class(backend_cycle_class), .in_address(backend_address),
+        .in_byte_enable(backend_byte_enable), .in_data_out(backend_data_out),
+        .in_accept(p03_in_accept), .in_ready(p03_in_ready),
+        .in_read_data(p03_in_read_data),
+        .in_read_data_valid(p03_in_read_data_valid),
+        .out_valid(p03_out_valid), .out_command_valid(p03_out_command_valid),
+        .out_owner(p03_out_owner), .out_write(p03_out_write),
+        .out_refresh(p03_out_refresh), .out_code_fetch(p03_out_code_fetch),
+        .out_burst(p03_out_burst), .out_cycle_class(p03_out_cycle_class),
+        .out_address(p03_out_address), .out_byte_enable(p03_out_byte_enable),
+        .out_data_out(p03_out_data_out), .out_accept(p03_out_accept),
+        .out_ready(p03_out_ready), .out_read_data(p03_out_read_data),
+        .out_read_data_valid(p03_out_read_data_valid),
+        .debug_hit_count(), .debug_miss_count(), .debug_fill_count(),
+        .debug_physical_read_count(), .debug_invalidation_count()
+    );
+
+    // Keep the existing trace probes observing the logical memory-port side
+    // after inserting P03 between the port and the physical owner.
+    assign backend_accept          = p03_in_accept;
+    assign backend_ready           = p03_in_ready;
+    assign backend_read_data       = p03_in_read_data;
+    assign backend_read_data_valid = p03_in_read_data_valid;
 
     spk286_at_mister_sdram_owner #(
         .SDRAM_INIT_WAIT(16'd32)
     ) sdram_owner (
         .clk(clk), .reset(reset),
-        .request_valid(backend_valid),
-        .request_command_valid(backend_command_valid),
-        .request_owner_refresh(backend_refresh),
-        .request_write(backend_write),
-        .request_code_fetch(backend_code_fetch),
-        .request_cycle_class(backend_cycle_class),
-        .request_address(backend_address),
-        .request_byte_enable(backend_byte_enable),
-        .request_data_out(backend_data_out),
-        .request_accept(backend_accept), .request_ready(backend_ready),
-        .request_read_data(backend_read_data),
-        .request_read_data_valid(backend_read_data_valid),
+        .request_valid(p03_out_valid),
+        .request_command_valid(p03_out_command_valid),
+        .request_owner_refresh(p03_out_refresh),
+        .request_write(p03_out_write),
+        .request_code_fetch(p03_out_code_fetch),
+        .request_burst(p03_out_burst),
+        .request_cycle_class(p03_out_cycle_class),
+        .request_address(p03_out_address),
+        .request_byte_enable(p03_out_byte_enable),
+        .request_data_out(p03_out_data_out),
+        .request_accept(p03_out_accept), .request_ready(p03_out_ready),
+        .request_read_data(p03_out_read_data),
+        .request_read_data_valid(p03_out_read_data_valid),
         .physical_idle(physical_idle), .protocol_error(sdram_owner_protocol_error),
         .sdram_address(sdram_address), .sdram_cke(sdram_cke),
         .sdram_cs(sdram_cs), .sdram_ras(sdram_ras),
@@ -836,7 +881,7 @@ module spk286_at_bios_first_fetch_tb;
         for(cycles=0;cycles<max_cpu_cycles;cycles=cycles+1) begin
             @(negedge clk);
             if (landmark_case>=16 && landmark_case<=18) begin
-                if (dut.u_cpu.cpu.msw_q[0] || cpu_reset_request)
+                if (dut.u_cpu.cpu.debug_protected_msw[0] || cpu_reset_request)
                     $fatal(1,"PM_SKIP_ACTIVATED_PE_OR_RESET case=%0d",landmark_case);
                 if (dut.at_ready && dut.at_write && !dut.at_io && dut.at_byte_enable[0]) begin
                     for (integer ch=0; ch<7; ch=ch+1) begin
@@ -1110,6 +1155,18 @@ module spk286_at_bios_first_fetch_tb;
                 $finish;
             end
         end
+        $display("P03_STATE memport_active=%b accepted=%b owner=%b cancel=%b backend=%b/%b p03_state=%0d inflight=%b p03_out=%b/%b owner_active=%b kf_idle=%b refresh_req=%b refresh_grant=%b refresh_pending=%b refresh_active=%b arb_cpu_grant=%b hold=%b hlda=%b fetch_active=%b fetch_restart=%b fetch_req=%b fetch_ready=%b",
+                 memory_port.active_q, memory_port.accepted_q, memory_port.owner_q,
+                 cpu_boot_reset, backend_valid, backend_command_valid,
+                 p03_buffer.state_q, p03_buffer.physical_inflight_q,
+                 p03_out_valid, p03_out_command_valid,
+                 sdram_owner.active_q, sdram_owner.kf_idle,
+                 dut.refresh_request, dut.refresh_grant,
+                 dut.u_refresh.pending_q, dut.u_refresh.active_q,
+                 dut.cpu_grant, cpu_hold_request, cpu_hlda,
+                 dut.u_cpu.cpu.fetch.active_q, dut.u_cpu.cpu.fetch.restart_pending_q,
+                 dut.u_cpu.cpu.fetch_request_internal,
+                 dut.u_cpu.cpu.fetch_request_ready_internal);
         $fatal(1,"watchdog reads=%0d cpu=%0d csip=%h:%h hlt=%b ram_reads=%0d ram_writes=%0d gpr=%h",fetch_returns,cpu_fetch_returns,debug_cs,debug_ip,cpu_halted,ram_reads,ram_writes,dut.debug_gpr);
     end
     initial begin

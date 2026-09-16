@@ -3,9 +3,9 @@
 // This is a normalized machine-side boundary.  It deliberately does not
 // model historical Ts/Tc timing or an 82288/82289 pin-level implementation.
 // The CPU request is retained until a chipset command is accepted and the
-// accepted beat reports READY (and read data, for reads).  An aligned word is
-// serialized into two byte-lane beats; an already odd, single-lane CPU beat is
-// never split again.
+// accepted beat reports READY (and read data, for reads). Aligned words use
+// one x16 beat when the memory target permits it. Byte-wide targets still
+// receive two beats; an already odd, single-lane CPU beat is never split again.
 `timescale 1ns/1ps
 
 module spk286_at_bus_bridge (
@@ -20,6 +20,9 @@ module spk286_at_bus_bridge (
     input  logic         cpu_bus_bhe_n,
     input  logic [3:0]   cpu_bus_status,
     input  logic         cpu_bus_lock,
+    // Board address decode, sampled with the CPU request. I/O and INTA
+    // always retain byte-wide sequencing regardless of this input.
+    input  logic         cpu_memory_word_capable,
     output logic         cpu_ready,
     output logic [15:0]  cpu_data_in,
 
@@ -57,6 +60,12 @@ module spk286_at_bus_bridge (
     output logic         bridge_idle,
     output logic         protocol_error
 );
+`ifdef SPK286_P01_FAST_MEMORY_START
+    localparam logic FAST_MEMORY_START = 1'b1;
+`else
+    localparam logic FAST_MEMORY_START = 1'b0;
+`endif
+
     localparam logic [3:0] STATE_IDLE     = 4'd0;
     localparam logic [3:0] STATE_SNAPSHOT = 4'd1;
     localparam logic [3:0] STATE_DECODE   = 4'd2;
@@ -77,6 +86,7 @@ module spk286_at_bus_bridge (
     logic [3:0]  request_status_q;
     logic        request_lock_q;
     logic        request_two_beats_q;
+    logic        request_native_word_q;
     logic        beat_high_q;
     logic [7:0]  read_low_byte_q;
 
@@ -89,6 +99,16 @@ module spk286_at_bus_bridge (
     logic request_is_code;
     logic request_is_read;
     logic completion_valid;
+    wire fast_memory_request = FAST_MEMORY_START &&
+                               cpu_memory_word_capable &&
+                               ((cpu_bus_status == 4'h5) ||
+                                (cpu_bus_status == 4'h6) ||
+                                (cpu_bus_status == 4'hD));
+    wire native_word_request = cpu_memory_word_capable &&
+                               ((cpu_bus_status == 4'h5) ||
+                                (cpu_bus_status == 4'h6) ||
+                                (cpu_bus_status == 4'hD)) &&
+                               !cpu_address[0] && !cpu_bus_bhe_n;
 
     logic [23:0] beat_address;
     logic [1:0]   beat_byte_enable;
@@ -132,6 +152,8 @@ module spk286_at_bus_bridge (
     always_comb begin
         if (request_is_inta)
             beat_byte_enable = 2'b00;
+        else if (request_native_word_q)
+            beat_byte_enable = 2'b11;
         else if (request_two_beats_q)
             beat_byte_enable = beat_high_q ? 2'b10 : 2'b01;
         else if (request_address_q[0])
@@ -158,7 +180,8 @@ module spk286_at_bus_bridge (
     assign at_a0             = request_is_inta ? 1'b0 : beat_address[0];
     assign at_bhe_n          = request_is_inta ? 1'b1 : !beat_byte_enable[1];
     assign at_byte_enable    = beat_byte_enable;
-    assign at_data_out       = beat_byte_enable[1] ?
+    assign at_data_out       = request_native_word_q ? request_data_q :
+                               beat_byte_enable[1] ?
                                {request_data_q[15:8], 8'h00} :
                                {8'h00, request_data_q[7:0]};
     assign at_data_oe        = at_valid && request_write_q &&
@@ -187,6 +210,7 @@ module spk286_at_bus_bridge (
             request_status_q   <= 4'hF;
             request_lock_q     <= 1'b0;
             request_two_beats_q <= 1'b0;
+            request_native_word_q <= 1'b0;
             beat_high_q        <= 1'b0;
             read_low_byte_q    <= 8'd0;
             cpu_data_in        <= 16'd0;
@@ -204,14 +228,22 @@ module spk286_at_bus_bridge (
                         request_status_q     <= cpu_bus_status;
                         request_lock_q       <= cpu_bus_lock && live_request_valid;
                         request_two_beats_q  <= live_request_valid &&
+                                                !native_word_request &&
                                                 (cpu_bus_status != 4'h0) &&
                                                 !cpu_address[0] &&
                                                 !cpu_bus_bhe_n;
+                        request_native_word_q <= live_request_valid &&
+                                                 native_word_request;
                         beat_high_q          <= 1'b0;
                         read_low_byte_q      <= 8'd0;
                         cpu_data_in          <= 16'd0;
                         if (live_request_valid)
-                            state_q <= STATE_SNAPSHOT;
+                            // P01 removes two bookkeeping-only states for
+                            // decoded RAM/ROM. The complete request is already
+                            // retained above; I/O, INTA, EGA and unmapped
+                            // accesses preserve the reference sequence.
+                            state_q <= fast_memory_request ? STATE_ADDRESS :
+                                       STATE_SNAPSHOT;
                         else begin
                             protocol_error <= 1'b1;
                             state_q <= STATE_COMPLETE;
@@ -241,6 +273,8 @@ module spk286_at_bus_bridge (
                         if (request_is_read) begin
                             if (request_is_inta)
                                 cpu_data_in <= {8'h00, at_read_data[7:0]};
+                            else if (request_native_word_q)
+                                cpu_data_in <= at_read_data;
                             else if (beat_byte_enable[1]) begin
                                 if (request_two_beats_q)
                                     cpu_data_in <= {at_read_data[15:8],

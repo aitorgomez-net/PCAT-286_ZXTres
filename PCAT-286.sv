@@ -1,2349 +1,1211 @@
-//============================================================================
+// MiSTer top-level for the normalized PCAT-286 AT machine.
 //
-//  This program is free software; you can redistribute it and/or modify it
-//  under the terms of the GNU General Public License as published by the Free
-//  Software Foundation; either version 2 of the License, or (at your option)
-//  any later version.
-//
-//  This program is distributed in the hope that it will be useful, but WITHOUT
-//  ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
-//  FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
-//  more details.
-//
-//  You should have received a copy of the GNU General Public License along
-//  with this program; if not, write to the Free Software Foundation, Inc.,
-//  51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
-//
-//============================================================================
+// This is the only machine top kept by the project.  sys_top selects emu_at
+// through AT_PROFILE, so the legacy XT chipset is not present as a second
+// SDRAM owner.
+`timescale 1ns/1ps
 
-`ifndef ENABLE_MIDI
-`define ENABLE_MIDI 1
-`endif
-`ifndef CONF_STR_SYSTEM
-`define CONF_STR_SYSTEM (`ENABLE_MIDI ? "PCAT-286;UART115200:115200,MIDI;" : "PCAT-286;UART115200:115200;")
-`endif
-`ifndef ENABLE_OPL2
-`define ENABLE_OPL2 0
-`endif
-`ifndef ENABLE_CMS
-`define ENABLE_CMS 0
-`endif
-`ifndef ENABLE_EMS
-`define ENABLE_EMS 0
-`endif
-`ifndef ENABLE_UMB
-`define ENABLE_UMB 0
-`endif
-`ifndef ENABLE_TANDY_AUDIO
-`define ENABLE_TANDY_AUDIO 0
-`endif
-`ifndef ENABLE_SB
-`define ENABLE_SB 0
-`endif
-
-module emu
-    (
+module emu_at
+(
 `include "sys/emu_ports.vh"
+);
+
+    // Keep the AT profile's System & BIOS page local to the PCAT-286 top.
+    // These indices are part of the HPS/OSD contract: bit 7 is splash,
+    // bit 71 enables the diagnostic overlay and bits 73:72 select its page.
+    // The ROM marker is required for MiSTer to expose a real file selector.
+    localparam CONF_STR_HALT_AT = {
+        "h4-,HALTED: no PCAT ROM selected;",
+        "h5-,HALTED: no EGA BIOS selected;"
+    };
+
+`ifndef SPK286_AT_NO_DEBUG
+    localparam CONF_STR_AT_DEBUG = {
+        "P1O[71],SPK286 Debug,Off,On;",
+        "P1O[73:72],Debug Page,CPU,Registers,Bus,Trace;",
+        "P1O[79],Boot Fetch Trace,Off,On;",
+        "P1O[78:74],Boot Fetch Index,00,01,02,03,04,05,06,07,08,09,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31;",
+        "P1O[80],Boot Fetch View,Address,Data;",
+        "P1O[81],First Fault Trace,Off,On;",
+        "P1O[82],Landmark RAM Trace,Off,On;",
+        "P1O[84:83],RAM Trace Page,Compare,Read path,SDRAM,Registers;"
+    };
+`endif
+
+    localparam CONF_STR_AT = {
+        "PCAT-286;",
+        CONF_STR_HALT_AT,
+        "S0,IMGIMAVFD,Floppy A:;",
+        "S1,IMGIMAVFD,Floppy B:;",
+        "OJK,Write Protect,None,A:,B:,A: & B:;",
+        "-;",
+        "S2,VHD,IDE 0-0;",
+        "S3,VHD,IDE 0-1;",
+        "OLM,2nd SD card,Disable,IDE 0-0,IDE 0-1;",
+        "-;",
+        "P1,System & BIOS;",
+        "P1-;",
+        "P1O7,Boot Splash Screen,Yes,No;",
+        "P1FC0,ROM,PCAT BIOS:;",
+        "P1FC2,ROM,EC00 BIOS:;",
+        "P1FC3,ROM,EGA BIOS:;",
+        "P1-;",
+        // An empty packed Verilog string is an 8-bit NUL, not zero bytes.
+        // Omit the entire element so the host can read the remaining entries.
+`ifndef SPK286_AT_NO_DEBUG
+        CONF_STR_AT_DEBUG,
+`endif
+        "P1-;",
+        "-;",
+        "R0,Reset & apply settings;",
+        "J,Fire 1,Fire 2;",
+        "V,v"
+    };
+
+    wire [35:0] EXT_BUS;
+    wire [21:0] gamma_bus;
+    assign gamma_bus[21] = 1'b0;
+
+    wire [15:0] at_mgmt_din;
+    wire [15:0] at_mgmt_dout;
+    wire [15:0] at_mgmt_address;
+    wire        at_mgmt_read;
+    wire        at_mgmt_write;
+    wire [1:0]  at_floppy_present;
+    wire [1:0]  at_floppy_request;
+    wire [2:0]  at_ide_request;
+    wire [7:0]  at_mgmt_request = {at_floppy_request, 3'b000,
+                                   at_ide_request};
+
+    // Use the same MiSTer management transport and request bit layout as the
+    // XT profile. Requests 7:6 are floppy A/B and 2:0 belong to XT-IDE.
+    // RTC/CMOS updates are host-pushed writes in the F4xx window and therefore
+    // need no request bit.
+    hps_ext hps_ext_at (
+        .clk_sys     (CLK_50M),
+        .EXT_BUS     (EXT_BUS),
+        .ext_din     (at_mgmt_din),
+        .ext_dout    (at_mgmt_dout),
+        .ext_addr    (at_mgmt_address),
+        .ext_rd      (at_mgmt_read),
+        .ext_wr      (at_mgmt_write),
+        .ext_midi    (),
+        .ext_req     (at_mgmt_request),
+        .ext_hotswap (2'b00)
     );
 
-    ///////// Default values for ports not used in this core /////////
-
-    assign ADC_BUS  = 'Z;
-    //assign USER_OUT = '1;
-    //assign {UART_RTS, UART_TXD, UART_DTR} = 0;
-    assign {SD_SCK, SD_MOSI, SD_CS} = 'Z;
-    //assign {SDRAM_DQ, SDRAM_A, SDRAM_BA, SDRAM_CLK, SDRAM_CKE, SDRAM_DQML, SDRAM_DQMH, SDRAM_nWE, SDRAM_nCAS, SDRAM_nRAS, SDRAM_nCS} = 'Z;
-    assign SDRAM_CLK = clk_chipset;
-    assign VGA_SCALER = 0;
-    assign VGA_DISABLE = 0;
-    assign HDMI_FREEZE = 0;
-    assign HDMI_BLACKOUT = 0;
-    assign HDMI_BOB_DEINT = 0;
-
-    wire diagnostic_pass;
-    wire diagnostic_failure;
-    assign LED_DISK = diagnostic_pass;
-    assign LED_POWER = 0;
-    assign BUTTONS = 0;
-
-    wire cpu_fault;
-    assign LED_USER = cpu_fault | diagnostic_failure;
-    //led fdd_led(clk_cpu, |mgmt_req[7:6], LED_USER);
-
-
-    //////////////////////////////////////////////////////////////////
-    // Status Bit Map:
-    //              Upper                          Lower
-    // 0         1         2         3          4         5         6
-    // 01234567890123456789012345678901 23456789012345678901234567890123
-    // 0123456789ABCDEFGHIJKLMNOPQRSTUV 0123456789ABCDEFGHIJKLMNOPQRSTUV
-    // XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX XXXXXXXXXXXXXXXXXXXXXXX.....XXXX
-    //
-    // The first 64 status bits are fully allocated. The extended status
-    // vector continues at bit 64; its first six bits carry the VSync and
-    // HSync width options, bit 70 carries the Sound Blaster IRQ choice, and
-    // bits 71:73 control the passive SPK286 debug overlay. These settings
-    // remain available to the OSD and are persisted by the normal core CFG.
-    //
-    // Spend the extended status bits carefully. Anything already reachable through XTEGACTL
-    // is a candidate to give its bit back the same way - Sync Joy to CPU
-    // Speed and MT32-pi Mode are each one more bit, and the
-    // CRT H and V offsets another seven, all without losing the setting.
-
-	`include "build_id.v"
-
-    localparam CONF_STR_ROM = "P1FC0,ROM,PCAT BIOS:;";
-    // The Sound Blaster and the C/MS both live at 220h and collide on
-    // 226h/227h, where one puts its DSP reset and the other its detection
-    // register, so at most one of them can answer. When both are built that
-    // is one three-way choice rather than two switches that quietly override
-    // each other.
-    //
-    // It costs two status bits and there were none left - all 64 are spoken
-    // for - so bit 28 came from Swap Joysticks, which is gone from the menu
-    // entirely. That setting is not lost: XTEGACTL still carries it in
-    // reg_inp[5:4], the same way Tandy audio has always been reached. With
-    // only one of the two cards built there is nothing to choose between,
-    // so bit 29 stays the plain enable it has always been and bit 28 is
-    // simply free.
-    localparam CONF_STR_A220 =
-        (`ENABLE_CMS && `ENABLE_SB) ? "P2OST,Audio 220h,C/MS,Sound Blaster,Disabled;" :
-        (`ENABLE_SB)                ? "P2OT,Sound Blaster,Enabled,Disabled;"          :
-        (`ENABLE_CMS)               ? "P2OT,C/MS Audio,Enabled,Disabled;"             : "";
-    localparam CONF_STR_OPL2 = (`ENABLE_OPL2 ? "P2oAB,OPL2,Adlib 388h,SB FM 388h/228h, Disabled;" : "");
-    localparam CONF_STR_TANDY = (`ENABLE_TANDY_AUDIO ? "P2oN,Tandy Sound,Disabled,Enabled;" : "");
-    localparam CONF_STR_EMS = (`ENABLE_EMS ? "P3O5,2MB EMS D000-DFFF,Enabled,Disabled;P3-;" : "");
-    localparam CONF_STR_UMB = (`ENABLE_UMB ? "P3OC,UMB C400-CFFF,Enabled,Disabled;P3-;" : "");
-    // MPU-401 comes first in this block: it is the master switch the other
-    // two settings depend on - USER I/O routing and the whole MT32-pi page
-    // are moot once the card itself is off the bus, same as a real MPU-401
-    // being physically removed. A game that probes 330h then falls through
-    // to Adlib/OPL2 instead of finding a Roland device with nothing behind it.
-    localparam CONF_STR_MIDI = (`ENABLE_MIDI ? "P3oO,MPU-401,Enabled,Disabled;P3-;P3O6,USER I/O,MIDI,COM2;P3-;h3P4,MT32-pi;h3P4-;h3P4OD,Use MT32-pi,Yes,No;h3P4-;h3P4o9,MT32-pi Mode,MT-32,General MIDI;h3P4O34,MT32-pi ROM,MT-32 v1,MT-32 v2,CM-32L,Reserved;h3P4oSU,MT32-pi SoundFont,#0,#1,#2,#3,#4,#5,#6,#7;h3P4-;h3P4r8,Reset Hanging Notes;h3P4-;" : "");
-
-    // Menumask bits 4 and 5 mark a missing main or EGA ROM. The machine is
-    // held in reset until both are present, so say so at the top of the menu
-    // rather than leaving the user to guess why nothing boots.
-    localparam CONF_STR_HALT = {
-		"h4-,HALTED: no PCAT ROM selected;",
-		"h5-,HALTED: no EGA BIOS selected;"
-	};
-
-    // Read back by the framework through info_req/info and drawn as an OSD
-    // notice.  The box is 32 columns wide; commas separate the two messages,
-    // so neither may contain one.
-    localparam CONF_STR_INFO = {
-		"I,",
-		"No PCAT ROM selected\n",
-		"Machine halted\n",
-		"OSD: System & BIOS,",
-		"No EGA BIOS selected\n",
-		"Machine halted\n",
-		"OSD: System & BIOS,",
-		"That setting is applied\n",
-		"when the machine resets;"
-	};
-
-    localparam CONF_STR = {
-		`CONF_STR_SYSTEM,
-		CONF_STR_HALT,
-		"S0,IMGIMAVFD,Floppy A:;",
-		"S1,IMGIMAVFD,Floppy B:;",
-		"OJK,Write Protect,None,A:,B:,A: & B:;",
-		"-;",
-		"S2,VHD,IDE 0-0;",
-		"S3,VHD,IDE 0-1;",
-		"OLM,2nd SD card,Disable,IDE 0-0,IDE 0-1;",
-		"-;",
-		"OHI,XT Bus Pace,4.77MHz,7.16MHz,9.54MHz,Max;",
-		"-;",
-		"P1,System & BIOS;",
-		"P1-;",
-		"P1O7,Boot Splash Screen,Yes,No;",
-		CONF_STR_ROM,
-		"P1FC2,ROM,EC00 BIOS:;",
-		"P1FC3,ROM,EGA BIOS:;",
-		"P1-;",
-		"P1OUV,BIOS Writable,None,EC00,Main,All;",
-		"P1O[71],SPK286 Debug,Off,On;",
-		"P1O[73:72],Debug Page,CPU,Registers,Bus,Trace;",
-		"P1-;",	
-		"P2,Audio & Video;",
-		"P2-;",
-		CONF_STR_A220,
-		CONF_STR_OPL2,
-		CONF_STR_TANDY,
-		"P2o01,Speaker Volume,1,2,3,4;",
-		"P2o45,Audio Boost,No,2x,4x;",
-		"P2o67,Stereo Mix,none,25%,50%,100%;",
-		"P2-;",
-		"P2oEH,CRT H offset,0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15;",
-		"P2oIK,CRT V offset,0,1,2,3,4,5,6,7;",
-        "P2O[66:64],VSync Width,Auto,1,2,3,4,5,6,7;",
-        "P2O[69:67],HSync Width,Auto,1,2,3,4,5,6,7;",
-        "P2-;",
-		"P2O12,Scandoubler Fx,None,HQ2x,CRT 25%,CRT 50%;",
-		"P2O89,Aspect ratio,Original,Full Screen,[ARC1],[ARC2];",
-		"P2OEG,Display,Full Color,Green,Amber,B&W,Red,Blue,Fuchsia,Purple;",
-		"P2OA,VGA 13h+ CRT,Native 70Hz,TV 60Hz;",
-		"P2o23,350-line CRT,Native,480i 15 kHz,240p 15 kHz;",
-		"P2-;",
-		"P3,Hardware;",
-		"P3-;",
-		"P3oCD,Monitor,5154/ECD,5153/CGA,5151/MDA;",
-		"P3-;",
-		CONF_STR_EMS,
-		CONF_STR_UMB,
-		"P3ONO,Joystick 1, Analog, Digital, Disabled;",
-		"P3OPQ,Joystick 2, Analog, Digital, Disabled;",
-		"P3OR,Sync Joy to CPU Speed,No,Yes;",
-		"P3oM,Swap Joysticks,No,Yes;",
-		(`ENABLE_SB ? "P3O[70],Sound Blaster IRQ,5,7;" : ""),
-		"P3-;",
-		CONF_STR_MIDI,
-		"-;",
-		"R0,Reset & apply settings;",
-		"J,Fire 1,Fire 2;",
-		CONF_STR_INFO,
-		"V,v",`BUILD_DATE
-	};
-
-    wire forced_scandoubler;
-    wire vga_mode13_active_video;
-    wire vga_mode13_pixel_toggle;
-    wire ega_dot_toggle;
-    wire ega_dot_clock_sel;
-    wire ega_scandouble_active;
-    wire ega_vmode_toggle;
-    wire        ega_mode350;
-    wire [11:0] ega_active_dots;
-    wire [9:0]  ega_active_lines;
-    wire [1:0] buttons;
-    wire [127:0] status;
-    // This setting chooses only the Mode 13h output raster.  The extension
-    // itself starts disabled and VGATSR enables it through XTEGACTL, so
-    // changing Native/TV timing can never remove a live video device.
-    // Native restores the original 31.4 kHz / 70 Hz raster; TV 60Hz is the
-    // CRT-TV-compatible 15.7 kHz profile.
-    wire       vga_mode13_native_osd = ~status[10];
-    // CPU type and Fake286 compatibility controls are intentionally absent:
-    // this machine always runs the imported SPK286 implementation.
-    // Status bits 45:44 are the pending physical-monitor switch selection.
-    // ega_monitor_profile_applied is only updated while the machine is held
-    // in reset, just as a real EGA card samples its switches during POST.
-    wire  [1:0] ega_monitor_profile_osd = status[45:44];
-    wire  [1:0] ega_monitor_profile_applied;
-    // XTEGACTL. The register file is decoded down in the chipset; what the
-    // fields mean is resolved here, where the menu status lives. Every field
-    // reads zero as "leave it to the OSD", so with nothing written the machine
-    // behaves exactly as the menu says.
-    wire [7:0]  xtegactl_cpu, xtegactl_exp, xtegactl_vid, xtegactl_inp, xtegactl_midi, xtegactl_exp2;
-    wire [7:0]  xtegactl_crt, xtegactl_sync;
-    wire [39:0] xtegactl_status_effective;
-    wire [17:0] xtegactl_status_osd_match;
-    wire [1:0]  eff_speed;
-    wire [1:0]  eff_opl2;
-    wire        eff_cms, eff_ems, eff_umb, eff_vga13;
-    wire        eff_sb;
-    wire  [2:0] eff_sb_irq;
-    wire [3:0]  eff_crt_h;
-    wire [2:0]  eff_crt_v;
-    wire [2:0]  eff_vsync_w, eff_hsync_w;
-    wire        eff_joy1_digital, eff_joy1_disable;
-    wire        eff_joy2_digital, eff_joy2_disable;
-    wire        eff_joy_sync, eff_joy_swap, eff_mt32_gm, eff_tandy, eff_mpu401;
-
-    // Audio at 220h. With both cards built this is one three-way field in
-    // status[29:28]: 0 = C/MS, 1 = Sound Blaster, 2 = neither. With only one
-    // built there is nothing to choose between, so bit 29 stays the plain
-    // Enabled/Disabled it has always been and bit 28 is left to Swap
-    // Joysticks. Either way these two are never both high, which is what
-    // 226h/227h requires.
-    wire       a220_three_way = (`ENABLE_CMS && `ENABLE_SB) ? 1'b1 : 1'b0;
-    wire [1:0] a220_sel       = status[29:28];
-    wire       a220_cms       = `ENABLE_CMS
-                             ? (a220_three_way ? (a220_sel == 2'd0) : ~status[29])
-                             : 1'b0;
-    wire       a220_sb        = `ENABLE_SB
-                             ? (a220_three_way ? (a220_sel == 2'd1) : ~status[29])
-                             : 1'b0;
-    wire [2:0] sb_irq_osd     = status[70] ? 3'd7 : 3'd5;
-    wire       sb_irq7        = (eff_sb_irq == 3'd7);
-
-    xtegactl_resolve xtegactl_apply (
-        .reg_cpu          (xtegactl_cpu),
-        .reg_exp          (xtegactl_exp),
-        .reg_vid          (xtegactl_vid),
-        .reg_inp          (xtegactl_inp),
-        .reg_midi         (xtegactl_midi),
-        .reg_exp2         (xtegactl_exp2),
-        .osd_speed        (status[18:17]),
-        .osd_fake286      (1'b0),
-        .osd_opl2         (status[43:42]),
-        .osd_cms          (a220_cms),
-        .osd_sb           (a220_sb),
-        .osd_sb_irq       (sb_irq_osd),
-        .build_sb         (`ENABLE_SB ? 1'b1 : 1'b0),
-        .reg_crt          (xtegactl_crt),
-        .reg_sync         (xtegactl_sync),
-        .osd_crt_h        (status[49:46]),
-        .osd_crt_v        (status[52:50]),
-        .osd_vsync_w      (status[66:64]),
-        .osd_hsync_w      (status[69:67]),
-        .osd_ems          (~status[5]),
-        .osd_umb          (~status[12]),
-        .osd_joy1_digital (status[23]),
-        .osd_joy1_disable (status[24]),
-        .osd_joy2_digital (status[25]),
-        .osd_joy2_disable (status[26]),
-        .osd_joy_sync     (status[27]),
-        .osd_joy_swap     (status[54]),
-        .osd_mt32_gm      (status[41]),
-        .osd_tandy        (status[55]),
-        .osd_mpu401       (~status[56]),
-        .build_tandy      (`ENABLE_TANDY_AUDIO ? 1'b1 : 1'b0),
-        .eff_speed        (eff_speed),
-        .eff_fake286      (),
-        .eff_opl2         (eff_opl2),
-        .eff_cms          (eff_cms),
-        .eff_sb           (eff_sb),
-        .eff_sb_irq       (eff_sb_irq),
-        .eff_ems          (eff_ems),
-        .eff_umb          (eff_umb),
-        .eff_vga13        (eff_vga13),
-        .eff_joy1_digital (eff_joy1_digital),
-        .eff_joy1_disable (eff_joy1_disable),
-        .eff_joy2_digital (eff_joy2_digital),
-        .eff_joy2_disable (eff_joy2_disable),
-        .eff_joy_sync     (eff_joy_sync),
-        .eff_joy_swap     (eff_joy_swap),
-        .eff_mt32_gm      (eff_mt32_gm),
-        .eff_tandy        (eff_tandy),
-        .eff_mpu401       (eff_mpu401),
-        .eff_crt_h        (eff_crt_h),
-        .eff_crt_v        (eff_crt_v),
-        .eff_vsync_w      (eff_vsync_w),
-        .eff_hsync_w      (eff_hsync_w),
-        .status_effective (xtegactl_status_effective),
-        .status_osd_match (xtegactl_status_osd_match)
-    );
-
-    wire [7:0]  uart_mode;
-
-    //Keyboard Ps2
-    wire        ps2_kbd_clk_out;
-    wire        ps2_kbd_data_out;
-    wire        ps2_kbd_clk_in;
-    wire        ps2_kbd_data_in;
-    // Decoded key stream retained for the imported splash helper. The initial
-    // SPK286 profile does not request the framework's F12 CPU-pause mode.
-    wire [10:0] ps2_key;
-
-    //Mouse PS2
-    wire        ps2_mouse_clk_out;
-    wire        ps2_mouse_data_out;
-    wire        ps2_mouse_clk_in;
-    wire        ps2_mouse_data_in;
+    wire [31:0] joystick_0;
+    wire [31:0] joystick_1;
+    wire [15:0] joystick_l_analog_0;
+    wire [15:0] joystick_l_analog_1;
+    wire [1:0]  hps_buttons;
+    wire        forced_scandoubler;
+    wire        direct_video;
+    wire [127:0] hps_status;
+    wire [15:0]  hps_status_menumask;
+    wire         at_debug_enable = hps_status[71];
+    wire [1:0]   at_debug_page = hps_status[73:72];
+    wire         at_debug_ram_view = hps_status[82];
+    wire         at_debug_fault_view = hps_status[81] && !at_debug_ram_view;
+    wire         at_debug_boot_view = hps_status[79] && !at_debug_fault_view && !at_debug_ram_view;
+    wire         at_debug_raw_view = at_debug_boot_view || at_debug_fault_view || at_debug_ram_view;
+    wire [10:0]  ps2_key;
+    wire          ps2_kbd_clk_out;
+    wire          ps2_kbd_data_out;
+    wire          ps2_mouse_clk_out;
+    wire          ps2_mouse_data_out;
+    wire [7:0]    uart_mode;
 
     wire        ioctl_download;
-    wire  [7:0] ioctl_index;
+    wire [15:0] ioctl_index;
     wire        ioctl_wr;
-    wire [24:0] ioctl_addr;
+    wire [26:0] ioctl_addr;
     wire [15:0] ioctl_data;
     wire        ioctl_wait;
 
-    wire [21:0] gamma_bus;
+    // No legacy PS/2 device is instantiated in this profile.  hps_io still
+    // supplies its decoded event stream, which is translated into the AT
+    // 8042 host-byte boundary below.
+    wire ps2_kbd_clk_in  = 1'b1;
+    wire ps2_kbd_data_in = 1'b1;
+    wire ps2_mouse_clk_in  = 1'b1;
+    wire ps2_mouse_data_in = 1'b1;
 
-    wire [13:0] joy0, joy1;
-    wire [15:0] joya0, joya1;
-    // Bit order set by tandy_pcjr_joy: P1 type, P1 disable, P2 type, P2
-    // disable, turbo sync.
-    wire [4:0]  joy_opts = {eff_joy_sync, eff_joy2_disable, eff_joy2_digital,
-                            eff_joy1_disable, eff_joy1_digital};
-
-    wire [1:0] scale = status[2:1];
-    wire [2:0] screen_mode = status[16:14];
-    wire [1:0] ar = status[9:8];
-    // A zero XTEGACTL field defers to the OSD; a non-zero value is a
-    // per-program override. The OSD fields live in the first six extended
-    // status bits, beyond the legacy 64-bit map.
-    wire [2:0] vsync_width_osd = eff_vsync_w;
-    wire [2:0] hsync_width_osd = eff_hsync_w;
-
-    reg [1:0]   scale_video_ff;
-    reg [2:0]   screen_mode_video_ff;
-    wire        video_scandoubler_en = (scale_video_ff > 0) || forced_scandoubler;
-    // bits 2:0 have no h0/h1/h2 entries in CONF_STR; bit3 exposes MT32-pi -
-    // gated on the MPU-401 itself being enabled as well as mt32-pi being
-    // detected, since a disabled MPU-401 leaves nothing for the page to
-    // configure; bits 5:4 reveal the two "halted, no BIOS" lines at the top
-    // of the menu.
-    wire [15:0] status_menumask = {10'd0, bios_missing_ega, bios_missing_main,
-                                   (`ENABLE_MIDI & mt32_available & eff_mpu401), 3'b111};
-
-    wire VGA_VBlank_border;
-    wire std_hsyncwidth;
-    wire pause_core;
-    wire [7:0] keyboard_debug_keycode;
-    wire       keyboard_debug_irq;
-    wire [7:0] keyboard_debug_port_b;
-    wire       keyboard_debug_pic_int;
-
-    always @(posedge clk_57_272)
-    begin
-        scale_video_ff          <= scale;
-        screen_mode_video_ff    <= screen_mode;
-        VIDEO_ARX               <= (!ar) ? 12'd4 : (ar - 1'd1);
-        VIDEO_ARY               <= (!ar) ? 12'd3 : 12'd0;
-    end
-
-    // SPK286 execute_enable is not a safe whole-machine pause boundary. Keep
-    // the initial profile on MiSTer's normal F12/OSD behavior instead of
-    // advertising the inherited CPU pause shortcut.
-    hps_io #(.CONF_STR(CONF_STR), .PS2DIV(2000), .PS2WE(1), .WIDE(1)) hps_io
-	(
-		.clk_sys(clk_chipset),
-		.HPS_BUS(HPS_BUS),
-		.EXT_BUS(EXT_BUS),
-		.gamma_bus(gamma_bus),
-
-		.forced_scandoubler(forced_scandoubler),
-
-		.buttons(buttons),
-		.status(status),
-		.status_menumask(status_menumask),
-		.info_req(info_req),
-		.info(info),
-		.new_vmode(ega_vmode_toggle),
-
-		.uart_mode(uart_mode),
-
-		.ps2_key(ps2_key),
-		.ps2_kbd_clk_in		(ps2_kbd_clk_out),
-		.ps2_kbd_data_in	(ps2_kbd_data_out),
-		.ps2_kbd_clk_out	(ps2_kbd_clk_in),
-		.ps2_kbd_data_out	(ps2_kbd_data_in),
-
-		.ps2_mouse_clk_out    (ps2_mouse_clk_out),
-		.ps2_mouse_data_out   (ps2_mouse_data_out),
-		.ps2_mouse_clk_in     (ps2_mouse_clk_in),
-		.ps2_mouse_data_in    (ps2_mouse_data_in),
-
-		.joystick_0(joy0),
-		.joystick_1(joy1),
-		.joystick_l_analog_0(joya0),
-		.joystick_l_analog_1(joya1),
-
-		//ioctl
-		.ioctl_download(ioctl_download),
-		.ioctl_index(ioctl_index),
-		.ioctl_wr(ioctl_wr),
-		.ioctl_addr(ioctl_addr),
-		.ioctl_dout(ioctl_data),
-		.ioctl_wait(ioctl_wait)
-	);
-
-
-    wire [15:0] mgmt_din;
-    wire [15:0] mgmt_dout;
-    wire [15:0] mgmt_addr;
-    wire        mgmt_rd;
-    wire        mgmt_wr;
-    wire  [7:0] mgmt_req;
-    assign mgmt_req[5:3] = 3'b000;
-
-    wire [35:0] EXT_BUS;
-    hps_ext hps_ext
-	(
-		.clk_sys(clk_chipset),
-		.EXT_BUS(EXT_BUS),
-
-		.ext_din(mgmt_din),
-		.ext_dout(mgmt_dout),
-		.ext_addr(mgmt_addr),
-		.ext_rd(mgmt_rd),
-		.ext_wr(mgmt_wr),
-
-		.ext_req(mgmt_req),
-		.ext_hotswap(2'b00)
-	);
-
-    //
-    ///////////////////////   CLOCKS   /////////////////////////////
-    //
-
-    wire clk_sys;
-    wire pll_locked;
-
-    wire clk_100;
-    wire clk_28_636;
-    wire clk_25_2;
-    wire clk_57_272;
-    wire clk_video_out_ps;
-    wire clk_card_video;
-    reg clk_14_318 = 1'b0;
-    wire clk_cpu;
-    logic cpu_ce_posedge;
-    logic cpu_ce_negedge;
-    logic peripheral_ce;
-    wire clk_chipset;
-
-    localparam [27:0] cur_rate = 28'd50000000;
-
-    pll pll
-	(
-		.refclk(CLK_50M),
-		.rst(0),
-		.outclk_0(clk_100),
-        .outclk_1(clk_chipset),
-		.locked(pll_locked)
-	);
-
-    wire pll_system_locked;
-
-    pll_system pll_system_inst (
-        .refclk(CLK_50M),
-        .rst(0),
-        .outclk_0(clk_28_636),
-        .outclk_1(clk_57_272),
-        .outclk_2(clk_video_out_ps),
-        .outclk_3(clk_25_2),
-        .locked(pll_system_locked)
+    hps_io #(
+        .CONF_STR (CONF_STR_AT),
+        .PS2DIV   (2000),
+        .PS2WE    (1),
+        .WIDE     (1)
+    ) hps_io_at (
+        .clk_sys              (CLK_50M),
+        .HPS_BUS              (HPS_BUS),
+        .EXT_BUS              (EXT_BUS),
+        .gamma_bus            (gamma_bus),
+        .forced_scandoubler   (forced_scandoubler),
+        .direct_video         (direct_video),
+        .buttons              (hps_buttons),
+        .status               (hps_status),
+        .status_menumask      (hps_status_menumask),
+        .video_rotated        (1'b0),
+        .new_vmode            (1'b0),
+        .info_req             (1'b0),
+        .info                 (8'h00),
+        .status_in            (128'h0),
+        .status_set           (1'b0),
+        .uart_mode            (uart_mode),
+        .ps2_key              (ps2_key),
+        .ps2_kbd_clk_in       (ps2_kbd_clk_in),
+        .ps2_kbd_data_in      (ps2_kbd_data_in),
+        .ps2_kbd_clk_out      (ps2_kbd_clk_out),
+        .ps2_kbd_data_out     (ps2_kbd_data_out),
+        .ps2_mouse_clk_in     (ps2_mouse_clk_in),
+        .ps2_mouse_data_in    (ps2_mouse_data_in),
+        .ps2_mouse_clk_out    (ps2_mouse_clk_out),
+        .ps2_mouse_data_out   (ps2_mouse_data_out),
+        .joystick_0           (joystick_0),
+        .joystick_1           (joystick_1),
+        .joystick_l_analog_0  (joystick_l_analog_0),
+        .joystick_l_analog_1  (joystick_l_analog_1),
+        .ioctl_download       (ioctl_download),
+        .ioctl_index          (ioctl_index),
+        .ioctl_wr             (ioctl_wr),
+        .ioctl_addr           (ioctl_addr),
+        .ioctl_dout           (ioctl_data),
+        .ioctl_wait           (ioctl_wait),
+        .ioctl_upload_req     (1'b0),
+        .ioctl_upload_index   (8'h00),
+        .ioctl_din            (16'h0000)
     );
 
-    wire vga_mode13_wide_clock;
-    wire vga_native_standard_clock = vga_mode13_active_video &&
-                                     vga_mode13_native_osd &&
-                                     !vga_mode13_wide_clock;
-    vga_video_clock_mux vga_video_clock_select (
-        .clk_legacy(clk_28_636),
-        .clk_native(clk_25_2),
-        .select_native(vga_native_standard_clock),
-        .clk_video(clk_card_video)
-    );
+    wire        physical_idle;
+    wire [12:0] sdram_address;
+    wire        sdram_cke;
+    wire        sdram_cs;
+    wire        sdram_ras;
+    wire        sdram_cas;
+    wire        sdram_we;
+    wire [1:0]  sdram_ba;
+    wire [15:0] sdram_dq_in;
+    wire [15:0] sdram_dq_out;
+    wire        sdram_dq_io;
+    wire        sdram_ldqm;
+    wire        sdram_udqm;
+    logic       sdram_initialized_q;
 
-    wire reset_wire = RESET | status[0] | buttons[1] | !pll_locked | !pll_system_locked  | splashscreen | splash_pending;
-    wire video_retime_reset = RESET | status[0] | buttons[1] | !pll_locked | !pll_system_locked | splash_pending;
-    (* ASYNC_REG = "TRUE" *) logic [1:0] video_retime_reset_sync = 2'b11;
-    wire video_retime_reset_local = video_retime_reset_sync[1];
+    assign sdram_dq_in = SDRAM_DQ;
+    assign SDRAM_DQ = ~sdram_dq_io ? sdram_dq_out : 16'hzzzz;
+    assign SDRAM_CLK = CLK_50M;
+    assign SDRAM_A   = sdram_address;
+    assign SDRAM_CKE = sdram_cke;
+    assign SDRAM_BA  = sdram_ba;
+    assign SDRAM_nCS = sdram_cs;
+    assign SDRAM_nRAS = sdram_ras;
+    assign SDRAM_nCAS = sdram_cas;
+    assign SDRAM_nWE  = sdram_we;
+    assign SDRAM_DQML = sdram_ldqm;
+    assign SDRAM_DQMH = sdram_udqm;
 
-    // The output retime registers run on the phase-shifted video clock.
-    // Reset asserts asynchronously but is released only on that clock.
-    always_ff @(posedge clk_video_out_ps or posedge video_retime_reset) begin
-        if (video_retime_reset)
-            video_retime_reset_sync <= 2'b11;
-        else
-            video_retime_reset_sync <= {video_retime_reset_sync[0], 1'b0};
-    end
-    wire reset_sdram_wire = RESET | !pll_locked;
-
-    //////////////////////////////////////////////////////////////////
-
-    // TODO: messy, use a single clock domain at least
-    always @(posedge clk_28_636)
-    begin
-        clk_14_318 <= ~clk_14_318;  // 14.318Mhz, UART reference and splash timebase
-    end
-
-    //////////////////////////////////////////////////////////////////
-
-    wire   biu_done;
-    logic  [7:0] clock_cycle_counter_division_ratio;
-    logic  [7:0] clock_cycle_counter_decrement_value;
-    logic        shift_read_timing;
-    logic  [1:0] ram_read_wait_cycle;
-    logic  [1:0] ram_write_wait_cycle;
-    logic        cycle_accrate;
-    logic  [1:0] clk_select;
-    wire   [1:0] clk_select_next = eff_speed;
-
-    always @(posedge clk_chipset, posedge reset)
-    begin
-        if (reset)
-            clk_select <= 2'b00;
-        else if (biu_done)
-            clk_select <= clk_select_next;
+    // physical_idle is a transaction-state signal and therefore drops for
+    // every SDRAM access.  The HPS loader needs a monotonic initialization
+    // indication so an active ROM word is not reset at the next command.
+    always_ff @(posedge CLK_50M or posedge RESET) begin
+        if (RESET)
+            sdram_initialized_q <= 1'b0;
+        else if (physical_idle)
+            sdram_initialized_q <= 1'b1;
     end
 
-    XT_CE_Generator u_XT_CE_Generator
-    (
-        .clock                              (clk_chipset),
-        .reset                              (reset),
-        .clk_select_load                    (biu_done),
-        .clk_select                         (clk_select_next),
-        .cpu_clk_pin                        (clk_cpu),
-        .cpu_ce_posedge                     (cpu_ce_posedge),
-        .cpu_ce_negedge                     (cpu_ce_negedge),
-        .peripheral_ce                      (peripheral_ce),
-        .cycle_accrate                      (cycle_accrate),
-        .clock_cycle_counter_division_ratio (clock_cycle_counter_division_ratio),
-        .clock_cycle_counter_decrement_value(clock_cycle_counter_decrement_value),
-        .shift_read_timing                  (shift_read_timing),
-        .ram_read_wait_cycle                (ram_read_wait_cycle),
-        .ram_write_wait_cycle               (ram_write_wait_cycle)
-    );
-    //////////////////////////////////////////////////////////////////
-
-    logic reset = 1'b1;
-    logic [15:0] reset_count = 16'h0000;
-    logic reset_sdram = 1'b1;
-    logic [15:0] reset_sdram_count = 16'h0000;
-
-    always @(posedge clk_chipset, posedge reset_wire)
-    begin
-        if (reset_wire)
-        begin
-            reset <= 1'b1;
-            reset_count <= 16'h0000;
-        end
-        else if (reset)
-        begin
-            if (reset_count != 16'hffff)
-            begin
-                reset <= 1'b1;
-                reset_count <= reset_count + 16'h0001;
-            end
-            else
-            begin
-                reset <= 1'b0;
-                reset_count <= reset_count;
-            end
-        end
-        else
-        begin
-            reset <= 1'b0;
-            reset_count <= reset_count;
-        end
-    end
-
-    // Track the OSD selection throughout the stretched reset interval so the
-    // final stable value is ready before the CPU starts executing the BIOS.
-    // Changes made while the machine is running remain pending until reset.
-    ega_monitor_profile_latch monitor_profile_latch (
-        .clock        (clk_chipset),
-        .reset_active (reset),
-        .selected     (ega_monitor_profile_osd),
-        .applied      (ega_monitor_profile_applied)
-    );
-
-    logic reset_cpu_ff = 1'b1;
-    logic reset_cpu = 1'b1;
-    logic spk_reset = 1'b1;
-    logic [15:0] reset_cpu_count = 16'h0000;
-
-    always @(negedge clk_chipset, posedge reset)
-    begin
-        if (reset)
-            reset_cpu_ff <= 1'b1;
-        else
-            reset_cpu_ff <= reset;
-    end
-
-    // SPK286 uses a synchronous reset throughout its datapath. Register the
-    // machine reset on the CPU clock so its high-fanout release has a complete
-    // clock period, while retaining the inherited reset stretcher and order.
-    always_ff @(posedge clk_chipset)
-        spk_reset <= reset_cpu;
-
-    always @(negedge clk_chipset, posedge reset)
-    begin
-        if (reset)
-        begin
-            reset_cpu <= 1'b1;
-            reset_cpu_count <= 16'h0000;
-        end
-        else if (reset_cpu)
-        begin
-            reset_cpu <= reset_cpu_ff;
-            reset_cpu_count <= 16'h0000;
-        end
-        else
-        begin
-            if (reset_cpu_count != 16'h002A)
-            begin
-                reset_cpu <= reset_cpu_ff;
-                reset_cpu_count <= reset_cpu_count + 16'h0001;
-            end
-            else
-            begin
-                reset_cpu <= 1'b0;
-                reset_cpu_count <= reset_cpu_count;
-            end
-        end
-    end
-
-    always @(posedge clk_chipset, posedge reset_sdram_wire)
-    begin
-        if (reset_sdram_wire)
-        begin
-            reset_sdram <= 1'b1;
-            reset_sdram_count <= 16'h0000;
-        end
-        else if (reset_sdram)
-        begin
-            if (reset_sdram_count != 16'hffff)
-            begin
-                reset_sdram <= 1'b1;
-                reset_sdram_count <= reset_sdram_count + 16'h0001;
-            end
-            else
-            begin
-                reset_sdram <= 1'b0;
-                reset_sdram_count <= reset_sdram_count;
-            end
-        end
-        else
-        begin
-            reset_sdram <= 1'b0;
-            reset_sdram_count <= reset_sdram_count;
-        end
-    end
-
-    //
-    ///////////////////////   BIOS LOADER   ////////////////////////////
-    //
-
+    wire        loader_valid;
+    wire        loader_write;
+    wire [23:0] loader_address;
+    wire [1:0]  loader_byte_enable;
+    wire [15:0] loader_data_out;
+    wire        loader_accept;
+    wire        loader_ready;
     wire [2:0]  bios_protect_flag;
-    wire        bios_access_request;
-    wire [19:0] bios_access_address;
-    wire [15:0] bios_write_data;
-    wire        bios_write_n;
-    wire        pcat_main_rom_loaded;
-    wire        ega_bios_loaded;
-    wire        ega_bios_write_protect;
-    wire [1:0]  ega_video_switches;
+    wire        main_rom_loaded;
+    wire        ega_rom_loaded;
+    wire        xtide_rom_loaded;
+    wire        loader_active;
+    wire        loader_protocol_error;
 
-    pcat_rom_loader u_PCAT_ROM_LOADER (
-        .clock                   (clk_chipset),
-        .reset                   (reset_sdram),
-        .sdram_initialized       (initilized_sdram),
-        .rom_protect             (status[31:30]),
-        .processor_ready         (processor_ready),
-        .address_direction       (address_direction),
-        .ioctl_download          (ioctl_download),
-        .ioctl_index             (ioctl_index),
-        .ioctl_wr                (ioctl_wr),
-        .ioctl_addr              (ioctl_addr),
-        .ioctl_data              (ioctl_data),
-        .ioctl_wait              (ioctl_wait),
-        .bios_protect_flag       (bios_protect_flag),
-        .bios_access_request     (bios_access_request),
-        .bios_access_address     (bios_access_address),
-        .bios_write_data         (bios_write_data),
-        .bios_write_n            (bios_write_n),
-        .bios_write_wait_count   (),
-        .bios_write_byte_count   (),
-        .bios_load_state         (),
-        .main_rom_loaded         (pcat_main_rom_loaded),
-        .ega_rom_loaded          (ega_bios_loaded),
-        .ega_rom_write_protect   (ega_bios_write_protect),
-        .ega_video_switches      (ega_video_switches)
+    // Match the PCXT status_menumask contract: bits 4 and 5 expose the
+    // missing-main/EGA indicators used by h4/h5 in the configuration string.
+    // The lower four bits are intentionally clear because this profile has no
+    // hidden MIDI/legacy entries occupying those positions.
+    assign hps_status_menumask = {10'd0, ~ega_rom_loaded, ~main_rom_loaded,
+                                  4'b0000};
+
+    spk286_at_hps_rom_loader u_at_hps_rom_loader (
+        .clk                (CLK_50M),
+        .reset              (RESET),
+        .sdram_initialized  (sdram_initialized_q),
+        .ioctl_download     (ioctl_download),
+        .ioctl_index        (ioctl_index[7:0]),
+        .ioctl_wr           (ioctl_wr),
+        .ioctl_addr         (ioctl_addr[24:0]),
+        .ioctl_data         (ioctl_data),
+        .ioctl_wait         (ioctl_wait),
+        .loader_valid       (loader_valid),
+        .loader_write       (loader_write),
+        .loader_address     (loader_address),
+        .loader_byte_enable (loader_byte_enable),
+        .loader_data_out    (loader_data_out),
+        .loader_accept      (loader_accept),
+        .loader_ready       (loader_ready),
+        .bios_protect_flag  (bios_protect_flag),
+        .main_rom_loaded    (main_rom_loaded),
+        .ega_rom_loaded     (ega_rom_loaded),
+        .xtide_rom_loaded   (xtide_rom_loaded),
+        .load_active        (loader_active),
+        .protocol_error     (loader_protocol_error)
     );
 
-    // Report one missing image at a time, main ROM first.
-    wire bios_missing_main = ~pcat_main_rom_loaded;
-    wire bios_missing_ega  = pcat_main_rom_loaded & ~ega_bios_loaded;
+    wire        cpu_memory_valid;
+    wire        cpu_memory_command_valid;
+    wire        cpu_memory_write;
+    wire        cpu_memory_code_fetch;
+    wire [3:0]  cpu_memory_cycle_class;
+    wire [23:0] cpu_memory_address;
+    wire [1:0]  cpu_memory_byte_enable;
+    wire [15:0] cpu_memory_data_out;
+    wire        cpu_memory_accept;
+    wire        cpu_memory_ready;
+    wire [15:0] cpu_memory_read_data;
+    wire        cpu_memory_read_data_valid;
 
+    wire        at_cpu_data_oe;
+    wire [23:0] at_cpu_address;
+    wire [15:0] at_cpu_data_out;
+    wire [15:0] at_cpu_data_in;
+    wire        at_cpu_bus_valid;
+    wire        at_cpu_bus_write;
+    wire        at_cpu_bus_bhe_n;
+    wire [3:0]  at_cpu_bus_status;
+    wire        at_cpu_bus_lock;
+    wire        at_cpu_hlda;
+    wire        at_cpu_ready;
+    wire        at_cpu_halted;
+    wire        at_cpu_shutdown;
+    wire        at_debug_control_error;
+    wire        at_debug_unsupported_opcode;
+    wire        at_debug_microcode_fault;
+    wire        at_debug_operand_blocked;
+    wire        at_debug_event_completed;
+    wire [7:0]  at_debug_event_vector;
+    wire [2:0]  at_debug_event_kind;
+    wire [7:0]  at_debug_opcode;
+    wire [15:0] at_debug_cs;
+    wire [23:0] at_debug_cs_base;
+    wire [15:0] at_debug_ip;
+    wire [15:0] at_debug_flags;
+    wire at_debug_instruction_retired;
+    wire [15:0] at_debug_instruction_ip;
+    wire [95:0] at_debug_segment_bases;
+    wire [127:0] at_debug_gpr;
+    wire [63:0] at_debug_segment_selectors;
+    wire        at_debug_fetch_blocked;
+    wire [16:0] at_debug_fetch_cursor;
+    wire [11:0] at_debug_micro_pc;
+    wire [11:0] at_debug_micro_entry;
+    wire [7:0]  at_debug_micro_instruction;
+    wire        at_debug_micro_active;
+    wire [3:0]  at_debug_prefetch_count;
+    wire [3:0]  at_debug_bus_state;
+    wire [7:0]  at_debug_biu_detail;
+    wire [7:0]  at_debug_last_post;
+    wire [15:0] at_debug_cpu_cycle_count;
+    wire [15:0] at_debug_at_cycle_count;
+    wire [31:0] at_debug_trace0;
+    wire [31:0] at_debug_trace1;
+    wire [31:0] at_debug_trace2;
+    wire [31:0] at_debug_trace3;
+    wire [7:0]  at_debug_keyboard_keycode;
+    wire        at_debug_keyboard_irq;
+    wire [7:0]  at_debug_keyboard_port_b;
+    wire        at_debug_keyboard_pic_int;
+    wire [3:0]  at_debug_dma_request;
+    wire [3:0]  at_debug_dma_acknowledge_n;
+    wire [19:0] at_debug_address;
+    wire [7:0]  at_debug_data_out;
+    wire [7:0]  at_debug_data_in;
+    wire [2:0]  at_debug_status;
+    wire        at_debug_valid;
+    wire        at_debug_write;
+    wire        at_debug_io;
+    wire        at_debug_inta;
+    wire        at_debug_code;
+    wire        at_debug_byte_high;
+    wire        at_debug_memory_projection;
+    wire        at_debug_cycle_active;
+    wire        at_debug_ready;
+    wire        at_debug_hold_request;
+    wire        at_debug_bridge_idle;
+    wire        at_speaker_active;
+    wire        at_speaker_level;
 
-    //////////////////////////////////////////////////////////////////
+    wire        dma_memory_valid;
+    wire        dma_memory_write;
+    wire        dma_memory_read;
+    wire [23:0] dma_memory_address;
+    wire [1:0]  dma_memory_byte_enable;
+    wire [15:0] dma_memory_data_out;
+    wire        dma_memory_accept;
+    wire        dma_memory_ready;
+    wire [15:0] dma_memory_data_in;
 
-    //
-    // Splash screen
-    //
-    reg splash_off = 1'b1;
-    reg [24:0] splash_cnt = 0;
-    reg [3:0] splash_cnt2 = 0;
-    reg splash_timed = 1'b0;
-    reg splash_pending = 1'b1;
-    reg [23:0] splash_boot_cnt = 24'd0;
-    reg phys_reset_hold = 0;
-    reg [23:0] phys_reset_cnt = 24'd0;
-    localparam [23:0] PHYS_RESET_HOLD = 24'd2863600;
-    localparam [23:0] SPLASH_BOOT_WAIT = 24'd14318000;
+    wire        refresh_memory_valid;
+    wire [23:0] refresh_memory_address;
+    wire        refresh_memory_accept;
+    wire        refresh_memory_ready;
 
-    always @ (posedge clk_14_318)
-    begin
-        splash_off <= status[7];
-        if (RESET || buttons[1])
-        begin
-            phys_reset_hold <= 1'b1;
-            phys_reset_cnt <= 24'd0;
-        end
-        else if (phys_reset_hold)
-        begin
-            if (phys_reset_cnt == PHYS_RESET_HOLD)
-                phys_reset_hold <= 1'b0;
-            else
-                phys_reset_cnt <= phys_reset_cnt + 24'd1;
-        end
+    wire        backend_valid;
+    wire        backend_command_valid;
+    wire [1:0]  backend_owner;
+    wire        backend_write;
+    wire        backend_refresh;
+    wire        backend_code_fetch;
+    wire [3:0]  backend_cycle_class;
+    wire [23:0] backend_address;
+    wire [1:0]  backend_byte_enable;
+    wire [15:0] backend_data_out;
+    wire        backend_accept;
+    wire        backend_ready;
+    wire [15:0] backend_read_data;
+    wire        backend_read_data_valid;
+    wire        memory_port_protocol_error;
 
-        if (splash_pending)
-        begin
-            if (~splash_off)
-            begin
-                splash_timed <= 1'b1;
-                splash_cnt <= 0;
-                splash_cnt2 <= 0;
-                splash_pending <= 1'b0;
-                splash_boot_cnt <= 24'd0;
-            end
-            else if (splash_boot_cnt == SPLASH_BOOT_WAIT)
-            begin
-                splash_pending <= 1'b0;
-            end
-            else
-            begin
-                splash_boot_cnt <= splash_boot_cnt + 24'd1;
-            end
-        end
-        else if (splash_timed)
-        begin
-            if (splash_off)
-            begin
-                splash_timed <= 0;
-            end
-            else if (splash_paused)
-            begin
-                // Retained baseline behavior if a decoded pause key reaches
-                // the helper. The production profile does not reserve F12.
-                splash_cnt <= splash_cnt;
-            end
-            else if(splash_cnt2 == 5) // 5 seconds delay
-            begin
-                splash_timed <= 0;
-            end
-            else if (splash_cnt == 14318000)
-            begin // 1 second at 14.318Mhz
-                splash_cnt2 <= splash_cnt2 + 1;
-                splash_cnt <= 0;
-            end
-            else
-                splash_cnt <= splash_cnt + 1;
-        end
+    wire        p03_out_valid;
+    wire        p03_out_command_valid;
+    wire [1:0]  p03_out_owner;
+    wire        p03_out_write;
+    wire        p03_out_refresh;
+    wire        p03_out_code_fetch;
+    wire        p03_out_burst;
+    wire [3:0]  p03_out_cycle_class;
+    wire [23:0] p03_out_address;
+    wire [1:0]  p03_out_byte_enable;
+    wire [15:0] p03_out_data_out;
+    wire        p03_in_accept;
+    wire        p03_in_ready;
+    wire [15:0] p03_in_read_data;
+    wire        p03_in_read_data_valid;
+    wire        p03_out_accept;
+    wire        p03_out_ready;
+    wire [15:0] p03_out_read_data;
+    wire        p03_out_read_data_valid;
+    wire [31:0] p03_hit_count;
+    wire [31:0] p03_miss_count;
+    wire [31:0] p03_fill_count;
+    wire [31:0] p03_physical_read_count;
+    wire [31:0] p03_invalidation_count;
 
-    end
+    // Keep the existing logical-backend trace names pointed at the response
+    // seen by the memory port. The physical owner handshake is intentionally
+    // private to the P03 fill/bypass state machine.
+    assign backend_accept          = p03_in_accept;
+    assign backend_ready           = p03_in_ready;
+    assign backend_read_data       = p03_in_read_data;
+    assign backend_read_data_valid = p03_in_read_data_valid;
 
-    //
-    // Splash pause
-    //
-    // Retained baseline splash helper. F12 is not reserved by hps_io in the
-    // SPK286 profile, so this is not advertised as a CPU-pause contract.
-    wire splash_paused;
-
-    splash_f12_pause splash_pause (
-        .clock         (clk_14_318),
-        .splash_active (splash_timed),
-        .ps2_key       (ps2_key),
-        .paused        (splash_paused)
+    spk286_at_mister_memory_port u_at_memory_port (
+        .clk                    (CLK_50M),
+        .reset                  (RESET),
+        .cancel_cpu             (at_machine_reset | at_cpu_reset_request),
+        .cpu_valid              (cpu_memory_valid),
+        .cpu_command_valid      (cpu_memory_command_valid),
+        .cpu_write              (cpu_memory_write),
+        .cpu_code_fetch         (cpu_memory_code_fetch),
+        .cpu_cycle_class        (cpu_memory_cycle_class),
+        .cpu_address            (cpu_memory_address),
+        .cpu_byte_enable        (cpu_memory_byte_enable),
+        .cpu_data_out           (cpu_memory_data_out),
+        .cpu_accept             (cpu_memory_accept),
+        .cpu_ready              (cpu_memory_ready),
+        .cpu_read_data          (cpu_memory_read_data),
+        .cpu_read_data_valid    (cpu_memory_read_data_valid),
+        .loader_valid           (loader_valid),
+        .loader_write           (loader_write),
+        .loader_address         (loader_address),
+        .loader_byte_enable     (loader_byte_enable),
+        .loader_data_out        (loader_data_out),
+        .loader_accept          (loader_accept),
+        .loader_ready           (loader_ready),
+        .loader_read_data       (),
+        .dma_valid              (dma_memory_valid),
+        .dma_write              (dma_memory_write),
+        .dma_address            (dma_memory_address),
+        .dma_byte_enable        (dma_memory_byte_enable),
+        .dma_data_out           (dma_memory_data_out),
+        .dma_accept             (dma_memory_accept),
+        .dma_ready              (dma_memory_ready),
+        .dma_read_data          (dma_memory_data_in),
+        .refresh_valid          (refresh_memory_valid),
+        .refresh_address        (refresh_memory_address),
+        .refresh_accept         (refresh_memory_accept),
+        .refresh_ready          (refresh_memory_ready),
+        .backend_valid          (backend_valid),
+        .backend_command_valid  (backend_command_valid),
+        .backend_owner          (backend_owner),
+        .backend_write          (backend_write),
+        .backend_refresh        (backend_refresh),
+        .backend_code_fetch     (backend_code_fetch),
+        .backend_cycle_class    (backend_cycle_class),
+        .backend_address        (backend_address),
+        .backend_byte_enable    (backend_byte_enable),
+        .backend_data_out       (backend_data_out),
+        .backend_accept         (p03_in_accept),
+        .backend_ready          (p03_in_ready),
+        .backend_read_data      (p03_in_read_data),
+        .backend_read_data_valid(p03_in_read_data_valid),
+        .protocol_error         (memory_port_protocol_error)
     );
 
-    //
-    // Missing BIOS hold
-    //
-    // Both ROMs arrive over ioctl while the machine is already held in reset
-    // for the splash, so the check costs nothing extra: at the moment that hold
-    // would be released, either they are there or they are not.
-    //
-    // If one is missing the hold simply never ends. SPK286 therefore never
-    // executes, never touches the CRTC, and the raster stays on the power-on
-    // 640x200 that the splash is authored for - which is the whole point, since
-    // that is the one mode every 15 kHz television can lock to.  A set that
-    // could show the splash can show this.
-    //
-    // The splash is put back up for it even when the OSD has it switched off.
-    // A held black frame is indistinguishable from the failure it is meant to
-    // explain, and the picture is what draws the eye to the notice.
-    //
-    // splash_pending is only ever cleared and splash_timed is only ever set
-    // from it, so the boot phase falls exactly once and the hold takes over on
-    // that same edge, with no clock in which the CPU could start.
-    wire bios_hold;
-    wire [7:0] info;
-    wire info_req;
-    wire [7:0] bios_info;
-    wire       bios_info_req;
-    // Driven by reset_pending_notice, instantiated with the MMC block below
-    // because the 2nd SD card mapping it watches is declared there.
-    wire [7:0] pending_info;
-    wire       pending_info_req;
-
-    bios_hold_notice bios_notice (
-        .clock             (clk_14_318),
-        .splash_boot_phase (splash_pending | splash_timed),
-        .bios_missing_pcxt (bios_missing_main),
-        .bios_missing_ega  (bios_missing_ega),
-        .hold              (bios_hold),
-        .info              (bios_info),
-        .info_req          (bios_info_req)
+    // P03 is placed below the single-owner memory port. The port still
+    // serializes CPU, DMA, loader and refresh ownership; the buffer can
+    // therefore invalidate one line on every accepted write without adding
+    // a second coherence arbiter.
+    spk286_at_sdram_read_buffer #(
+        .ENABLE(1'b1)
+    ) u_at_sdram_read_buffer (
+        .clk                     (CLK_50M),
+        .reset                   (RESET),
+        .cancel_cpu              (at_machine_reset | at_cpu_reset_request),
+        .enable                  (1'b1),
+        .in_valid                (backend_valid),
+        .in_command_valid        (backend_command_valid),
+        .in_owner                (backend_owner),
+        .in_write                (backend_write),
+        .in_refresh              (backend_refresh),
+        .in_code_fetch           (backend_code_fetch),
+        .in_cycle_class          (backend_cycle_class),
+        .in_address              (backend_address),
+        .in_byte_enable          (backend_byte_enable),
+        .in_data_out             (backend_data_out),
+        .in_accept               (p03_in_accept),
+        .in_ready                (p03_in_ready),
+        .in_read_data            (p03_in_read_data),
+        .in_read_data_valid      (p03_in_read_data_valid),
+        .out_valid               (p03_out_valid),
+        .out_command_valid       (p03_out_command_valid),
+        .out_owner               (p03_out_owner),
+        .out_write               (p03_out_write),
+        .out_refresh             (p03_out_refresh),
+        .out_code_fetch          (p03_out_code_fetch),
+        .out_burst               (p03_out_burst),
+        .out_cycle_class         (p03_out_cycle_class),
+        .out_address             (p03_out_address),
+        .out_byte_enable         (p03_out_byte_enable),
+        .out_data_out            (p03_out_data_out),
+        .out_accept              (p03_out_accept),
+        .out_ready               (p03_out_ready),
+        .out_read_data           (p03_out_read_data),
+        .out_read_data_valid     (p03_out_read_data_valid),
+        .debug_hit_count         (p03_hit_count),
+        .debug_miss_count        (p03_miss_count),
+        .debug_fill_count        (p03_fill_count),
+        .debug_physical_read_count(p03_physical_read_count),
+        .debug_invalidation_count(p03_invalidation_count)
     );
 
-    // The halt notice wins the info box: its machine is stopped, and the
-    // reset-pending one is only worth reading on a machine that is running.
-    // reset_pending_notice is held off by the same signal, so in practice the
-    // two never ask at once.
-    assign info     = bios_info_req ? bios_info : pending_info;
-    assign info_req = bios_info_req | pending_info_req;
-
-    wire splashscreen = splash_timed | bios_hold;
-
-    //
-    // Input F/F PS2_CLK
-    //
-    logic   device_clock_ff;
-    logic   device_clock;
-
-    always_ff @(negedge clk_chipset, posedge reset)
-    begin
-        if (reset)
-        begin
-            device_clock_ff <= 1'b0;
-            device_clock    <= 1'b0;
-        end
-        else
-        begin
-            device_clock_ff <= ps2_kbd_clk_in;
-            device_clock    <= device_clock_ff ;
-        end
-    end
-
-
-    //
-    // Input F/F PS2_DAT
-    //
-    logic   device_data_ff;
-    logic   device_data;
-
-    always_ff @(negedge clk_chipset, posedge reset)
-    begin
-        if (reset)
-        begin
-            device_data_ff <= 1'b0;
-            device_data    <= 1'b0;
-        end
-        else
-        begin
-            device_data_ff <= ps2_kbd_data_in;
-            device_data    <= device_data_ff;
-        end
-    end
-
-
-    wire [7:0] data_bus;
-    wire [19:0] cpu_ad_out;
-    reg  [19:0] cpu_address;
-    wire [7:0] cpu_data_bus;
-    wire [15:0] data_bus_word;           // Unused legacy private SDRAM path.
-    wire [15:0] cpu_data_bus_word = 16'd0;
-    wire        word_read_possible;
-    wire        word_read_request;
-    wire        word_write_request;
-    wire processor_ready;
-    wire interrupt_to_cpu;
-    wire address_latch_enable;
-    wire address_direction;
-    wire processor_hold_request;
-    wire processor_hold_acknowledge;
-    wire processor_cycle_active;
-    wire spk_hold_request;
-
-    wire lock_n;
-    wire [2:0]processor_status;
-
-    wire [23:0] spk_address;
-    wire [15:0] spk_data_out;
-    wire [15:0] spk_data_in;
-    wire        spk_data_oe;
-    wire        spk_bus_valid;
-    wire        spk_bus_write;
-    wire        spk_bus_bhe_n;
-    wire [3:0]  spk_bus_status;
-    wire        spk_bus_lock;
-    wire        spk_hlda;
-    wire        spk_ready;
-    wire        spk_halted;
-    wire        spk_shutdown;
-    wire        spk_control_error;
-    wire        spk_unsupported_opcode;
-    wire        spk_microcode_fault;
-    wire        spk_operand_blocked;
-    wire        spk_event_completed;
-    wire [7:0]  spk_debug_event_vector;
-    wire [2:0]  spk_debug_event_kind;
-    wire [7:0]  spk_debug_opcode;
-    wire [15:0] spk_debug_cs;
-    wire [23:0] spk_debug_cs_base;
-    wire [15:0] spk_debug_ip;
-    wire [15:0] spk_debug_flags;
-    wire [127:0] spk_debug_gpr;
-    wire [63:0] spk_debug_segment_selectors;
-    wire        spk_fetch_blocked;
-    wire [16:0] spk_debug_fetch_cursor;
-    wire [11:0] spk_debug_micro_pc;
-    wire [11:0] spk_debug_micro_entry;
-    wire [7:0]  spk_debug_micro_instruction;
-    wire        spk_debug_micro_active;
-    wire [3:0]  spk_debug_prefetch_count;
-    wire [3:0]  spk_debug_bus_state;
-    wire [7:0]  spk_debug_biu_detail;
-    logic [7:0]  spk_debug_last_post = 8'h00;
-    logic [15:0] spk_debug_cpu_cycles = 16'h0000;
-    logic [15:0] spk_debug_xt_cycles = 16'h0000;
-    logic [31:0] spk_debug_trace0 = 32'h00000000;
-    logic [31:0] spk_debug_trace1 = 32'h00000000;
-    logic [31:0] spk_debug_trace2 = 32'h00000000;
-    logic [31:0] spk_debug_trace3 = 32'h00000000;
-    wire        xt_valid;
-    wire [19:0] xt_address;
-    wire [7:0]  xt_data_out;
-    wire [2:0]  xt_status;
-    wire        xt_write;
-    wire        xt_io;
-    wire        xt_inta;
-    wire        xt_code;
-    wire        xt_byte_high;
-    wire        xt_memory_projection;
-    wire        xt_lock_n;
-    wire        xt_accepted;
-    wire        bridge_idle;
-    wire        bridge_protocol_error;
-
-    // Match the legacy BIU data phase. The inherited 9.54 MHz and maximum
-    // profiles deliberately move reads to the later falling edge.
-    wire xt_sample = (shift_read_timing && !xt_write) ?
-                     cpu_ce_negedge : cpu_ce_posedge;
-
-    assign cpu_ad_out = xt_address;
-    assign cpu_data_bus = xt_data_out;
-    assign processor_status = xt_valid ? xt_status : 3'b111;
-    assign lock_n = xt_lock_n;
-    assign word_read_request = 1'b0;
-    assign word_write_request = 1'b0;
-    assign biu_done = spk_ready;
-    assign cpu_fault = spk_shutdown | spk_control_error |
-                       spk_unsupported_opcode | spk_microcode_fault |
-                       spk_operand_blocked | bridge_protocol_error;
-
-    wire [3:0]   dma_acknowledge_n;
-    wire [3:0]   dma_request_debug;
-    wire [3:0]   dma_acknowledge_debug;
-
-    logic   [7:0]   port_b_out;
-    logic   [7:0]   port_c_in;
-    wire    [1:0]   fdd_present;
-    reg     [7:0]   sw;
-
-    wire    [5:0]   sw_base;
-    wire    [1:0]   sw_floppy;
-
-    // sw_base[5:4] is the motherboard video switch pair the BIOS copies into bits
-    // 5:4 of the equipment word at 40:10. 2'b00 means "adapter with its own option
-    // ROM" (EGA), 2'b10 means CGA 80x25. Loading the EGA BIOS is what installs the
-    // card, so track it: otherwise the equipment word claims CGA and software that
-    // trusts it, such as Titus The Fox, picks the CGA path and renders nothing.
-    assign  sw_base = {ega_video_switches, 4'b1101};
-    assign  sw_floppy = fdd_present[1] ? 2'b01 : 2'b00;
-    assign  sw = {sw_floppy, sw_base}; // DIP switches (video adapter and floppy count)
-    assign  port_c_in[3:0] = port_b_out[3] ? sw[7:4] : sw[3:0];
-
-
-    wire ems_enabled_sel = `ENABLE_EMS ? eff_ems : 1'b0;
-    wire [1:0] ems_address_sel = 2'b01; // Fixed D000 page frame avoids EGA and XT-IDE ROM conflicts.
-    wire umb_enabled_sel = `ENABLE_UMB ? eff_umb : 1'b0;
-    wire mpu401_enabled_sel = `ENABLE_MIDI ? eff_mpu401 : 1'b0;
-
-    always @(posedge clk_chipset)
-    begin
-        if (address_latch_enable)
-            cpu_address <= cpu_ad_out;
-        else
-            cpu_address <= cpu_address;
-    end
-
-    CHIPSET #(.clk_rate(cur_rate)) u_CHIPSET
-	(
-		.clock                              (clk_chipset),
-		.cpu_ce_posedge                     (cpu_ce_posedge),
-		.cpu_ce_negedge                     (cpu_ce_negedge),
-		.clk_sys                            (clk_chipset),
-		.peripheral_ce                      (peripheral_ce),
-		.clk_select                         (clk_select),
-		.reset                              (reset_cpu),
-		.video_reset                        (video_retime_reset),
-		.sdram_reset                        (reset_sdram),
-		.cpu_address                        (cpu_address),
-		.cpu_data_bus                       (cpu_data_bus),
-		.processor_status                   (processor_status),
-		.processor_lock_n                   (lock_n),
-		.processor_hold_acknowledge          (processor_hold_acknowledge),
-		.processor_hold_request              (processor_hold_request),
-		.processor_cycle_active              (processor_cycle_active),
-	//	.processor_transmit_or_receive_n    (processor_transmit_or_receive_n),
-		.processor_ready                    (processor_ready),
-		.interrupt_to_cpu                   (interrupt_to_cpu),
-		.splashscreen                       (splashscreen),
-		.std_hsyncwidth                     (std_hsyncwidth),
-		.clk_video                        (clk_card_video),
-		.de_o                               (de_o),
-		.VGA_R                              (r),
-		.VGA_G                              (g),
-		.VGA_B                              (b),
-		.VGA_HSYNC                          (HSync),
-		.VGA_VSYNC                          (VSync),
-		.VGA_HBlank                         (HBlank),
-		.VGA_VBlank                         (VBlank),
-		.VGA_VBlank_border                  (VGA_VBlank_border),
-		.vga_mode13_osd                    (eff_vga13),
-		.vga_mode13_native                 (vga_mode13_native_osd),
-		.ega_monitor_profile               (ega_monitor_profile_applied),
-		.vga_mode13_active_out             (vga_mode13_active_video),
-		.vga_mode13_wide_clock_out         (vga_mode13_wide_clock),
-		.vga_mode13_pixel_toggle_out        (vga_mode13_pixel_toggle),
-	//	.address                            (address),
-		.address_ext                        (bios_access_address),
-		.ext_access_request                 (bios_access_request),
-		.address_direction                  (address_direction),
-		.data_bus                           (data_bus),
-		// Private 16-bit SDRAM path, beside the public 8-bit chipset bus.
-		.word_read_request                  (word_read_request),
-		.word_write_request                 (word_write_request),
-		.data_bus_word_in                   (cpu_data_bus_word),
-		.data_bus_word                      (data_bus_word),
-		.word_read_possible                 (word_read_possible),
-		.data_bus_ext                       (bios_write_data[7:0]),
-	//	.data_bus_direction                 (data_bus_direction),
-		.address_latch_enable               (address_latch_enable),
-	//  .io_channel_check                   (),
-		.io_channel_ready                   (1'b1),
-		.interrupt_request                  (0),    // use?	-> It does not seem to be necessary.
-	//  .io_read_n                          (io_read_n),
-		.io_read_n_ext                      (1'b1),
-	//  .io_read_n_direction                (io_read_n_direction),
-	//  .io_write_n                         (io_write_n),
-		.io_write_n_ext                     (1'b1),
-	//  .io_write_n_direction               (io_write_n_direction),
-	//  .memory_read_n                      (memory_read_n),
-		.memory_read_n_ext                  (1'b1),
-	//  .memory_read_n_direction            (memory_read_n_direction),
-	//  .memory_write_n                     (memory_write_n),
-		.memory_write_n_ext                 (bios_write_n),
-	//  .memory_write_n_direction           (memory_write_n_direction),
-		.dma_request                        (0),    // use?	-> I don't know if it will ever be necessary, at least not during testing.
-		.dma_acknowledge_n                  (dma_acknowledge_n),
-		.dma_request_debug                  (dma_request_debug),
-		.dma_acknowledge_debug              (dma_acknowledge_debug),
-	//  .address_enable_n                   (address_enable_n),
-	//  .terminal_count_n                   (terminal_count_n)
-		.port_b_out                         (port_b_out),
-		.port_c_in                          (port_c_in),
-		.port_b_in                          (port_b_out),
-		.speaker_out                        (speaker_out),
-		.ps2_clock                          (device_clock),
-		.ps2_data                           (device_data),
-		.ps2_clock_out                      (ps2_kbd_clk_out),
-		.ps2_data_out                       (ps2_kbd_data_out),
-		.ps2_mouseclk_in                    (ps2_mouse_clk_out),
-		.ps2_mousedat_in                    (ps2_mouse_data_out),
-		.ps2_mouseclk_out                   (ps2_mouse_clk_in),
-		.ps2_mousedat_out                   (ps2_mouse_data_in),
-		.joy_opts                           (joy_opts),           //Joy0-Disabled, Joy0-Type, Joy1-Disabled, Joy1-Type, turbo_sync
-		.joy0                               (eff_joy_swap ? joy1 : joy0),
-		.joy1                               (eff_joy_swap ? joy0 : joy1),
-		.joya0                              (eff_joy_swap ? joya1 : joya0),
-		.joya1                              (eff_joy_swap ? joya0 : joya1),
-		.jtopl2_snd_e                       (jtopl2_snd_e),
-		.tandy_snd_e                        (tandy_snd_e),
-		.tandy_en                           (eff_tandy),
-		.opl2_io                            (eff_opl2),
-		.sb_en                              (eff_sb),
-		.sb_irq7                            (sb_irq7),
-		.sb_snd_l                           (sb_snd_l),
-		.sb_snd_r                           (sb_snd_r),
-		.cms_en                             (eff_cms),
-		.o_cms_l                            (cms_l_snd_e),
-		.o_cms_r                            (cms_r_snd_e),
-		.clk_uart                           (clk_uart2_en),
-		.uart2_rx                           (uart_rx),
-		.uart2_tx                           (uart_tx),
-		.uart2_cts_n                        (uart_cts),
-		.uart2_dcd_n                        (uart_dcd),
-		.uart2_dsr_n                        (uart_dsr),
-		.uart2_rts_n                        (uart_rts),
-		.uart2_dtr_n                        (uart_dtr),
-		.clk_midi                           (clk_midi_en),
-		.midi_rx                            (midi_rx),
-		.midi_tx                            (midi_tx),
-		.mpu401_enabled                     (mpu401_enabled_sel),
-		.enable_sdram                       (1'b1),
-		.initilized_sdram                   (initilized_sdram),
-		.sdram_clock                        (SDRAM_CLK),
-		.sdram_address                      (SDRAM_A),
-		.sdram_cke                          (SDRAM_CKE),
-		.sdram_cs                           (SDRAM_nCS),
-		.sdram_ras                          (SDRAM_nRAS),
-		.sdram_cas                          (SDRAM_nCAS),
-		.sdram_we                           (SDRAM_nWE),
-		.sdram_ba                           (SDRAM_BA),
-		.sdram_dq_in                        (SDRAM_DQ_IN),
-		.sdram_dq_out                       (SDRAM_DQ_OUT),
-		.sdram_dq_io                        (SDRAM_DQ_IO),
-		.sdram_ldqm                         (SDRAM_DQML),
-		.sdram_udqm                         (SDRAM_DQMH),
-		.ems_enabled                        (ems_enabled_sel),
-		.ems_address                        (ems_address_sel),
-		.umb_enabled                        (umb_enabled_sel),
-		.bios_protect_flag                  (bios_protect_flag),
-		.use_mmc                            (use_mmc),
-		.spi_clk                            (spi_clk),
-		.spi_cs                             (spi_cs),
-		.spi_mosi                           (spi_mosi),
-		.spi_miso                           (spi_miso),
-		.mgmt_readdata                      (mgmt_din),
-		.mgmt_writedata                     (mgmt_dout),
-		.mgmt_address                       (mgmt_addr),
-		.mgmt_write                         (mgmt_wr),
-		.mgmt_read                          (mgmt_rd),
-		.floppy_wp                          (status[20:19]),
-		.fdd_present                        (fdd_present),
-		.fdd_request                        (mgmt_req[7:6]),
-		.ide0_request                       (mgmt_req[2:0]),
-		.xtegactl_cpu                       (xtegactl_cpu),
-		.xtegactl_exp                       (xtegactl_exp),
-		.xtegactl_vid                       (xtegactl_vid),
-		.xtegactl_inp                       (xtegactl_inp),
-		.xtegactl_midi                      (xtegactl_midi),
-		.xtegactl_exp2                      (xtegactl_exp2),
-		.xtegactl_crt                       (xtegactl_crt),
-		.xtegactl_sync                      (xtegactl_sync),
-		.xtegactl_status_effective          (xtegactl_status_effective),
-		.xtegactl_status_osd_match          (xtegactl_status_osd_match),
-		.wait_count_clk_en                  (cpu_ce_negedge),
-		.ram_read_wait_cycle                (ram_read_wait_cycle),
-		.ram_write_wait_cycle               (ram_write_wait_cycle),
-		.pause_core                         (pause_core),
-		.video_scandoubler_en                  (video_scandoubler_en),
-		.ega_dot_toggle                     (ega_dot_toggle),
-		.ega_dot_clock_sel                  (ega_dot_clock_sel),
-		.ega_scandouble_active              (ega_scandouble_active),
-		.ega_vmode_toggle_out               (ega_vmode_toggle),
-		.ega_mode350                        (ega_mode350),
-		.ega_active_dots                    (ega_active_dots),
-		.ega_active_lines                   (ega_active_lines),
-		.crt_h_offset                       (eff_crt_h),
-		.crt_v_offset                       (eff_crt_v),
-		.vsync_width_osd                    (vsync_width_osd),
-		.hsync_width_osd                    (hsync_width_osd),
-		.keyboard_debug_keycode              (keyboard_debug_keycode),
-		.keyboard_debug_irq                  (keyboard_debug_irq),
-		.keyboard_debug_port_b               (keyboard_debug_port_b),
-		.keyboard_debug_pic_int              (keyboard_debug_pic_int)
-	);
-
-    wire [15:0] SDRAM_DQ_IN;
-    wire [15:0] SDRAM_DQ_OUT;
-    wire        SDRAM_DQ_IO;
-    wire        initilized_sdram;
-
-    assign SDRAM_DQ_IN = SDRAM_DQ;
-    assign SDRAM_DQ = ~SDRAM_DQ_IO ? SDRAM_DQ_OUT : 16'hZZZZ;
-
-    // SPK286, adapter and XT chipset share clk_chipset. The initial profile
-    // keeps execute_enable asserted; it is never used as a CPU-speed divider
-    // or unsafe pause. The selected OSD pace controls only XT bus phases.
-    spk286_machine_cpu u_SPK286 (
-        .clk                    (clk_chipset),
-        .reset                  (spk_reset),
-        .execute_enable         (1'b1),
-        .ready                  (spk_ready),
-        .data_in                (spk_data_in),
-        .intr                   (interrupt_to_cpu),
-        .nmi                    (1'b0),
-        .hold_request           (spk_hold_request),
-        .address                (spk_address),
-        .data_out               (spk_data_out),
-        .data_oe                (spk_data_oe),
-        .bus_valid              (spk_bus_valid),
-        .bus_write              (spk_bus_write),
-        .bus_bhe_n              (spk_bus_bhe_n),
-        .bus_status             (spk_bus_status),
-        .bus_lock               (spk_bus_lock),
-        .hlda                   (spk_hlda),
-        .debug_biu_detail      (spk_debug_biu_detail),
-        .halted                 (spk_halted),
-        .shutdown               (spk_shutdown),
-        .control_error          (spk_control_error),
-        .unsupported_opcode     (spk_unsupported_opcode),
-        .microcode_fault        (spk_microcode_fault),
-        .operand_blocked        (spk_operand_blocked),
-        .event_completed        (spk_event_completed),
-        .debug_event_vector     (spk_debug_event_vector),
-        .debug_event_kind       (spk_debug_event_kind),
-        .debug_opcode           (spk_debug_opcode),
-        .debug_cs               (spk_debug_cs),
-        .debug_cs_base          (spk_debug_cs_base),
-        .debug_ip               (spk_debug_ip),
-        .debug_flags            (spk_debug_flags),
-        .debug_gpr              (spk_debug_gpr),
-        .debug_segment_selectors(spk_debug_segment_selectors),
-        .fetch_blocked          (spk_fetch_blocked),
-        .debug_fetch_cursor     (spk_debug_fetch_cursor),
-        .debug_micro_pc         (spk_debug_micro_pc),
-        .debug_micro_entry      (spk_debug_micro_entry),
-        .debug_micro_instruction(spk_debug_micro_instruction),
-        .debug_micro_active     (spk_debug_micro_active),
-        .debug_prefetch_count   (spk_debug_prefetch_count),
-        .debug_bus_state        (spk_debug_bus_state)
+    wire        sdram_owner_protocol_error;
+    wire [23:0] at_trace_kf_address;
+    wire [15:0] at_trace_kf_data;
+    wire        at_trace_kf_read_request;
+    wire        at_trace_kf_read_flag;
+    wire [3:0]  at_trace_owner_state;
+    spk286_at_mister_sdram_owner u_at_sdram_owner (
+        .clk                    (CLK_50M),
+        .reset                  (RESET),
+        .request_valid          (p03_out_valid),
+        .request_command_valid  (p03_out_command_valid),
+        .request_owner_refresh  (p03_out_refresh),
+        .request_write          (p03_out_write),
+        .request_code_fetch     (p03_out_code_fetch),
+        .request_burst          (p03_out_burst),
+        .request_cycle_class    (p03_out_cycle_class),
+        .request_address        (p03_out_address),
+        .request_byte_enable    (p03_out_byte_enable),
+        .request_data_out       (p03_out_data_out),
+        .request_accept         (p03_out_accept),
+        .request_ready          (p03_out_ready),
+        .request_read_data      (p03_out_read_data),
+        .request_read_data_valid(p03_out_read_data_valid),
+        .physical_idle          (physical_idle),
+        .protocol_error         (sdram_owner_protocol_error),
+        .debug_kf_address       (at_trace_kf_address),
+        .debug_kf_data_out      (at_trace_kf_data),
+        .debug_kf_read_request  (at_trace_kf_read_request),
+        .debug_kf_read_flag     (at_trace_kf_read_flag),
+        .debug_owner_state     (at_trace_owner_state),
+        .sdram_address           (sdram_address),
+        .sdram_cke               (sdram_cke),
+        .sdram_cs                (sdram_cs),
+        .sdram_ras               (sdram_ras),
+        .sdram_cas               (sdram_cas),
+        .sdram_we                (sdram_we),
+        .sdram_ba                (sdram_ba),
+        .sdram_dq_in             (sdram_dq_in),
+        .sdram_dq_out            (sdram_dq_out),
+        .sdram_dq_io             (sdram_dq_io),
+        .sdram_ldqm              (sdram_ldqm),
+        .sdram_udqm              (sdram_udqm)
     );
 
-    spk286_xt_bridge u_SPK286_XT_BRIDGE (
-        .clk                    (clk_chipset),
-        .reset                  (spk_reset),
-        .cpu_bus_valid          (spk_bus_valid),
-        .cpu_address            (spk_address),
-        .cpu_data_out           (spk_data_out),
-        .cpu_data_oe            (spk_data_oe),
-        .cpu_bus_write          (spk_bus_write),
-        .cpu_bus_bhe_n          (spk_bus_bhe_n),
-        .cpu_bus_status         (spk_bus_status),
-        .cpu_bus_lock           (spk_bus_lock),
-        .cpu_ready              (spk_ready),
-        .cpu_data_in            (spk_data_in),
-        .xt_start               (cpu_ce_posedge),
-        .xt_sample              (xt_sample),
-        .xt_cycle_active        (processor_cycle_active),
-        .xt_ready               (processor_ready),
-        .xt_data_in             (data_bus),
-        .xt_valid               (xt_valid),
-        .xt_address             (xt_address),
-        .xt_data_out            (xt_data_out),
-        .xt_status              (xt_status),
-        .xt_write               (xt_write),
-        .xt_io                  (xt_io),
-        .xt_inta                (xt_inta),
-        .xt_code                (xt_code),
-        .xt_byte_high           (xt_byte_high),
-        .xt_memory_projection   (xt_memory_projection),
-        .xt_lock_n              (xt_lock_n),
-        .xt_accepted            (xt_accepted),
-        .bridge_idle            (bridge_idle),
-        .protocol_error         (bridge_protocol_error)
-    );
-
-    spk286_xt_ownership u_SPK286_XT_OWNERSHIP (
-        .external_request       (processor_hold_request),
-        .loader_reset_owner     (spk_reset),
-        .cpu_hlda               (spk_hlda),
-        .cpu_lock               (spk_bus_lock),
-        .bridge_idle            (bridge_idle),
-        .cpu_hold_request       (spk_hold_request),
-        .external_grant         (processor_hold_acknowledge)
-    );
-
-    // The project diagnostic reports through ordinary port writes. A passing
-    // 70,72,71,86 sequence lights the disk LED; port 81h or a CPU/bridge fault
-    // lights the user LED. This observation path does not affect execution.
-    spk286_diag_monitor u_SPK286_DIAG_MONITOR (
-        .clk                    (clk_chipset),
-        .reset                  (spk_reset),
-        .accepted_io_write      (xt_accepted && xt_io && xt_write),
-        .port_address           (xt_address[15:0]),
-        .write_data             (xt_data_out),
-        .diagnostic_pass        (diagnostic_pass),
-        .diagnostic_failure     (diagnostic_failure),
-        .progress               ()
-    );
-
-    // Passive bring-up capture. A trace entry is committed only when the XT
-    // chipset accepts a transfer; no signal from this block feeds execution.
-    // Entry format: address[31:12], data[11:4], status[3:1], write[0].
-    always_ff @(posedge clk_chipset) begin
-        if (spk_reset) begin
-            spk_debug_last_post  <= 8'h00;
-            spk_debug_cpu_cycles <= 16'h0000;
-            spk_debug_xt_cycles  <= 16'h0000;
-            spk_debug_trace0     <= 32'h00000000;
-            spk_debug_trace1     <= 32'h00000000;
-            spk_debug_trace2     <= 32'h00000000;
-            spk_debug_trace3     <= 32'h00000000;
+    logic counter_clock;
+    spk286_at_pit_clock u_pit_clock(.clk(CLK_50M), .reset(RESET), .counter_clock(counter_clock));
+    logic periodic_tick;
+    logic second_tick;
+    logic [25:0] tick_counter;
+    always_ff @(posedge CLK_50M or posedge RESET) begin
+        if (RESET) begin
+            periodic_tick <= 1'b0;
+            second_tick   <= 1'b0;
+            tick_counter  <= 26'd0;
         end else begin
-            if (spk_ready && spk_bus_valid)
-                spk_debug_cpu_cycles <= spk_debug_cpu_cycles + 16'd1;
-
-            if (xt_accepted) begin
-                spk_debug_xt_cycles <= spk_debug_xt_cycles + 16'd1;
-                spk_debug_trace3 <= spk_debug_trace2;
-                spk_debug_trace2 <= spk_debug_trace1;
-                spk_debug_trace1 <= spk_debug_trace0;
-                spk_debug_trace0 <= {
-                    xt_address,
-                    xt_write ? xt_data_out : data_bus,
-                    xt_status,
-                    xt_write
-                };
-                if (xt_io && xt_write && (xt_address[15:0] == 16'h0080))
-                    spk_debug_last_post <= xt_data_out;
-            end
-        end
-    end
-
-    //
-    ////////////////////////////  AUDIO  ///////////////////////////////////
-    //
-
-    wire [15:0] cms_l_snd_e;
-    wire [16:0] cms_l_snd = {cms_l_snd_e[15],cms_l_snd_e};
-    wire [15:0] cms_r_snd_e;
-    wire [16:0] cms_r_snd = {cms_r_snd_e[15],cms_r_snd_e};
-	 
-    // Sound Blaster Pro: DAC and FM together, after its own mixer. When the
-    // card is switched off this is the OPL2 passed through untouched, and
-    // jtopl2_snd below is zero - the FM only ever reaches the sum once.
-    wire [15:0] sb_snd_l, sb_snd_r;
-    wire [16:0] sb_l_snd = {sb_snd_l[15], sb_snd_l};
-    wire [16:0] sb_r_snd = {sb_snd_r[15], sb_snd_r};
-
-    wire [15:0] jtopl2_snd_e;
-    wire [16:0] jtopl2_snd = {jtopl2_snd_e[15], jtopl2_snd_e};
-    // Tandy 1000 sound. Sign-extended from 11 bits and scaled the way the
-    // parent PCXT does it, except for where the level comes from: the parent
-    // has a "Tandy Volume" menu option and this fork has no status bit left to
-    // spend on one, so it rides the Speaker Volume setting instead. Both are
-    // internal beeper-class sources, and turning one down without the other is
-    // not something a user is likely to want.
-    wire [10:0] tandy_snd_e;
-    wire [16:0] tandy_snd = `ENABLE_TANDY_AUDIO
-        ? {{{2{tandy_snd_e[10]}}, {4{tandy_snd_e[10]}}, tandy_snd_e} << status[33:32], 2'b00}
-        : 17'd0;
-    wire [16:0] spk_vol =  {2'b00, {3'b000,~speaker_out} << status[33:32], 11'd0};
-    wire        speaker_out;
-
-    localparam [3:0] comp_f1 = 4;
-    localparam [3:0] comp_a1 = 2;
-    localparam       comp_x1 = ((32767 * (comp_f1 - 1)) / ((comp_f1 * comp_a1) - 1)) + 1; // +1 to make sure it won't overflow
-    localparam       comp_b1 = comp_x1 * comp_a1;
-
-    localparam [3:0] comp_f2 = 8;
-    localparam [3:0] comp_a2 = 4;
-    localparam       comp_x2 = ((32767 * (comp_f2 - 1)) / ((comp_f2 * comp_a2) - 1)) + 1; // +1 to make sure it won't overflow
-    localparam       comp_b2 = comp_x2 * comp_a2;
-
-    function [15:0] compr;
-        input [15:0] inp;
-        reg [15:0] v, v1, v2;
-        begin
-            v  = inp[15] ? (~inp) + 1'd1 : inp;
-            v1 = (v < comp_x1[15:0]) ? (v * comp_a1) : (((v - comp_x1[15:0])/comp_f1) + comp_b1[15:0]);
-            v2 = (v < comp_x2[15:0]) ? (v * comp_a2) : (((v - comp_x2[15:0])/comp_f2) + comp_b2[15:0]);
-            v  = status[37] ? v2 : v1;
-            compr = inp[15] ? ~(v-1'd1) : v;
-        end
-    endfunction
-
-    reg [15:0] cmp_l;
-    reg [15:0] out_l;
-    always @(posedge clk_chipset)
-    begin
-        reg [16:0] tmp_l;
-
-        tmp_l <= jtopl2_snd + cms_l_snd + tandy_snd + spk_vol + mt32_l_snd + sb_l_snd;
-
-        // clamp the output
-        out_l <= (^tmp_l[16:15]) ? {tmp_l[16], {15{tmp_l[15]}}} : tmp_l[15:0];
-
-        cmp_l <= compr(out_l);
-    end
-	 
-    reg [15:0] cmp_r;
-    reg [15:0] out_r;
-    always @(posedge clk_chipset)
-    begin
-        reg [16:0] tmp_r;
-
-        tmp_r <= jtopl2_snd + cms_r_snd + tandy_snd + spk_vol + mt32_r_snd + sb_r_snd;
-
-        // clamp the output
-        out_r <= (^tmp_r[16:15]) ? {tmp_r[16], {15{tmp_r[15]}}} : tmp_r[15:0];
-
-        cmp_r <= compr(out_r);
-    end
-
-    assign AUDIO_L   = pause_core ? 1'b0 : status[37:36] ? cmp_l : out_l;
-    assign AUDIO_R   = pause_core ? 1'b0 : status[37:36] ? cmp_r : out_r;
-    assign AUDIO_S   = 1;
-    assign AUDIO_MIX = status[39:38];
-
-    //
-    ////////////////////////////  UART  ///////////////////////////////////
-    //
-
-    //assign USER_OUT = {1'b1, 1'b1, uart_dtr, 1'b1, uart_rts, uart_tx, 1'b1};
-
-    //
-    // Pin | USB Name |   |Signal
-    // ----+----------+---+-------------
-    // 0   | D+       | I |RX
-    // 1   | D-       | O |TX
-    // 2   | TX-      | O |RTS
-    // 3   | GND_d    | I |CTS
-    // 4   | RX+      | O |DTR
-    // 5   | RX-      | I |DSR
-    // 6   | TX+      | I |DCD
-    //
-
-    logic clk_uart_ff_1;
-    logic clk_uart_ff_2;
-    logic clk_uart_ff_3;
-    logic clk_uart_en;
-    logic clk_uart2_en;
-    logic [2:0] clk_uart2_counter;
-
-    // MIDI baud reference for the MPU-401. Derived straight from the 50MHz
-    // clk_chipset rather than the 14.318MHz UART reference, because 50MHz
-    // divides exactly: 50e6 / (4 * 16 * 25) = 31250 baud, zero error.
-    // (The 14.318MHz path can only reach 30858 baud, -1.25%.) ao486 likewise
-    // feeds its MPU a dedicated exact-rate clock instead of the COM reference.
-    logic [1:0] clk_midi_counter = 2'd0;
-    logic       clk_midi_en = 1'b0;
-
-    always @(posedge clk_chipset)
-    begin
-        if (clk_midi_counter == 2'd3)
-        begin
-            clk_midi_counter <= 2'd0;
-            clk_midi_en      <= 1'b1;
-        end
-        else
-        begin
-            clk_midi_counter <= clk_midi_counter + 2'd1;
-            clk_midi_en      <= 1'b0;
-        end
-    end
-
-    always @(posedge clk_chipset)
-    begin
-        clk_uart_ff_1 <= clk_14_318;
-        clk_uart_ff_2 <= clk_uart_ff_1;
-        clk_uart_ff_3 <= clk_uart_ff_2;
-        clk_uart_en   <= ~clk_uart_ff_3 & clk_uart_ff_2;
-    end
-
-    always @(posedge clk_chipset)
-    begin
-        if (clk_uart_en)
-        begin
-            if (3'd7 != clk_uart2_counter)
-            begin
-                clk_uart2_counter <= clk_uart2_counter +3'd1;
-                clk_uart2_en <= 1'b0;
-            end
+            periodic_tick <= (tick_counter[11:0] == 12'h000);
+            second_tick   <= (tick_counter == 26'd49_999_999);
+            if (tick_counter == 26'd49_999_999)
+                tick_counter <= 26'd0;
             else
-            begin
-                clk_uart2_counter <= 3'd0;
-                clk_uart2_en <= 1'b1;
-            end
-        end
-        else
-        begin
-            clk_uart2_counter <= clk_uart2_counter;
-            clk_uart2_en <= 1'b0;
+                tick_counter <= tick_counter + 1'b1;
         end
     end
 
-    wire uart_tx, uart_rts, uart_dtr;
+    wire keyboard_byte_valid;
+    wire [7:0] keyboard_byte;
+    wire keyboard_byte_ready;
+    wire keyboard_translate_set1;
+    wire keyboard_event_overflow;
 
-    // Selecting MIDI in the MiSTer UART menu hands these pins to the HPS, which
-    // bridges them to a USB MIDI device. That gives the MPU-401 a second possible
-    // destination besides the mt32-pi on the user port, and is the only way to
-    // reach a USB MIDI interface - the user port cannot see one. ao486 gates the
-    // same way on uart_mode >= 3.
-    //
-    // COM2, not COM1, is what normally owns these pins here (COM1 is the internal
-    // serial mouse), so COM2 is the port that has to let go of them.
-    wire hps_midi = `ENABLE_MIDI && (uart_mode >= 8'd3);
-
-    assign UART_TXD = hps_midi ? midi_tx : uart_tx;
-    assign UART_RTS = ~hps_midi & uart_rts;
-    assign UART_DTR = ~hps_midi & uart_dtr;
-
-    // Idle high, never low: a UART input held at 0 is a break condition, the same
-    // trap the USER_OUT default fell into. Holding DCD deasserted also keeps the
-    // handover from looking like a carrier transition to a guest with COM2 open.
-    wire uart_rx  = hps_midi | UART_RXD;
-    wire uart_cts = hps_midi | UART_CTS;
-    wire uart_dsr = hps_midi | UART_DSR;
-    wire uart_dcd = hps_midi | UART_DTR;
-
-
-    /// UART2
-
-    // USER_IO is time-shared between the COM2 passthrough (default) and the
-    // MT32-pi bridge below - only one can be connected at a time.
-    // Default (0) is MT32-pi, matching ao486: at core load, before the saved
-    // config arrives, we must already be in the safe non-driving state.
-    wire user_io_mt32 = `ENABLE_MIDI && ~status[6];
-
-    // The COM2-over-USER_IO path is dead code in this core: uart2_tx/rts/dtr have
-    // no driver, so they synthesise to constant 0 and would actively pull pins
-    // 1, 2 and 4 low. Pins 2 and 4 are *outputs* of an attached mt32-pi (I2S), so
-    // that is a direct output-vs-output contention, and pin 1 low is a permanent
-    // MIDI break. COM2 is also the power-on default before the saved config is
-    // applied, so this happened on every core load. Release the pins instead;
-    // ao486 never hits this because its COM2 signals are real and idle high.
-    assign USER_OUT = user_io_mt32 ? mt32_user_out : 7'h7F;
-
-    //
-    // Pin | USB Name |   |Signal
-    // ----+----------+---+-------------
-    // 0   | D+       | I |RX
-    // 1   | D-       | O |TX
-    // 2   | TX-      | O |RTS
-    // 3   | GND_d    | I |CTS
-    // 4   | RX+      | O |DTR
-    // 5   | RX-      | I |DSR
-    // 6   | TX+      | I |DCD
-    //
-
-    wire uart2_tx, uart2_rts, uart2_dtr;
-
-    wire uart2_rx  = user_io_mt32 | USER_IN[0];
-    wire uart2_cts = user_io_mt32 | USER_IN[3];
-    wire uart2_dsr = user_io_mt32 | USER_IN[5];
-    wire uart2_dcd = user_io_mt32 | USER_IN[6];
-
-    //
-    ////////////////////////////  MT32-pi  //////////////////////////////////
-    //
-    // Bridges the MPU-401 UART-mode MIDI interface (rtl/uart/mpu401.sv, wired
-    // through the chipset above) to an external mt32-pi device connected on
-    // USER_IO. See sys/mt32pi.sv for the wire protocol (MIDI serial + I2S
-    // audio in + I2C status/LCD mirror).
-    //
-
-    wire        mt32_disable  = status[13];
-    // Deliberately NOT reset_wire: that one stays asserted for the whole boot
-    // splash (~5s), which would hold the I2C slave silent long enough for the
-    // mt32-pi's I2C master to give up. Mirror ao486 and use only the genuine
-    // system/user resets.
-    wire        mt32_reset    = status[40] | RESET | status[0] | buttons[1];
-    wire        mt32_mode_req = eff_mt32_gm;
-    wire  [1:0] mt32_rom_req  = status[4:3];
-    wire  [7:0] mt32_sf_req   = {5'd0, status[62:60]};
-
-    wire [15:0] mt32_i2s_r, mt32_i2s_l;
-    wire  [7:0] mt32_mode, mt32_rom, mt32_sf;
-    wire        mt32_lcd_en, mt32_lcd_pix, mt32_lcd_update;
-    wire        mt32_newmode;
-    wire        mt32_available;
-    // Gate on the user's explicit USER_IO selection, NOT on mt32_available.
-    // The I2C handshake is only an auto-detect convenience for the OSD; tying
-    // the audio path to it means a perfectly working mt32-pi stays silent
-    // whenever that handshake does not happen - which is exactly what we hit.
-    wire        mt32_use  = user_io_mt32 & ~mt32_disable;
-    wire        mt32_mute = user_io_mt32 &  mt32_disable;
-
-    wire  [6:0] mt32_user_out;
-    wire        midi_tx;              // driven by the CHIPSET's mpu401 instance
-    wire        mt32_pi_midi_rx;
-    // Three sources in priority order: the HPS bridge when the UART menu is set
-    // to MIDI, the mt32-pi on the user port otherwise, and idle-high when neither
-    // is connected. The transmit side needs no such priority - it simply reaches
-    // both destinations at once, which is what a MIDI thru does anyway.
-    wire        midi_rx = hps_midi    ? UART_RXD        :
-                          user_io_mt32 ? mt32_pi_midi_rx : 1'b1;
-
-    mt32pi mt32pi
-    (
-        .CLK_AUDIO       (CLK_AUDIO),
-
-        .CLK_VIDEO       (CLK_VIDEO),
-        .CE_PIXEL        (CE_PIXEL),
-        .VGA_VS          (VGA_VS),
-        .VGA_DE          (VGA_DE),
-
-        .USER_IN         (USER_IN),
-        .USER_OUT        (mt32_user_out),
-
-        .reset           (mt32_reset),
-        .midi_tx         (midi_tx | mt32_mute),
-        .midi_rx         (mt32_pi_midi_rx),
-
-        .mt32_i2s_r      (mt32_i2s_r),
-        .mt32_i2s_l      (mt32_i2s_l),
-
-        .mt32_available  (mt32_available),
-
-        .mt32_mode_req   (mt32_mode_req),
-        .mt32_rom_req    (mt32_rom_req),
-        .mt32_sf_req     (mt32_sf_req),
-
-        .mt32_mode       (mt32_mode),
-        .mt32_rom        (mt32_rom),
-        .mt32_sf         (mt32_sf),
-        .mt32_newmode    (mt32_newmode),
-
-        .mt32_lcd_en     (mt32_lcd_en),
-        .mt32_lcd_pix    (mt32_lcd_pix),
-        .mt32_lcd_update (mt32_lcd_update)
+    // Keep the AT machine in reset until the private video PLL is usable as
+    // well as until the system BIOS has arrived.  The BIOS loader and SDRAM
+    // remain in the 50 MHz domain, so this does not change download timing.
+    wire at_video_clk_28;
+    wire at_video_clk_57;
+    wire at_video_clk_57_ps;
+    wire at_video_clk_native;
+    wire at_video_pll_locked;
+    pll_system u_at_video_pll (
+        .refclk   (CLK_50M),
+        .rst      (1'b0),
+        .outclk_0 (at_video_clk_28),
+        .outclk_1 (at_video_clk_57),
+        .outclk_2 (at_video_clk_57_ps),
+        .outclk_3 (at_video_clk_native),
+        .locked   (at_video_pll_locked)
     );
 
-    wire signed [16:0] mt32_i2s_l_ext = {mt32_i2s_l[15], mt32_i2s_l};
-    wire signed [16:0] mt32_i2s_r_ext = {mt32_i2s_r[15], mt32_i2s_r};
-    // Give MT32-pi some headroom before it is summed with the core audio.
-    // Keep the samples signed while applying a resource-free -6 dB shift.
-    wire signed [16:0] mt32_i2s_l_attenuated =
-        {mt32_i2s_l_ext[16], mt32_i2s_l_ext[16:1]};
-    wire signed [16:0] mt32_i2s_r_attenuated =
-        {mt32_i2s_r_ext[16], mt32_i2s_r_ext[16:1]};
-    wire [16:0] mt32_l_snd = mt32_use ? mt32_i2s_l_attenuated : 17'd0;
-    wire [16:0] mt32_r_snd = mt32_use ? mt32_i2s_r_attenuated : 17'd0;
+    // Keep the reset that gates the splash sequencer separate from the
+    // machine reset.  The XT profile holds the CPU in reset while its splash
+    // is visible; feeding the machine reset back into the sequencer would
+    // clear the timer as soon as the splash became active.
+    // Reuse the XT reset controls without clearing the loaded ROM flags.
+    wire at_boot_reset = RESET | hps_status[0] | hps_buttons[1] |
+                         !main_rom_loaded | !at_video_pll_locked;
 
-    //
-    ///////////////////////   MMC     ///////////////////////
-    //
-    logic [1:0]  use_mmc;
-    logic spi_clk;
-    logic spi_cs;
-    logic spi_mosi;
-    logic spi_miso;
-
-    always @(posedge clk_chipset)
-        if (reset)
-            use_mmc <= status[22:21];
-        else
-            use_mmc <= use_mmc;
-
-    // Every menu option that is sampled only while reset is asserted. Each one
-    // exposes both the selection and what the machine is actually running on,
-    // so a plain comparison is all "pending" means. It reads false throughout
-    // reset, because that is exactly when the latches track their source, so
-    // this cannot fire on the way out of a cold boot.
-    wire reset_pending = (ega_monitor_profile_osd != ega_monitor_profile_applied)
-                       | (status[22:21]           != use_mmc);
-
-    reset_pending_notice reset_notice (
-        .clock      (clk_14_318),
-        .pending    (reset_pending),
-        .osd_status (OSD_STATUS),
-        .suppress   (bios_hold),
-        .info       (pending_info),
-        .info_req   (pending_info_req)
+    spk286_at_keyboard u_at_keyboard (
+        .clk                    (CLK_50M),
+        .reset                  (at_boot_reset),
+        .ps2_key                (ps2_key),
+        .translate_set1         (keyboard_translate_set1),
+        .keyboard_byte_ready    (keyboard_byte_ready),
+        .keyboard_byte_valid    (keyboard_byte_valid),
+        .keyboard_byte          (keyboard_byte),
+        .overflow               (keyboard_event_overflow)
     );
 
-    assign  SD_SCK      = spi_clk;
-    assign  SD_MOSI     = spi_mosi;
-    assign  spi_miso    = SD_MISO;
-    assign  SD_CS       = spi_cs;
-
-    //
-    ///////////////////////   VIDEO   ///////////////////////
-    //
-
-    wire HBlank;
-    wire HSync;
-    wire VBlank;
-    wire VSync;
-    wire de_o;
-    wire [5:0] r, g, b;
-    reg [7:0] raux_video, gaux_video, baux_video;
-	 wire [7:0] VGA_R_AUX, VGA_G_AUX, VGA_B_AUX;
-    wire CLK_VIDEO_PIPELINE;
-    wire CE_PIXEL_CREDITS;
-
-    wire  [7:0] VGA_R_video;
-    wire  [7:0] VGA_G_video;
-    wire  [7:0] VGA_B_video;
-    wire        VGA_HS_video;
-    wire        VGA_VS_video;
-    wire        VGA_DE_video;
-    wire [21:0] gamma_bus_video;
-    wire        CE_PIXEL_video;
-    reg         ce_pixel_28 = 1'b0;
-    wire        vga_video_direct = vga_mode13_active_video;
-
-    // The EGA dot rate is no longer a fixed 14.318 MHz: in the 16.257 MHz
-    // modes consecutive dots can land on adjacent clk_28_636 edges, which in
-    // this domain would be a single wide level with only one rising edge.  The
-    // EGA exports a toggle instead, one flip per dot.  Exactly one
-    // synchroniser stage before the XOR: both clocks come from pll_system with
-    // a 2:1 ratio and no phase shift, and a second stage would push the enable
-    // past the end of the short dots of the 16.257 MHz pattern.
-    reg         ega_dot_toggle_d = 1'b0;
-    reg         ega_dot_toggle_dd = 1'b0;
-
-    always @(posedge clk_57_272)
-    begin
-        ega_dot_toggle_d  <= ega_dot_toggle;
-        ega_dot_toggle_dd <= ega_dot_toggle_d;
+    // Keep the XT-compatible second-SD routing selection stable until the
+    // machine is reset, matching the XT profile's use_mmc latch.  Bits 22:21
+    // are free in the AT profile and are reserved for this shared OSD field.
+    logic [1:0] at_use_mmc_q;
+    always_ff @(posedge CLK_50M or posedge RESET) begin
+        if (RESET)
+            at_use_mmc_q <= 2'b00;
+        else if (at_boot_reset)
+            at_use_mmc_q <= hps_status[22:21];
     end
 
-    wire        ce_pixel_dot = ega_dot_toggle_d ^ ega_dot_toggle_dd;
-
-    // vga_mode13_active_video drives either the Native VGA or 15 kHz CRT-TV
-    // raster (rtl/video/vga_mode13_timing.v), whose real pixel rate is one
-    // flip per displayed pixel, not per video-clock cycle. Same
-    // toggle-crossing idiom as ce_pixel_dot above, so the framework's
-    // active-window measurement (the OSD Information line) reports the real
-    // pixel count instead of the raw dot-clock count.
-    reg         vga_mode13_pixel_toggle_d = 1'b0;
-    reg         vga_mode13_pixel_toggle_dd = 1'b0;
-
-    always @(posedge clk_57_272)
-    begin
-        vga_mode13_pixel_toggle_d  <= vga_mode13_pixel_toggle;
-        vga_mode13_pixel_toggle_dd <= vga_mode13_pixel_toggle_d;
-    end
-
-    wire        ce_pixel_mode13 = vga_mode13_pixel_toggle_d ^ vga_mode13_pixel_toggle_dd;
-    wire        ce_pixel_video = ega_scandouble_active ? ce_pixel_28
-                                : vga_video_direct       ? ce_pixel_mode13
-                                : ce_pixel_dot;
-
-    reg  [7:0]  VGA_R_video_src = 8'd0;
-    reg  [7:0]  VGA_G_video_src = 8'd0;
-    reg  [7:0]  VGA_B_video_src = 8'd0;
-    reg         VGA_HS_video_src = 1'b0;
-    reg         VGA_VS_video_src = 1'b0;
-    reg         VGA_DE_video_src = 1'b0;
-    reg         LHBL_video_src = 1'b1;
-    reg         LVBL_video_src = 1'b1;
-    reg         CE_PIXEL_video_src = 1'b0;
-    reg  [7:0]  VGA_R_video_ps = 8'd0;
-    reg  [7:0]  VGA_G_video_ps = 8'd0;
-    reg  [7:0]  VGA_B_video_ps = 8'd0;
-    reg         VGA_HS_video_ps = 1'b0;
-    reg         VGA_VS_video_ps = 1'b0;
-    reg         VGA_DE_video_ps = 1'b0;
-    reg         LHBL_video_ps = 1'b1;
-    reg         LVBL_video_ps = 1'b1;
-    reg         CE_PIXEL_video_ps = 1'b0;
-    reg         CE_PIXEL_video_ps_d = 1'b0;
-    reg  [7:0]  VGA_R_video_hdmi, VGA_G_video_hdmi, VGA_B_video_hdmi;
-    reg         VGA_HS_video_hdmi, VGA_VS_video_hdmi, VGA_DE_video_hdmi;
-    reg         LHBL_video_hdmi, LVBL_video_hdmi;
-    reg         CE_PIXEL_video_hdmi = 1'b0;
-
-    assign CLK_VIDEO = clk_video_out_ps;
-    assign CLK_VIDEO_PIPELINE = clk_57_272;
-
-    always @(posedge clk_57_272)
-        ce_pixel_28 <= ~ce_pixel_28;
-
-    assign VGA_SL = {scale_video_ff==3, scale_video_ff==2};
-
-    wire   scandoubler = video_scandoubler_en;
-
-    wire color = (screen_mode_video_ff == 3'd0);
-
-    // Retain the baseline credits overlay inputs. Neither signal gates SPK286
-    // execution in the initial profile.
-    reg        video_credits_show_buf;
-    reg        video_credits_show;
-
-    always @ (posedge clk_video_out_ps) begin
-        video_credits_show_buf  <= pause_core | splash_paused;
-        video_credits_show      <= video_credits_show_buf;
-    end
-
-    wire LHBL = (ega_scandouble_active || vga_video_direct) ? HBlank : ~de_o;
-    wire LVBL = VBlank;
-
-    wire haux_video, vaux_video, hbaux_video, vbaux_video;
-
-    // Sync and blanking go through the converter with the colour so they come
-    // out of it with the same delay.  Mode 13h only takes the undelayed pair
-    // below in Full Color: once a monochrome Display option is picked it has
-    // to run through the converter like every other mode, both for the tint
-    // and to stay time-aligned with it, or the picture is full colour again.
-    video_monochrome_converter video_mono
-	(
-		.clk_vid(CLK_VIDEO_PIPELINE),
-		.ce_pix(ce_pixel_video),
-
-		.R({r, 2'b00}),
-		.G({g, 2'b00}),
-		.B({b, 2'b00}),
-
-		.HSync(HSync),
-		.VSync(VSync),
-		.HBlank(LHBL),
-		.VBlank(LVBL),
-
-		.gfx_mode(screen_mode_video_ff),
-
-		.R_OUT(raux_video),
-		.G_OUT(gaux_video),
-		.B_OUT(baux_video),
-
-		.HSync_OUT(haux_video),
-		.VSync_OUT(vaux_video),
-		.HBlank_OUT(hbaux_video),
-		.VBlank_OUT(vbaux_video)
-	);
-
-    wire       pre2x_LHBL, pre2x_LVBL;
-    wire [7:0] pre2x_r, pre2x_g, pre2x_b;
-    wire [23:0] credits_rgb_out;
-    wire vga_video_direct_color = vga_video_direct && color;
-    wire [7:0] bypass_r = vga_video_direct_color ? {r, r[5:4]} : raux_video;
-    wire [7:0] bypass_g = vga_video_direct_color ? {g, g[5:4]} : gaux_video;
-    wire [7:0] bypass_b = vga_video_direct_color ? {b, b[5:4]} : baux_video;
-    wire bypass_hs = vga_video_direct_color ? HSync : haux_video;
-    wire bypass_vs = vga_video_direct_color ? VSync : vaux_video;
-    wire bypass_hb = vga_video_direct_color ? LHBL  : hbaux_video;
-    wire bypass_vb = vga_video_direct_color ? LVBL  : vbaux_video;
-
-    ///////////////////  350-LINE CRT OUTPUT, 720x480i  ///////////////////
-    //
-    // EGA and MDA modes with more than 240 active lines scan at 18-22 kHz and
-    // no television locks to that. They are captured into DDRAM a frame at a
-    // time and read back out on a 15.734 kHz interlaced raster, which is the
-    // only way to show all 350 lines without throwing half of them away.
-    //
-    // Everything else - CGA, mode 13h, the boot splash - takes the bypass
-    // above untouched, and so does 350 lines when the OSD option is off.
-    //
-    // The capture taps the picture after the monochrome converter, so the
-    // Display option is already applied and a green or amber screen is
-    // captured the way it is shown.
-
-    // 0 native, 1 the captured picture interlaced, 2 the same picture
-    // progressively.
-    //
-    // 480i shows all 350 lines and flickers on high contrast text; 240p is
-    // steady and drops a third of them. Which of the two is better belongs to
-    // the television and the eye in front of it, so both are offered.
-    wire [1:0] crt480i_mode = status[35:34];
-    wire crt480i_osd  = |crt480i_mode;
-    wire crt480i_prog = crt480i_mode[1];
-
-    // The detector runs in the 28.636 MHz video domain and these change once a
-    // frame. Two stages across to the pipeline clock, which is the same PLL at
-    // twice the rate.
-    reg        mode350_s1, mode350_s2;
-    reg [11:0] adots_s1, adots_s2;
-    reg [9:0]  alines_s1, alines_s2;
-
-    always @(posedge CLK_VIDEO_PIPELINE) begin
-        mode350_s1 <= ega_mode350;  mode350_s2 <= mode350_s1;
-        adots_s1   <= ega_active_dots;  adots_s2  <= adots_s1;
-        alines_s1  <= ega_active_lines; alines_s2 <= alines_s1;
-    end
-
-    wire fb_enable = mode350_s2 & crt480i_osd;
-
-    wire [7:0]  cap_burstcnt;
-    wire [28:0] cap_addr;
-    wire [63:0] cap_din;
-    wire        cap_we;
-    wire        cap_busy;
-    wire [1:0]  fb_frame_buffer;
-    wire [11:0] fb_frame_width;
-    wire [9:0]  fb_frame_height;
-    wire [13:0] fb_frame_stride;
-    wire        fb_frame_valid;
-    wire [1:0]  fb_reading_buffer;
-
-    ega_fb_capture fb_capture (
-        .clk(CLK_VIDEO_PIPELINE),
-        .reset(video_retime_reset),
-        .enable(fb_enable),
-        .ce_pix(ce_pixel_video),
-        .r(bypass_r), .g(bypass_g), .b(bypass_b),
-        .de(~bypass_hb & ~bypass_vb),
-        .vblank(bypass_vb),
-        .active_dots(adots_s2),
-        .active_lines(alines_s2),
-        .reading_buffer(fb_reading_buffer),
-        .ddram_busy(cap_busy),
-        .ddram_burstcnt(cap_burstcnt),
-        .ddram_addr(cap_addr),
-        .ddram_din(cap_din),
-        .ddram_be(),
-        .ddram_we(cap_we),
-        .frame_buffer(fb_frame_buffer),
-        .frame_width(fb_frame_width),
-        .frame_height(fb_frame_height),
-        .frame_stride(fb_frame_stride),
-        .frame_seq(),
-        .frame_valid(fb_frame_valid),
-        .overrun()
+    // Keep the AT splash lifetime aligned with the XT profile.  Previously
+    // this was wired directly to hps_status[7], which made the default
+    // "Yes" setting hold the image forever while the CPU continued running
+    // behind it.
+    wire at_splashscreen;
+    wire at_splash_boot_hold;
+    spk286_at_splash_control u_at_splash_control (
+        .clk         (CLK_50M),
+        .reset       (at_boot_reset),
+        .option_off  (hps_status[7]),
+        .second_tick (second_tick),
+        .splash_active(at_splashscreen),
+        .boot_hold   (at_splash_boot_hold)
     );
 
-    wire        fb_rd_req;
-    wire [28:0] fb_rd_addr;
-    wire [7:0]  fb_rd_burstcnt;
-    wire        fb_rd_grant;
-    wire [63:0] fb_rd_data;
-    wire        fb_rd_data_valid;
+    // The splash is a real boot hold, not only a video overlay.  This keeps
+    // CPU/BIU state frozen from boot settling until the image is removed.
+    // As in XT, the pending interval is part of the boot hold; otherwise
+    // the CPU runs before the first timer tick and is reset a second time.
+    wire at_machine_reset = at_boot_reset | at_splash_boot_hold;
+    wire at_cpu_reset_request;
+    logic at_video_pipe_reset_57_q1;
+    logic at_video_pipe_reset_57_q2;
+    logic at_video_pipe_reset_57_ps_q1;
+    logic at_video_pipe_reset_57_ps_q2;
+    wire  at_video_pipe_reset_57 = at_video_pipe_reset_57_q2;
+    wire  at_video_pipe_reset_57_ps = at_video_pipe_reset_57_ps_q2;
 
-    wire [7:0]  fb_r, fb_g, fb_b;
-    wire        fb_hs, fb_vs, fb_hb, fb_vb, fb_de, fb_field, fb_ce_pix;
-
-    ega_fb_readout fb_readout (
-        .clk(CLK_VIDEO_PIPELINE),
-        .reset(video_retime_reset),
-        .enable(fb_enable),
-        .progressive(crt480i_prog),
-        .crt_h_offset(eff_crt_h),
-        .crt_v_offset(eff_crt_v),
-        .frame_buffer(fb_frame_buffer),
-        .frame_width(fb_frame_width),
-        .frame_height(fb_frame_height),
-        .frame_stride(fb_frame_stride),
-        .frame_valid(fb_frame_valid),
-        .rd_req(fb_rd_req),
-        .rd_addr(fb_rd_addr),
-        .rd_burstcnt(fb_rd_burstcnt),
-        .rd_grant(fb_rd_grant),
-        .rd_data(fb_rd_data),
-        .rd_data_valid(fb_rd_data_valid),
-        .r(fb_r), .g(fb_g), .b(fb_b),
-        .hsync(fb_hs), .vsync(fb_vs), .hblank(fb_hb), .vblank(fb_vb),
-        .de(fb_de), .field(fb_field), .ce_pix(fb_ce_pix),
-        .reading_buffer(fb_reading_buffer)
-    );
-
-    // The memory runs on the video pipeline clock, so the capture, the
-    // raster that reads it back and DDRAM itself are all one domain and
-    // nothing has to cross between them.
-    assign DDRAM_CLK = CLK_VIDEO_PIPELINE;
-
-    ega_ddr_arbiter fb_arbiter (
-        .clk(CLK_VIDEO_PIPELINE),
-        .reset(video_retime_reset),
-        .ddram_busy(DDRAM_BUSY),
-        .ddram_burstcnt(DDRAM_BURSTCNT),
-        .ddram_addr(DDRAM_ADDR),
-        .ddram_din(DDRAM_DIN),
-        .ddram_be(DDRAM_BE),
-        .ddram_we(DDRAM_WE),
-        .ddram_rd(DDRAM_RD),
-        .ddram_dout(DDRAM_DOUT),
-        .ddram_dout_ready(DDRAM_DOUT_READY),
-        .rd_req(fb_rd_req),
-        .rd_addr(fb_rd_addr),
-        .rd_burstcnt(fb_rd_burstcnt),
-        .rd_grant(fb_rd_grant),
-        .rd_data(fb_rd_data),
-        .rd_data_valid(fb_rd_data_valid),
-        .wr_req(cap_we),
-        .wr_addr(cap_addr),
-        .wr_burstcnt(cap_burstcnt),
-        .wr_din(cap_din),
-        .wr_busy_out(cap_busy),
-        .wr_grant()
-    );
-
-    // Change over in the destination raster's own vertical blank. Requiring
-    // both rasters to be blank at once can stall when two roughly 60 Hz modes
-    // keep nearly the same phase, leaving both HDMI and analogue output on the
-    // old (already black) 480i path while mode 13h is ready underneath it.
-    wire crt480i_active;
-
-    video_source_switch crt480i_source_switch (
-        .clock(CLK_VIDEO_PIPELINE),
-        .reset(video_retime_reset),
-        .select_alt(fb_enable & fb_frame_valid),
-        .primary_hsync(bypass_hs),
-        .primary_vblank(bypass_vb),
-        .alt_hsync(fb_hs),
-        .alt_vblank(fb_vb),
-        .alt_active(crt480i_active)
-    );
-
-    wire [7:0] video_mixer_r = crt480i_active ? fb_r  : bypass_r;
-    wire [7:0] video_mixer_g = crt480i_active ? fb_g  : bypass_g;
-    wire [7:0] video_mixer_b = crt480i_active ? fb_b  : bypass_b;
-    wire video_mixer_hs = crt480i_active ? fb_hs : bypass_hs;
-    wire video_mixer_vs = crt480i_active ? fb_vs : bypass_vs;
-    wire video_mixer_hb = crt480i_active ? fb_hb : bypass_hb;
-    wire video_mixer_vb = crt480i_active ? fb_vb : bypass_vb;
-    wire ce_pixel_mixer = crt480i_active ? fb_ce_pix : ce_pixel_video;
-
-    // The credits overlay and the framework's active-window measurement follow
-    // whichever raster is actually being emitted.
-    wire LHBL_out = crt480i_active ? fb_hb : LHBL;
-    wire LVBL_out = crt480i_active ? fb_vb : LVBL;
-
-    // Which field is on the wire. It moves once per field, far slower than
-    // anything else here, so two flops across to the output clock are enough.
-    reg vga_f1_ps1 = 1'b0, vga_f1_ps2 = 1'b0;
-
-    always @(posedge clk_video_out_ps) begin
-        vga_f1_ps1 <= crt480i_active & fb_field;
-        vga_f1_ps2 <= vga_f1_ps1;
-    end
-
-    assign VGA_F1 = vga_f1_ps2;
-	 
-
-	video_mixer #(.GAMMA(1)) video_mixer_main
-	(
-		.*,
-
-		.CLK_VIDEO(CLK_VIDEO_PIPELINE),
-		.CE_PIXEL(CE_PIXEL_video),
-		.ce_pix(ce_pixel_mixer),
-
-		.freeze_sync(),
-
-		.R(video_mixer_r),
-		.G(video_mixer_g),
-		.B(video_mixer_b),
-
-		.HBlank(video_mixer_hb),
-		.VBlank(video_mixer_vb),
-		.HSync(video_mixer_hs),
-		.VSync(video_mixer_vs),
-
-		.scandoubler(1'b0),
-		.hq2x(scale_video_ff==1),
-		.gamma_bus(gamma_bus_video),
-
-		.VGA_R(VGA_R_video),
-		.VGA_G(VGA_G_video),
-		.VGA_B(VGA_B_video),
-		.VGA_VS(VGA_VS_video),
-		.VGA_HS(VGA_HS_video),
-		.VGA_DE(VGA_DE_video)
-
-	);
-
-    always @(posedge clk_57_272)
-    begin
-        VGA_R_video_src <= VGA_R_video;
-        VGA_G_video_src <= VGA_G_video;
-        VGA_B_video_src <= VGA_B_video;
-        VGA_HS_video_src <= VGA_HS_video;
-        VGA_VS_video_src <= VGA_VS_video;
-        VGA_DE_video_src <= VGA_DE_video;
-        LHBL_video_src <= LHBL_out;
-        LVBL_video_src <= LVBL_out;
-        CE_PIXEL_video_src <= CE_PIXEL_video;
-    end
-
-    // Retimes the exact-frequency video output onto a phase-shifted sibling clock.
-    always @(posedge clk_video_out_ps or posedge video_retime_reset_local)
-    begin
-        if (video_retime_reset_local)
-        begin
-            VGA_R_video_ps <= 8'd0;
-            VGA_G_video_ps <= 8'd0;
-            VGA_B_video_ps <= 8'd0;
-            VGA_HS_video_ps <= 1'b0;
-            VGA_VS_video_ps <= 1'b0;
-            VGA_DE_video_ps <= 1'b0;
-            LHBL_video_ps <= 1'b1;
-            LVBL_video_ps <= 1'b1;
-            CE_PIXEL_video_ps <= 1'b0;
-            CE_PIXEL_video_ps_d <= 1'b0;
-            VGA_R_video_hdmi <= 8'd0;
-            VGA_G_video_hdmi <= 8'd0;
-            VGA_B_video_hdmi <= 8'd0;
-            VGA_HS_video_hdmi <= 1'b0;
-            VGA_VS_video_hdmi <= 1'b0;
-            VGA_DE_video_hdmi <= 1'b0;
-            LHBL_video_hdmi <= 1'b1;
-            LVBL_video_hdmi <= 1'b1;
-            CE_PIXEL_video_hdmi <= 1'b0;
-        end
-        else
-        begin
-            CE_PIXEL_video_hdmi <= CE_PIXEL_video_ps & ~CE_PIXEL_video_ps_d;
-            if (CE_PIXEL_video_ps & ~CE_PIXEL_video_ps_d)
-            begin
-                VGA_R_video_hdmi <= VGA_R_video_ps;
-                VGA_G_video_hdmi <= VGA_G_video_ps;
-                VGA_B_video_hdmi <= VGA_B_video_ps;
-                VGA_HS_video_hdmi <= VGA_HS_video_ps;
-                VGA_VS_video_hdmi <= VGA_VS_video_ps;
-                VGA_DE_video_hdmi <= VGA_DE_video_ps;
-                LHBL_video_hdmi <= LHBL_video_ps;
-                LVBL_video_hdmi <= LVBL_video_ps;
-            end
-
-            CE_PIXEL_video_ps_d <= CE_PIXEL_video_ps;
-            CE_PIXEL_video_ps <= CE_PIXEL_video_src;
-            VGA_R_video_ps <= VGA_R_video_src;
-            VGA_G_video_ps <= VGA_G_video_src;
-            VGA_B_video_ps <= VGA_B_video_src;
-            VGA_HS_video_ps <= VGA_HS_video_src;
-            VGA_VS_video_ps <= VGA_VS_video_src;
-            VGA_DE_video_ps <= VGA_DE_video_src;
-            LHBL_video_ps <= LHBL_video_src;
-            LVBL_video_ps <= LVBL_video_src;
+    // Reset release for each output pipeline is synchronized to its own
+    // phase. This keeps PLL lock/BIOS-load reset out of recovery paths in the
+    // 57.272 MHz output registers.
+    always_ff @(posedge at_video_clk_57 or posedge at_boot_reset) begin
+        if (at_boot_reset) begin
+            at_video_pipe_reset_57_q1 <= 1'b1;
+            at_video_pipe_reset_57_q2 <= 1'b1;
+        end else begin
+            // The output pipeline must remain live while the splash is
+            // displayed; only the AT machine itself is held in reset.
+            at_video_pipe_reset_57_q1 <= 1'b0;
+            at_video_pipe_reset_57_q2 <= at_video_pipe_reset_57_q1;
         end
     end
 
-    assign VGA_R_AUX  =  VGA_R_video_hdmi;
-    assign VGA_G_AUX  =  VGA_G_video_hdmi;
-    assign VGA_B_AUX  =  VGA_B_video_hdmi;
-    assign VGA_HS =  VGA_HS_video_hdmi;
-    assign VGA_VS =  VGA_VS_video_hdmi;
-    assign gamma_bus =  gamma_bus_video;
-    assign CE_PIXEL  =  CE_PIXEL_video_hdmi;
-    assign CE_PIXEL_CREDITS = CE_PIXEL_video_hdmi;
-    wire credits_hb = LHBL_video_hdmi;
-    wire credits_vb = LVBL_video_hdmi;
-    jtframe_credits #(
-        .PAGES  (4),
-        .COLW   (8),
-        .BLKPOL (1)
-    // Reset from the domain it actually runs in.  The machine's reset is held
-    // for as long as the splash is on screen, which would have kept the
-    // overlay blank exactly where it is now wanted.  Nothing is lost by the
-    // change: the scroll position is re-seeded on every rising edge of
-    // enable regardless, so each overlay activation starts at the top.
-    ) u_credits(
-        .rst        ( video_retime_reset_local ),
-        .clk        ( clk_video_out_ps ),
-        .pxl_cen    ( CE_PIXEL_CREDITS ),
+    always_ff @(posedge at_video_clk_57_ps or posedge at_boot_reset) begin
+        if (at_boot_reset) begin
+            at_video_pipe_reset_57_ps_q1 <= 1'b1;
+            at_video_pipe_reset_57_ps_q2 <= 1'b1;
+        end else begin
+            at_video_pipe_reset_57_ps_q1 <= 1'b0;
+            at_video_pipe_reset_57_ps_q2 <= at_video_pipe_reset_57_ps_q1;
+        end
+    end
+    wire cpu_fault;
+    wire machine_protocol_error;
+    wire [15:0] at_machine_fault_sources;
+    wire [127:0] at_fault_words;
+    wire at_fault_captured;
 
-        // input image
-        .HB         ( credits_hb  ),
-        .VB         ( credits_vb ),
-        .rgb_in     ( { VGA_R_AUX, VGA_G_AUX, VGA_B_AUX } ),
-        .rotate     ( 2'd0  ),
-        .toggle     ( 1'b0  ),
-        .fast_scroll( 1'b0  ),
-        .border     ( 1'b0 ),
+    // Raw EGA timing and colour signals stay in the raster clock domain until
+    // they enter the established 57.272 MHz MiSTer output pipeline below.
+    wire [5:0] at_video_red_raw;
+    wire [5:0] at_video_green_raw;
+    wire [5:0] at_video_blue_raw;
+    wire       at_video_hsync_raw;
+    wire       at_video_hblank_raw;
+    wire       at_video_dbl_hsync_raw;
+    wire       at_video_vsync_raw;
+    wire       at_video_vblank_raw;
+    wire       at_video_vblank_border_raw;
+    wire       at_video_de_raw;
+    wire       at_video_dot_toggle_raw;
+    wire       at_video_scandouble_raw;
+    wire       at_video_vmode_toggle_raw;
+    wire       at_video_mode350_raw;
+    wire [11:0] at_video_active_dots_raw;
+    wire [9:0]  at_video_active_lines_raw;
 
-        .vram_din   ( 8'h0  ),
-        .vram_dout  (       ),
-        .vram_addr  ( 8'h0  ),
-        .vram_we    ( 1'b0  ),
-        .vram_ctrl  ( 3'b0  ),
-        .enable     ( video_credits_show ),
-
-        // output image
-        .HB_out     ( pre2x_LHBL      ),
-        .VB_out     ( pre2x_LVBL      ),
-        .rgb_out    ( credits_rgb_out )
+    spk286_at_machine u_at_machine (
+        .clk                    (CLK_50M),
+        // Keep the AT devices and EGA raster alive during the splash.  Only
+        // the CPU/BIU reset is extended over the splash interval.
+        .reset                  (at_boot_reset),
+        .cpu_reset              (at_machine_reset),
+        .clk_video              (at_video_clk_28),
+        .splashscreen           (at_splashscreen),
+        .execute_enable         (1'b1),
+        .counter_clock          (counter_clock),
+        .refresh_enable         (1'b1),
+        .keyboard_byte_valid    (keyboard_byte_valid),
+        .keyboard_byte          (keyboard_byte),
+        .keyboard_byte_ready    (keyboard_byte_ready),
+        .keyboard_translate_set1(keyboard_translate_set1),
+        .periodic_tick          (periodic_tick),
+        .second_tick             (second_tick),
+        .parity_event           (1'b0),
+        .channel_check_event    (1'b0),
+        .external_nmi_event     (1'b0),
+        .mgmt_address           (at_mgmt_address),
+        .mgmt_writedata         (at_mgmt_dout),
+        .mgmt_write             (at_mgmt_write),
+        .mgmt_read              (at_mgmt_read),
+        .mgmt_readdata          (at_mgmt_din),
+        .use_mmc                (at_use_mmc_q),
+        .floppy_write_protect   (hps_status[20:19]),
+        .floppy_present         (at_floppy_present),
+        .floppy_request         (at_floppy_request),
+        .ide_request            (at_ide_request),
+        .cpu_address            (at_cpu_address),
+        .cpu_data_out           (at_cpu_data_out),
+        .cpu_data_in            (at_cpu_data_in),
+        .cpu_data_oe            (at_cpu_data_oe),
+        .cpu_bus_valid          (at_cpu_bus_valid),
+        .cpu_bus_write          (at_cpu_bus_write),
+        .cpu_bus_bhe_n          (at_cpu_bus_bhe_n),
+        .cpu_bus_status         (at_cpu_bus_status),
+        .cpu_bus_lock           (at_cpu_bus_lock),
+        .cpu_hlda               (at_cpu_hlda),
+        .cpu_ready              (at_cpu_ready),
+        .cpu_halted             (at_cpu_halted),
+        .cpu_shutdown           (at_cpu_shutdown),
+`ifndef SPK286_AT_NO_DEBUG
+        .debug_control_error    (at_debug_control_error),
+        .debug_unsupported_opcode(at_debug_unsupported_opcode),
+        .debug_microcode_fault  (at_debug_microcode_fault),
+        .debug_operand_blocked  (at_debug_operand_blocked),
+        .debug_event_completed  (at_debug_event_completed),
+        .debug_event_vector     (at_debug_event_vector),
+        .debug_event_kind       (at_debug_event_kind),
+        .debug_opcode           (at_debug_opcode),
+        .debug_cs               (at_debug_cs),
+        .debug_cs_base          (at_debug_cs_base),
+        .debug_ip               (at_debug_ip),
+        .debug_flags            (at_debug_flags),
+        .debug_instruction_retired(at_debug_instruction_retired),
+        .debug_instruction_ip(at_debug_instruction_ip),
+        .debug_segment_bases(at_debug_segment_bases),
+        .debug_gpr              (at_debug_gpr),
+        .debug_segment_selectors(at_debug_segment_selectors),
+        .debug_fetch_blocked    (at_debug_fetch_blocked),
+        .debug_fetch_cursor     (at_debug_fetch_cursor),
+        .debug_micro_pc         (at_debug_micro_pc),
+        .debug_micro_entry      (at_debug_micro_entry),
+        .debug_micro_instruction(at_debug_micro_instruction),
+        .debug_micro_active     (at_debug_micro_active),
+        .debug_prefetch_count   (at_debug_prefetch_count),
+        .debug_bus_state        (at_debug_bus_state),
+        .debug_biu_detail       (at_debug_biu_detail),
+        .debug_last_post        (at_debug_last_post),
+        .debug_cpu_cycle_count  (at_debug_cpu_cycle_count),
+        .debug_at_cycle_count   (at_debug_at_cycle_count),
+        .debug_trace0           (at_debug_trace0),
+        .debug_trace1           (at_debug_trace1),
+        .debug_trace2           (at_debug_trace2),
+        .debug_trace3           (at_debug_trace3),
+        .debug_keyboard_keycode (at_debug_keyboard_keycode),
+        .debug_keyboard_irq     (at_debug_keyboard_irq),
+        .debug_keyboard_port_b  (at_debug_keyboard_port_b),
+        .debug_keyboard_pic_int (at_debug_keyboard_pic_int),
+        .debug_dma_request      (at_debug_dma_request),
+        .debug_dma_acknowledge_n(at_debug_dma_acknowledge_n),
+        .debug_at_address       (at_debug_address),
+        .debug_at_data_out      (at_debug_data_out),
+        .debug_at_data_in       (at_debug_data_in),
+        .debug_at_status        (at_debug_status),
+        .debug_at_valid         (at_debug_valid),
+        .debug_at_write         (at_debug_write),
+        .debug_at_io            (at_debug_io),
+        .debug_at_inta          (at_debug_inta),
+        .debug_at_code          (at_debug_code),
+        .debug_at_byte_high     (at_debug_byte_high),
+        .debug_at_memory_projection(at_debug_memory_projection),
+        .debug_at_cycle_active  (at_debug_cycle_active),
+        .debug_at_ready         (at_debug_ready),
+        .cpu_hold_request       (at_debug_hold_request),
+        .bridge_idle            (at_debug_bridge_idle),
+`endif
+        .memory_request_valid   (cpu_memory_valid),
+        .memory_command_valid   (cpu_memory_command_valid),
+        .memory_write           (cpu_memory_write),
+        .memory_code_fetch      (cpu_memory_code_fetch),
+        .memory_cycle_class     (cpu_memory_cycle_class),
+        .memory_address         (cpu_memory_address),
+        .memory_byte_enable     (cpu_memory_byte_enable),
+        .memory_data_out        (cpu_memory_data_out),
+        .memory_accept          (cpu_memory_accept),
+        .memory_ready           (cpu_memory_ready),
+        .memory_read_data       (cpu_memory_read_data),
+        .memory_read_data_valid (cpu_memory_read_data_valid),
+        .dma_memory_valid       (dma_memory_valid),
+        .dma_memory_write       (dma_memory_write),
+        .dma_memory_read        (dma_memory_read),
+        .dma_memory_address     (dma_memory_address),
+        .dma_memory_byte_enable (dma_memory_byte_enable),
+        .dma_memory_data_out    (dma_memory_data_out),
+        .dma_memory_accept      (dma_memory_accept),
+        .dma_memory_ready       (dma_memory_ready),
+        .dma_memory_data_in     (dma_memory_data_in),
+        .refresh_memory_valid   (refresh_memory_valid),
+        .refresh_memory_address (refresh_memory_address),
+        .refresh_memory_accept  (refresh_memory_accept),
+        .refresh_memory_ready   (refresh_memory_ready),
+        .cpu_fault              (cpu_fault),
+        .debug_fault_sources    (at_machine_fault_sources),
+        .cpu_reset_request      (at_cpu_reset_request),
+        .speaker_active         (at_speaker_active),
+        .speaker_level          (at_speaker_level),
+        .protocol_error         (machine_protocol_error),
+        .video_red              (at_video_red_raw),
+        .video_green            (at_video_green_raw),
+        .video_blue             (at_video_blue_raw),
+        .video_hsync            (at_video_hsync_raw),
+        .video_hblank           (at_video_hblank_raw),
+        .video_dbl_hsync        (at_video_dbl_hsync_raw),
+        .video_vsync            (at_video_vsync_raw),
+        .video_vblank           (at_video_vblank_raw),
+        .video_vblank_border    (at_video_vblank_border_raw),
+        .video_de               (at_video_de_raw),
+        .video_dot_toggle       (at_video_dot_toggle_raw),
+        .video_scandouble_active(at_video_scandouble_raw),
+        .video_vmode_toggle     (at_video_vmode_toggle_raw),
+        .video_mode350          (at_video_mode350_raw),
+        .video_active_dots      (at_video_active_dots_raw),
+        .video_active_lines     (at_video_active_lines_raw)
     );
 
-    // Post-credits diagnostic overlay. The method follows the PCXT
-    // test/crtc-debug implementation. A passive request/acknowledge snapshot
-    // crosses the clock boundary, and output selection changes only during
-    // vertical blank. The source-side observer deliberately remains alive
-    // during machine reset so a held reset cannot masquerade as stale data.
-    wire        spk_debug_hb_out;
-    wire        spk_debug_vb_out;
-    wire [23:0] spk_debug_rgb_out;
-    wire        spk_debug_source_reset = RESET | !pll_locked |
-                                            !pll_system_locked;
+    // The AT device owns the EGA registers, planar VRAM and raster.  The EGA
+    // itself runs at 28.636 MHz; MiSTer's video shell receives the same
+    // 57.272 MHz phase-shifted pipeline clock used by the established XT
+    // profile.  A dot toggle is crossed to the pipeline domain so CE_PIXEL
+    // remains the real EGA dot enable in both 14.318 and 16.257 MHz modes.
+    logic       at_video_dot_d_q;
+    logic       at_video_dot_dd_q;
+    logic [7:0] at_video_r_pipe_q;
+    logic [7:0] at_video_g_pipe_q;
+    logic [7:0] at_video_b_pipe_q;
+    logic       at_video_hs_pipe_q;
+    logic       at_video_hb_pipe_q;
+    logic       at_video_vs_pipe_q;
+    logic       at_video_vb_pipe_q;
+    logic       at_video_de_pipe_q;
+    logic       at_video_ce_pipe_q;
+    logic [7:0] at_video_r_out_q;
+    logic [7:0] at_video_g_out_q;
+    logic [7:0] at_video_b_out_q;
+    logic       at_video_hs_out_q;
+    logic       at_video_hb_out_q;
+    logic       at_video_vs_out_q;
+    logic       at_video_vb_out_q;
+    logic       at_video_de_out_q;
+    logic       at_video_ce_out_q;
 
+    always_ff @(posedge at_video_clk_57) begin
+        if (at_video_pipe_reset_57) begin
+            at_video_dot_d_q  <= 1'b0;
+            at_video_dot_dd_q <= 1'b0;
+            at_video_r_pipe_q <= 8'h00;
+            at_video_g_pipe_q <= 8'h00;
+            at_video_b_pipe_q <= 8'h00;
+            at_video_hs_pipe_q <= 1'b1;
+            at_video_hb_pipe_q <= 1'b1;
+            at_video_vs_pipe_q <= 1'b1;
+            at_video_vb_pipe_q <= 1'b1;
+            at_video_de_pipe_q <= 1'b0;
+            at_video_ce_pipe_q <= 1'b0;
+        end else begin
+            at_video_dot_d_q  <= at_video_dot_toggle_raw;
+            at_video_dot_dd_q <= at_video_dot_d_q;
+            at_video_r_pipe_q <= {at_video_red_raw, 2'b00};
+            at_video_g_pipe_q <= {at_video_green_raw, 2'b00};
+            at_video_b_pipe_q <= {at_video_blue_raw, 2'b00};
+            at_video_hs_pipe_q <= at_video_hsync_raw;
+            at_video_hb_pipe_q <= at_video_hblank_raw;
+            at_video_vs_pipe_q <= at_video_vsync_raw;
+            at_video_vb_pipe_q <= at_video_vblank_raw;
+            at_video_de_pipe_q <= at_video_de_raw;
+            at_video_ce_pipe_q <= at_video_dot_d_q ^ at_video_dot_dd_q;
+        end
+    end
+
+    always_ff @(posedge at_video_clk_57_ps) begin
+        if (at_video_pipe_reset_57_ps) begin
+            at_video_r_out_q <= 8'h00;
+            at_video_g_out_q <= 8'h00;
+            at_video_b_out_q <= 8'h00;
+            at_video_hs_out_q <= 1'b0;
+            at_video_hb_out_q <= 1'b1;
+            at_video_vs_out_q <= 1'b0;
+            at_video_vb_out_q <= 1'b1;
+            at_video_de_out_q <= 1'b0;
+            at_video_ce_out_q <= 1'b0;
+        end else begin
+            at_video_r_out_q <= at_video_r_pipe_q;
+            at_video_g_out_q <= at_video_g_pipe_q;
+            at_video_b_out_q <= at_video_b_pipe_q;
+            at_video_hs_out_q <= at_video_hs_pipe_q;
+            at_video_hb_out_q <= at_video_hb_pipe_q;
+            at_video_vs_out_q <= at_video_vs_pipe_q;
+            at_video_vb_out_q <= at_video_vb_pipe_q;
+            at_video_de_out_q <= at_video_de_pipe_q;
+            at_video_ce_out_q <= at_video_ce_pipe_q;
+        end
+    end
+
+    wire        at_debug_hb_out;
+    wire        at_debug_vb_out;
+    wire [23:0] at_debug_rgb_out;
+
+`ifndef SPK286_AT_NO_DEBUG
+    wire [127:0] at_boot_trace_words;
+    wire at_boot_trace_valid;
+    wire [5:0] at_boot_trace_count;
+    wire at_boot_trace_full;
+    wire at_boot_trace_pending;
+    spk286_at_boot_trace u_at_boot_trace (
+        .clk                    (CLK_50M),
+        .reset                  (at_machine_reset | at_cpu_reset_request),
+        .cpu_valid              (at_cpu_bus_valid),
+        .cpu_write              (at_cpu_bus_write),
+        .cpu_status             (at_cpu_bus_status),
+        .cpu_address            (at_cpu_address),
+        .cpu_ready              (at_cpu_ready),
+        .cpu_data_in            (at_cpu_data_in),
+        .cpu_halted             (at_cpu_halted),
+        .cpu_cs                 (at_debug_cs),
+        .cpu_ip                 (at_debug_ip),
+        .cpu_cs_base            (at_debug_cs_base),
+        .cpu_opcode             (at_debug_opcode),
+        .backend_valid          (backend_valid),
+        .backend_command_valid  (backend_command_valid),
+        .backend_code           (backend_code_fetch),
+        .backend_write          (backend_write),
+        .backend_accept         (backend_accept),
+        .backend_ready          (backend_ready),
+        .backend_read_valid     (backend_read_data_valid),
+        .backend_address        (backend_address),
+        .backend_byte_enable    (backend_byte_enable),
+        .backend_read_data      (backend_read_data),
+        .kf_address             (at_trace_kf_address),
+        .kf_data                (at_trace_kf_data),
+        .kf_read_request        (at_trace_kf_read_request),
+        .kf_read_flag           (at_trace_kf_read_flag),
+        .owner_state            (at_trace_owner_state),
+        .sdram_read_command     (!sdram_cs && sdram_ras && !sdram_cas && sdram_we),
+        .sdram_dqm              ({sdram_udqm, sdram_ldqm}),
+        .select_index           (hps_status[78:74]),
+        .select_detail          (hps_status[80]),
+        .selected_words         (at_boot_trace_words),
+        .selected_valid         (at_boot_trace_valid),
+        .capture_count          (at_boot_trace_count),
+        .full                   (at_boot_trace_full),
+        .capture_pending        (at_boot_trace_pending)
+    );
+
+    wire [127:0] at_ram_trace_words;
+    wire at_ram_trace_captured, at_ram_trace_armed;
+    wire [15:0] at_ram_trace_comparisons;
+    spk286_at_ram_trace u_at_ram_trace (
+        .clk(CLK_50M), .reset(at_boot_reset),
+        .cpu_reset(at_machine_reset | at_cpu_reset_request),
+        .retired(at_debug_instruction_retired),
+        .instruction_ip(at_debug_instruction_ip),
+        .cpu_cs(at_debug_cs),
+        .cpu_cs_base(at_debug_cs_base), .cpu_flags(at_debug_flags),
+        .cpu_opcode(at_debug_opcode), .cpu_gpr(at_debug_gpr),
+        .cpu_segments(at_debug_segment_selectors),
+        .cpu_segment_bases(at_debug_segment_bases),
+        .cpu_valid(at_cpu_bus_valid), .cpu_ready(at_cpu_ready),
+        .cpu_write(at_cpu_bus_write), .cpu_bhe_n(at_cpu_bus_bhe_n),
+        .cpu_status(at_cpu_bus_status), .cpu_address(at_cpu_address),
+        .cpu_data_in(at_cpu_data_in), .backend_accept(backend_accept),
+        .backend_ready(backend_ready), .backend_read_valid(backend_read_data_valid),
+        .backend_code(backend_code_fetch), .backend_write(backend_write),
+        .backend_owner(backend_owner), .backend_be(backend_byte_enable),
+        .backend_address(backend_address), .backend_data_in(backend_read_data),
+        .backend_data_out(backend_data_out), .kf_address(at_trace_kf_address),
+        .kf_data(at_trace_kf_data), .kf_read_request(at_trace_kf_read_request),
+        .kf_read_flag(at_trace_kf_read_flag),
+        .sdram_read_command(!sdram_cs && sdram_ras && !sdram_cas && sdram_we),
+        .owner_state(at_trace_owner_state), .sdram_dqm({sdram_udqm, sdram_ldqm}),
+        .select_page(hps_status[84:83]), .selected_words(at_ram_trace_words),
+        .captured(at_ram_trace_captured), .armed(at_ram_trace_armed),
+        .comparisons(at_ram_trace_comparisons)
+    );
+
+    spk286_at_fault_trace u_at_fault_trace (
+        .clk(CLK_50M), .reset(at_boot_reset),
+        .sources({loader_protocol_error, sdram_owner_protocol_error,
+                  memory_port_protocol_error, at_machine_fault_sources}),
+        .cpu_cs(at_debug_cs), .cpu_ip(at_debug_ip),
+        .cpu_address(at_cpu_address), .cpu_opcode(at_debug_opcode),
+        .bus_flags({at_machine_reset | at_cpu_reset_request, at_cpu_halted,
+            at_cpu_bus_valid, at_cpu_ready, at_debug_io, at_cpu_bus_write,
+            at_debug_code, at_cpu_bus_status, at_cpu_address[0], at_cpu_bus_bhe_n}),
+        .captured(at_fault_captured), .words(at_fault_words)
+    );
+
+    // The AT profile uses the same four-page diagnostic overlay and the same
+    // status bits as the XT profile.  Its XT-labelled bus inputs are fed by
+    // the normalized AT transaction so the existing snapshot/CDC logic is
+    // reused without touching the machine datapath.
     spk286_debug_overlay #(
-        .COLW(8)
-    ) u_SPK286_DEBUG_OVERLAY (
-        .rst                     (video_retime_reset_local),
-        .src_rst                 (spk_debug_source_reset),
-        .src_clk                 (clk_chipset),
-        .clk                     (clk_video_out_ps),
-        .pxl_cen                 (CE_PIXEL_CREDITS),
-        .HS                      (VGA_HS_video_hdmi),
-        .VS                      (VGA_VS_video_hdmi),
-        .HB                      (pre2x_LHBL),
-        .VB                      (pre2x_LVBL),
-        .rgb_in                  (credits_rgb_out),
-        .page                    (status[73:72]),
-        .ram_trace_view          (1'b0),
-        .cpu_reset               (spk_reset),
-        .cpu_halted              (spk_halted),
-        .cpu_shutdown            (spk_shutdown),
-        .cpu_control_error       (spk_control_error),
-        .cpu_unsupported_opcode  (spk_unsupported_opcode),
-        .cpu_microcode_fault     (spk_microcode_fault),
-        .cpu_operand_blocked     (spk_operand_blocked),
-        .cpu_event_completed     (spk_event_completed),
-        .cpu_event_vector        (spk_debug_event_vector),
-        .cpu_event_kind          (spk_debug_event_kind),
-        .cpu_opcode              (spk_debug_opcode),
-        .cpu_cs                  (spk_debug_cs),
-        .cpu_cs_base             (spk_debug_cs_base),
-        .cpu_ip                  (spk_debug_ip),
-        .cpu_flags               (spk_debug_flags),
-        .cpu_gpr                 (spk_debug_gpr),
-        .cpu_segments            (spk_debug_segment_selectors),
-        .cpu_fetch_blocked       (spk_fetch_blocked),
-        .cpu_fetch_cursor        (spk_debug_fetch_cursor),
-        .cpu_micro_pc            (spk_debug_micro_pc),
-        .cpu_micro_entry         (spk_debug_micro_entry),
-        .cpu_micro_instruction   (spk_debug_micro_instruction),
-        .cpu_micro_active        (spk_debug_micro_active),
-        .cpu_prefetch_count      (spk_debug_prefetch_count),
-        .cpu_biu_state           (spk_debug_bus_state),
-        .cpu_address             (spk_address),
-        .cpu_data_out            (spk_data_out),
-        .cpu_data_in             (spk_data_in),
-        .cpu_bus_status          (spk_bus_status),
-        .cpu_bus_valid           (spk_bus_valid),
-        .cpu_bus_write           (spk_bus_write),
-        .cpu_bhe_n               (spk_bus_bhe_n),
-        .cpu_bus_lock            (spk_bus_lock),
-        .cpu_hlda                (spk_hlda),
-        .cpu_ready               (spk_ready),
-        .xt_address              (xt_address),
-        .xt_data_out             (xt_data_out),
-        .xt_data_in              (data_bus),
-        .xt_status               (xt_status),
-        .xt_valid                (xt_valid),
-        .xt_write                (xt_write),
-        .xt_io                   (xt_io),
-        .xt_inta                 (xt_inta),
-        .xt_code                 (xt_code),
-        .xt_byte_high            (xt_byte_high),
-        .xt_memory_projection    (xt_memory_projection),
-        .xt_cycle_active         (processor_cycle_active),
-        .xt_ready                (processor_ready),
-        .bridge_idle             (bridge_idle),
-        .bridge_error            (bridge_protocol_error),
-        .hold_request            (spk_hold_request),
-        .biu_detail              (spk_debug_biu_detail),
-        .last_post               (spk_debug_last_post),
-        .cpu_cycle_count         (spk_debug_cpu_cycles),
-        .xt_cycle_count          (spk_debug_xt_cycles),
-        .trace0                  (spk_debug_trace0),
-        .trace1                  (spk_debug_trace1),
-        .trace2                  (spk_debug_trace2),
-        .trace3                  (spk_debug_trace3),
-        .keyboard_keycode        (keyboard_debug_keycode),
-        .keyboard_irq            (keyboard_debug_irq),
-        .keyboard_port_b         (keyboard_debug_port_b),
-        .keyboard_pic_int        (keyboard_debug_pic_int),
-        .dma_request             (dma_request_debug),
-        .dma_acknowledge_n       (dma_acknowledge_debug),
-        .HB_out                  (spk_debug_hb_out),
-        .VB_out                  (spk_debug_vb_out),
-        .rgb_out                 (spk_debug_rgb_out)
+        .COLW   (8),
+        .AT_MODE(1'b1)
+    ) u_at_debug_overlay (
+        .rst                     (at_video_pipe_reset_57_ps),
+        // The source observer must remain alive during the CPU reset so it can
+        // publish the real RST=1 state instead of leaving a stale snapshot.
+        .src_rst                 (at_boot_reset),
+        .src_clk                 (CLK_50M),
+        .clk                     (at_video_clk_57_ps),
+        .pxl_cen                 (at_video_ce_out_q),
+        .HS                      (at_video_hs_out_q),
+        .VS                      (at_video_vs_out_q),
+        .HB                      (at_video_hb_out_q),
+        .VB                      (at_video_vb_out_q),
+        .rgb_in                  ({at_video_r_out_q,
+                                   at_video_g_out_q,
+                                   at_video_b_out_q}),
+        .page                    (at_debug_raw_view ? 2'd3 : at_debug_page),
+        .boot_trace_view         (at_debug_boot_view),
+        .fault_trace_view        (at_debug_fault_view),
+        .ram_trace_view          (at_debug_ram_view),
+        .cpu_reset               (at_machine_reset | at_cpu_reset_request),
+        .cpu_halted              (at_cpu_halted),
+        .cpu_shutdown            (at_cpu_shutdown),
+        .cpu_control_error       (at_debug_control_error),
+        .cpu_unsupported_opcode  (at_debug_unsupported_opcode),
+        .cpu_microcode_fault     (at_debug_microcode_fault),
+        .cpu_operand_blocked     (at_debug_operand_blocked),
+        .cpu_event_completed     (at_debug_event_completed),
+        .cpu_event_vector        (at_debug_event_vector),
+        .cpu_event_kind          (at_debug_event_kind),
+        .cpu_opcode              (at_debug_opcode),
+        .cpu_cs                  (at_debug_cs),
+        .cpu_cs_base             (at_debug_cs_base),
+        .cpu_ip                  (at_debug_ip),
+        .cpu_flags               (at_debug_flags),
+        .cpu_gpr                 (at_debug_gpr),
+        .cpu_segments            (at_debug_segment_selectors),
+        .cpu_fetch_blocked       (at_debug_fetch_blocked),
+        .cpu_fetch_cursor        (at_debug_fetch_cursor),
+        .cpu_micro_pc            (at_debug_micro_pc),
+        .cpu_micro_entry         (at_debug_micro_entry),
+        .cpu_micro_instruction   (at_debug_micro_instruction),
+        .cpu_micro_active        (at_debug_micro_active),
+        .cpu_prefetch_count      (at_debug_prefetch_count),
+        .cpu_biu_state           (at_debug_bus_state),
+        .cpu_address             (at_cpu_address),
+        .cpu_data_out            (at_cpu_data_out),
+        .cpu_data_in             (at_cpu_data_in),
+        .cpu_bus_status          (at_cpu_bus_status),
+        .cpu_bus_valid           (at_cpu_bus_valid),
+        .cpu_bus_write           (at_cpu_bus_write),
+        .cpu_bhe_n               (at_cpu_bus_bhe_n),
+        .cpu_bus_lock            (at_cpu_bus_lock),
+        .cpu_hlda                (at_cpu_hlda),
+        .cpu_ready               (at_cpu_ready),
+        .xt_address              (at_debug_address),
+        .xt_data_out             (at_debug_data_out),
+        .xt_data_in              (at_debug_data_in),
+        .xt_status               (at_debug_status),
+        .xt_valid                (at_debug_valid),
+        .xt_write                (at_debug_write),
+        .xt_io                   (at_debug_io),
+        .xt_inta                 (at_debug_inta),
+        .xt_code                 (at_debug_code),
+        .xt_byte_high            (at_debug_byte_high),
+        .xt_memory_projection    (at_debug_memory_projection),
+        .xt_cycle_active         (at_debug_cycle_active),
+        .xt_ready                (at_debug_ready),
+        .bridge_idle             (at_debug_bridge_idle),
+        .bridge_error            (machine_protocol_error | keyboard_event_overflow),
+        .hold_request            (at_debug_hold_request),
+        .biu_detail              (at_debug_biu_detail),
+        .last_post               (at_debug_last_post),
+        .cpu_cycle_count         (at_debug_ram_view ? at_ram_trace_comparisons : at_debug_boot_view ? {10'd0, at_boot_trace_count} : at_debug_cpu_cycle_count),
+        .xt_cycle_count          (at_debug_ram_view ? {12'd0, at_ram_trace_armed, at_ram_trace_captured, hps_status[84:83]} : at_debug_boot_view ? {7'd0, at_boot_trace_pending, at_boot_trace_full, at_boot_trace_valid, hps_status[80], hps_status[78:74]} : at_debug_at_cycle_count),
+        .trace0                  (at_debug_ram_view ? at_ram_trace_words[31:0] : at_debug_fault_view ? at_fault_words[31:0] : at_debug_boot_view ? at_boot_trace_words[31:0] : at_debug_trace0),
+        .trace1                  (at_debug_ram_view ? at_ram_trace_words[63:32] : at_debug_fault_view ? at_fault_words[63:32] : at_debug_boot_view ? at_boot_trace_words[63:32] : at_debug_trace1),
+        .trace2                  (at_debug_ram_view ? at_ram_trace_words[95:64] : at_debug_fault_view ? at_fault_words[95:64] : at_debug_boot_view ? at_boot_trace_words[95:64] : at_debug_trace2),
+        .trace3                  (at_debug_ram_view ? at_ram_trace_words[127:96] : at_debug_fault_view ? at_fault_words[127:96] : at_debug_boot_view ? at_boot_trace_words[127:96] : at_debug_trace3),
+        .keyboard_keycode        (at_debug_keyboard_keycode),
+        .keyboard_irq            (at_debug_keyboard_irq),
+        .keyboard_port_b         (at_debug_keyboard_port_b),
+        .keyboard_pic_int        (at_debug_keyboard_pic_int),
+        .dma_request             (at_debug_dma_request),
+        .dma_acknowledge_n       (at_debug_dma_acknowledge_n),
+        .HB_out                  (at_debug_hb_out),
+        .VB_out                  (at_debug_vb_out),
+        .rgb_out                 (at_debug_rgb_out)
     );
+`endif
 
-    logic use_spk_debug = 1'b0;
-    wire use_spk_debug_next = status[71] & ~video_credits_show;
-
-    always_ff @(posedge clk_video_out_ps or posedge video_retime_reset_local) begin
-        if (video_retime_reset_local)
-            use_spk_debug <= 1'b0;
-        else if (pre2x_LVBL)
-            use_spk_debug <= use_spk_debug_next;
+`ifndef SPK286_AT_NO_DEBUG
+    (* altera_attribute = "-name SYNCHRONIZER_IDENTIFICATION FORCED_IF_ASYNCHRONOUS" *)
+    logic at_debug_enable_sync1_q;
+    (* altera_attribute = "-name SYNCHRONIZER_IDENTIFICATION FORCED_IF_ASYNCHRONOUS" *)
+    logic at_debug_enable_sync2_q;
+    always_ff @(posedge at_video_clk_57_ps) begin
+        if (at_video_pipe_reset_57_ps) begin
+            at_debug_enable_sync1_q <= 1'b0;
+            at_debug_enable_sync2_q <= 1'b0;
+        end else begin
+            at_debug_enable_sync1_q <= at_debug_enable;
+            at_debug_enable_sync2_q <= at_debug_enable_sync1_q;
+        end
     end
 
-    // The credits block registers RGB once on CE_PIXEL, even while its overlay
-    // is disabled.  Register the already-processed DE on that same event; using
-    // VGA_DE_video_hdmi directly opens the active window one pixel before the
-    // corresponding credits_rgb_out sample and clips the last pixel instead.
-    reg VGA_DE_credits = 1'b0;
-    always @(posedge clk_video_out_ps or posedge video_retime_reset_local) begin
-        if (video_retime_reset_local)
-            VGA_DE_credits <= 1'b0;
-        else if (CE_PIXEL_CREDITS)
-            VGA_DE_credits <= VGA_DE_video_hdmi;
+    logic at_use_debug_q;
+    always_ff @(posedge at_video_clk_57_ps) begin
+        if (at_video_pipe_reset_57_ps)
+            at_use_debug_q <= 1'b0;
+        else if (at_video_vb_out_q)
+            at_use_debug_q <= at_debug_enable_sync2_q;
     end
+`else
+    logic at_use_debug_q;
+    assign at_use_debug_q = 1'b0;
+    assign at_debug_hb_out = 1'b0;
+    assign at_debug_vb_out = 1'b0;
+    assign at_debug_rgb_out = 24'h000000;
+`endif
 
-    assign VGA_DE = use_spk_debug
-        ? (~spk_debug_hb_out & ~spk_debug_vb_out)
-        : VGA_DE_credits;
-    assign {VGA_R, VGA_G, VGA_B} = use_spk_debug
-        ? spk_debug_rgb_out
-        : credits_rgb_out;
+    wire at_video_fault = cpu_fault | machine_protocol_error | keyboard_event_overflow |
+                          memory_port_protocol_error |
+                          sdram_owner_protocol_error |
+                          loader_protocol_error;
 
+    assign CLK_VIDEO    = at_video_clk_57_ps;
+    assign CE_PIXEL     = at_video_ce_out_q;
+    assign VIDEO_ARX    = 13'd4;
+    assign VIDEO_ARY    = 13'd3;
+    assign VGA_R        = at_use_debug_q ? at_debug_rgb_out[23:16] :
+                          at_video_r_out_q;
+    assign VGA_G        = at_use_debug_q ? at_debug_rgb_out[15:8] :
+                          at_video_g_out_q;
+    assign VGA_B        = at_use_debug_q ? at_debug_rgb_out[7:0] :
+                          at_video_b_out_q;
+    assign VGA_HS       = at_video_hs_out_q;
+    assign VGA_VS       = at_video_vs_out_q;
+    assign VGA_DE       = at_use_debug_q ?
+                          (~at_debug_hb_out & ~at_debug_vb_out) :
+                          at_video_de_out_q;
+    assign VGA_F1       = 1'b0;
+    assign VGA_SL       = 2'b00;
+    assign VGA_SCALER   = 1'b0;
+    assign VGA_DISABLE  = 1'b0;
+    assign HDMI_FREEZE  = 1'b0;
+    assign HDMI_BLACKOUT = 1'b0;
+    assign HDMI_BOB_DEINT = 1'b0;
+    assign LED_USER     = cpu_fault | machine_protocol_error | keyboard_event_overflow |
+                          memory_port_protocol_error |
+                          sdram_owner_protocol_error |
+                          loader_protocol_error;
+    assign LED_POWER    = 2'b00;
+    assign LED_DISK     = {1'b0, main_rom_loaded};
+    assign BUTTONS      = hps_buttons;
+    // Minimal PC speaker PCM.  The AT machine supplies a square-wave logic
+    // level from PIT channel 2; present it as a centered signed sample and
+    // leave the output at digital silence while the speaker is gated off.
+    assign AUDIO_L      = !at_speaker_active ? 16'h0000 :
+                          at_speaker_level ? 16'h4000 : 16'hC000;
+    assign AUDIO_R      = !at_speaker_active ? 16'h0000 :
+                          at_speaker_level ? 16'h4000 : 16'hC000;
+    assign AUDIO_S      = 1'b1;
+    assign AUDIO_MIX    = 2'b00;
+    assign ADC_BUS      = 4'hz;
+    assign SD_SCK       = 1'bz;
+    assign SD_MOSI      = 1'bz;
+    assign SD_CS        = 1'bz;
+    assign DDRAM_CLK    = CLK_50M;
+    assign DDRAM_ADDR   = 29'h0;
+    assign DDRAM_BURSTCNT = 8'h0;
+    assign DDRAM_RD     = 1'b0;
+    assign DDRAM_DIN    = 64'h0;
+    assign DDRAM_BE     = 8'h0;
+    assign DDRAM_WE     = 1'b0;
+    assign UART_RTS     = 1'b0;
+    assign UART_TXD     = 1'b1;
+    assign UART_DTR     = 1'b0;
+    assign USER_OUT     = 7'h00;
 
 endmodule

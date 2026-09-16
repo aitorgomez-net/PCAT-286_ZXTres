@@ -714,6 +714,9 @@ wire         bob_deint;
 	ascal 
 	#(
 		.RAMBASE(32'h20000000),
+`ifdef SPK286_AT_CDC
+		.AT_CDC("true"),
+`endif
 	`ifdef MISTER_SMALL_VBUF
 		.RAMSIZE(32'h00200000),
 	`else
@@ -996,13 +999,22 @@ end
 
 `ifndef MISTER_DEBUG_NOHDMI
 	wire [15:0] lltune;
-	pll_hdmi_adj pll_hdmi_adj
+	pll_hdmi_adj
+`ifdef SPK286_AT_CDC
+	#(.AT_CDC("true"))
+`endif
+	pll_hdmi_adj
 	(
 		.clk(FPGA_CLK1_50),
 		.reset_na(~reset_req),
 
 		.llena(lowlat),
+`ifdef SPK286_AT_CDC
+		.cfg_valid(cfg_done),
+		.lltune(lltune),
+`else
 		.lltune({16{cfg_done}} & lltune),
+`endif
 		.locked(led_locked),
 		.i_waitrequest(adj_waitrequest),
 		.i_write(adj_write),
@@ -1180,7 +1192,13 @@ cyclonev_hps_interface_peripheral_i2c hdmi_i2c
 	wire [23:0] hdmi_data_osd;
 	wire        hdmi_de_osd, hdmi_vs_osd, hdmi_hs_osd;
 
-	osd hdmi_osd
+	osd #(
+`ifdef SPK286_AT_CDC
+		.AT_CDC(1)
+`else
+		.AT_CDC(0)
+`endif
+	) hdmi_osd
 	(
 		.clk_sys(clk_sys),
 
@@ -1410,7 +1428,13 @@ scanlines #(0) VGA_scanlines
 
 wire [23:0] vga_data_osd;
 wire        vga_vs_osd, vga_hs_osd, vga_de_osd;
-osd vga_osd
+osd #(
+`ifdef SPK286_AT_CDC
+	.AT_CDC(1)
+`else
+	.AT_CDC(0)
+`endif
+) vga_osd
 (
 	.clk_sys(clk_sys),
 

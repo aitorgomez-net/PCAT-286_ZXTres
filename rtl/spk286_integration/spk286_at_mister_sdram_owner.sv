@@ -28,6 +28,9 @@ module spk286_at_mister_sdram_owner #(
     input  logic        request_owner_refresh,
     input  logic        request_write,
     input  logic        request_code_fetch,
+    // P03 line fills use one owner transaction for four consecutive reads.
+    // Existing clients leave this optional input open, which means one word.
+    input  logic        request_burst,
     input  logic [3:0]  request_cycle_class,
     input  logic [23:0] request_address,
     input  logic [1:0]  request_byte_enable,
@@ -68,6 +71,9 @@ module spk286_at_mister_sdram_owner #(
     logic [15:0] data_out_q;
     logic        response_pending_q;
     logic [15:0] response_data_q;
+    logic        response_data_valid_q;
+    logic        burst_q;
+    logic [2:0]  read_beat_count_q;
 
     logic [23:0] kf_address;
     logic [15:0] kf_data_in;
@@ -85,6 +91,7 @@ module spk286_at_mister_sdram_owner #(
     logic        physical_write;
     logic [1:0]  physical_byte_enable;
     logic [23:0] mapped_address;
+    logic [8:0]  kf_access_num;
 
     // The 80286 reset vector is fetched from FFFFF0h, while the loaded
     // system BIOS occupies the AT F0000h-Fffffh window.  Real AT chipsets
@@ -120,7 +127,10 @@ module spk286_at_mister_sdram_owner #(
                             (write_q ? kf_idle : response_pending_q));
     assign request_read_data = response_data_q;
     assign request_read_data_valid = active_q && !owner_refresh_q &&
-                                     !write_q && response_pending_q;
+                                     !write_q && response_data_valid_q;
+
+    assign kf_access_num = ((active_q ? burst_q :
+                             (request_burst === 1'b1)) ? 9'd4 : 9'd1);
 
     // KFSDRAM is word-addressed while the AT boundary is byte-addressed.
     // Map the logical byte address to its physical 16-bit word with A >> 1;
@@ -198,7 +208,7 @@ module spk286_at_mister_sdram_owner #(
         .sdram_clock    (clk),
         .sdram_reset    (reset),
         .address        (kf_address),
-        .access_num     (9'h001),
+        .access_num     (kf_access_num),
         .data_in        (kf_data_in),
         .data_out       (kf_data_out),
         .write_request  (kf_write_request),
@@ -230,8 +240,12 @@ module spk286_at_mister_sdram_owner #(
             data_out_q     <= 16'h0000;
             response_pending_q <= 1'b0;
             response_data_q <= 16'h0000;
+            response_data_valid_q <= 1'b0;
+            burst_q         <= 1'b0;
+            read_beat_count_q <= 3'd0;
             protocol_error <= 1'b0;
         end else begin
+            response_data_valid_q <= 1'b0;
             if (request_valid && request_command_valid &&
                 (request_byte_enable == 2'b00))
                 protocol_error <= 1'b1;
@@ -244,13 +258,20 @@ module spk286_at_mister_sdram_owner #(
                 byte_enable_q   <= request_byte_enable;
                 data_out_q      <= request_data_out;
                 response_pending_q <= 1'b0;
+                response_data_valid_q <= 1'b0;
+                burst_q          <= (request_burst === 1'b1);
+                read_beat_count_q <= 3'd0;
             end else if (active_q && !owner_refresh_q && !write_q &&
                          kf_read_flag && !response_pending_q) begin
                 response_data_q <= kf_data_out;
-                response_pending_q <= 1'b1;
+                response_data_valid_q <= 1'b1;
+                read_beat_count_q <= read_beat_count_q + 3'd1;
+                if (burst_q ? (read_beat_count_q == 3'd3) : 1'b1)
+                    response_pending_q <= 1'b1;
             end else if (active_q && request_ready) begin
                 active_q <= 1'b0;
                 response_pending_q <= 1'b0;
+                response_data_valid_q <= 1'b0;
             end
         end
     end
@@ -262,8 +283,8 @@ module spk286_at_mister_sdram_owner #(
                 else $error("AT SDRAM owner completed without an active request");
             assert (!(request_read_data_valid && write_q))
                 else $error("AT SDRAM owner returned read data for a write");
-            assert (!request_read_data_valid || request_ready)
-                else $error("AT SDRAM owner returned data without ready");
+            assert (burst_q || !request_read_data_valid || request_ready)
+                else $error("AT SDRAM owner returned single-read data without ready");
         end
     end
 `endif

@@ -1,6 +1,12 @@
 `timescale 1ns/1ps
 
 module spk286_at_bus_bridge_tb;
+`ifdef SPK286_P01_FAST_MEMORY_START
+    localparam logic EXPECT_P01_FAST_MEMORY_START = 1'b1;
+`else
+    localparam logic EXPECT_P01_FAST_MEMORY_START = 1'b0;
+`endif
+
     logic clk = 1'b0;
     logic reset = 1'b1;
     always #5 clk = ~clk;
@@ -13,6 +19,7 @@ module spk286_at_bus_bridge_tb;
     logic cpu_bus_bhe_n = 1'b1;
     logic [3:0] cpu_bus_status = 4'hF;
     logic cpu_bus_lock = 1'b0;
+    logic cpu_memory_word_capable = 1'b0;
     wire cpu_ready;
     wire [15:0] cpu_data_in;
 
@@ -41,6 +48,7 @@ module spk286_at_bus_bridge_tb;
     logic held_write;
     logic held_lock;
     logic monitor_hold = 1'b0;
+    integer command_wait_ticks = 0;
 
     always @(posedge clk) begin
         if (!reset) begin
@@ -66,6 +74,7 @@ module spk286_at_bus_bridge_tb;
         .cpu_data_out(cpu_data_out), .cpu_data_oe(cpu_data_oe),
         .cpu_bus_write(cpu_bus_write), .cpu_bus_bhe_n(cpu_bus_bhe_n),
         .cpu_bus_status(cpu_bus_status), .cpu_bus_lock(cpu_bus_lock),
+        .cpu_memory_word_capable(cpu_memory_word_capable),
         .cpu_ready(cpu_ready), .cpu_data_in(cpu_data_in),
         .at_valid(at_valid), .at_command_valid(at_command_valid),
         .at_owner(at_owner), .at_cycle_class(at_cycle_class),
@@ -110,9 +119,12 @@ module spk286_at_bus_bridge_tb;
     task automatic wait_command;
         integer deadline;
         begin
+            command_wait_ticks = 0;
             for (deadline = 0; deadline < 100 && !at_command_valid;
-                 deadline = deadline + 1)
+                 deadline = deadline + 1) begin
                 @(negedge clk);
+                command_wait_ticks = command_wait_ticks + 1;
+            end
             check(at_command_valid, "AT command phase did not start");
         end
     endtask
@@ -237,6 +249,63 @@ module spk286_at_bus_bridge_tb;
         at_read_data_valid = 1'b0;
         cpu_bus_valid = 1'b0;
         @(negedge clk);
+
+        // Native x16 fetch/read/write: both lanes in one accepted operation,
+        // held stable through wait states. Width is part of the snapshot.
+        cpu_memory_word_capable = 1'b1;
+        before_accept = accept_count;
+        start_request(24'hFFFFF0, 4'hD, 1'b0, 1'b0, 16'd0, 1'b0);
+        wait_command();
+        if (EXPECT_P01_FAST_MEMORY_START)
+            check(command_wait_ticks == 2,
+                  "P01 did not remove the two memory-start states");
+        else
+            check(command_wait_ticks == 4,
+                  "reference bridge memory-start latency changed");
+        check(at_byte_enable == 2'b11 && !at_a0 && !at_bhe_n && at_code_fetch,
+              "native code fetch did not select both lanes");
+        cpu_memory_word_capable = 1'b0;
+        accept_command();
+        repeat (3) @(negedge clk);
+        check(at_byte_enable == 2'b11 && !cpu_ready,
+              "native width changed while waiting");
+        complete_read(16'h5BEA, response);
+        check(response == 16'h5BEA && accept_count == before_accept + 1,
+              "native fetch did not complete in one beat");
+
+        cpu_memory_word_capable = 1'b1;
+        before_effects = write_effects;
+        start_request(24'h012340, 4'h6, 1'b1, 1'b0, 16'hA53C, 1'b1);
+        wait_command();
+        check(at_byte_enable == 2'b11 && at_data_out == 16'hA53C && at_lock,
+              "native word write lost data or LOCK");
+        accept_command();
+        complete_write();
+        check(write_effects == before_effects + 1,
+              "native write caused duplicate side effects");
+        start_request(24'h012340, 4'h5, 1'b0, 1'b0, 16'd0, 1'b1);
+        wait_command();
+        accept_command();
+        complete_read(16'hA53C, response);
+        check(response == 16'hA53C, "native data read lost a lane");
+
+        // A 16-bit OUT still splits even if the width input is asserted.
+        before_effects = write_effects;
+        start_request(24'h000300, 4'hA, 1'b1, 1'b0, 16'h9C47, 1'b0);
+        wait_command();
+        check(at_byte_enable == 2'b01 && at_data_out == 16'h0047,
+              "I/O word low lane no longer serialized");
+        accept_command();
+        at_ready = 1'b1;
+        @(negedge clk);
+        at_ready = 1'b0;
+        wait_command();
+        check(at_address == 24'h000301 && at_byte_enable == 2'b10 &&
+              at_data_out == 16'h9C00, "I/O word high lane incorrect");
+        accept_command();
+        complete_write();
+        check(write_effects == before_effects + 2,
+              "I/O word did not retain two byte operations");
 
         // High-lane byte writes drive only D15:8 and commit exactly once even
         // with READY held high after acceptance.

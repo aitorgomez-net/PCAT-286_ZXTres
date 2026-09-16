@@ -95,6 +95,9 @@ module spk286_machine_cpu (
         .ready(ready),
         .data_in(data_in),
         .execute_enable(execute_enable),
+        // PCAT uses the baseline dependency-driven policy; policy selection
+        // is intentionally kept local to the CPU integration boundary.
+        .timing_policy_request(2'd0),
         .intr(intr),
         .nmi(nmi),
         .hold_request(hold_request),

@@ -19,7 +19,9 @@ USE ieee.std_logic_1164.ALL;
 USE ieee.numeric_std.ALL;
 
 ENTITY pll_hdmi_adj IS
+  GENERIC (AT_CDC : boolean := false);
   PORT (
+    cfg_valid : IN std_logic := '1';
     -- Scaler
     llena         : IN  std_logic; -- 0=Disabled 1=Enabled
     lltune        : IN  unsigned(15 DOWNTO 0); -- Outputs from scaler
@@ -79,8 +81,68 @@ ARCHITECTURE rtl OF pll_hdmi_adj IS
   SIGNAL logcpt : natural RANGE 0 TO 31;
   SIGNAL udiff : integer RANGE -2**23 TO 2**23-1 :=0;
   
+
+  SIGNAL cfg_video_meta,cfg_video_sync,cfg_mgmt_meta,cfg_mgmt_sync : std_logic := '0';
+  SIGNAL video_reset_meta,video_reset_sync,mgmt_reset_meta,mgmt_reset_sync : std_logic := '0';
+  SIGNAL ivss_meta,ovss_meta,llena_meta,llena_sync : std_logic := '0';
+  SIGNAL reset_local_na,llena_local : std_logic;
+  ATTRIBUTE preserve : boolean;
+  ATTRIBUTE preserve OF cfg_video_meta,cfg_video_sync,cfg_mgmt_meta,cfg_mgmt_sync,
+    video_reset_meta,video_reset_sync,mgmt_reset_meta,mgmt_reset_sync,
+    ivss_meta,ovss_meta,llena_meta,llena_sync : SIGNAL IS true;
+  ATTRIBUTE altera_attribute : string;
+  ATTRIBUTE altera_attribute OF cfg_video_meta,cfg_video_sync,cfg_mgmt_meta,cfg_mgmt_sync,
+    video_reset_meta,video_reset_sync,mgmt_reset_meta,mgmt_reset_sync,
+    ivss_meta,ovss_meta,llena_meta,llena_sync : SIGNAL IS
+    "-name SYNCHRONIZER_IDENTIFICATION FORCED_IF_ASYNCHRONOUS; -name DONT_MERGE_REGISTER ON";
+
 BEGIN
-  
+
+  g_at_cdc : IF AT_CDC GENERATE
+    -- Keep lltune(6/7) as clocks, never gate them with configuration data.
+    PROCESS(i_clk,reset_na) BEGIN
+      IF reset_na='0' THEN
+        video_reset_meta <= '0'; video_reset_sync <= '0';
+      ELSIF rising_edge(i_clk) THEN
+        video_reset_meta <= '1'; video_reset_sync <= video_reset_meta;
+      END IF;
+    END PROCESS;
+    PROCESS(clk,reset_na) BEGIN
+      IF reset_na='0' THEN
+        mgmt_reset_meta <= '0'; mgmt_reset_sync <= '0';
+      ELSIF rising_edge(clk) THEN
+        mgmt_reset_meta <= '1'; mgmt_reset_sync <= mgmt_reset_meta;
+      END IF;
+    END PROCESS;
+    PROCESS(i_clk) BEGIN
+      IF rising_edge(i_clk) THEN
+        cfg_video_meta <= cfg_valid;
+        cfg_video_sync <= cfg_video_meta;
+        IF video_reset_sync='0' THEN
+          cfg_video_meta <= '0'; cfg_video_sync <= '0';
+        END IF;
+      END IF;
+    END PROCESS;
+    PROCESS(clk) BEGIN
+      IF rising_edge(clk) THEN
+        cfg_mgmt_meta <= cfg_valid; cfg_mgmt_sync <= cfg_mgmt_meta;
+        llena_meta <= llena; llena_sync <= llena_meta;
+        ivss_meta <= i_vss_delay; ovss_meta <= lltune(4);
+        IF mgmt_reset_sync='0' THEN
+          cfg_mgmt_meta <= '0'; cfg_mgmt_sync <= '0';
+          llena_meta <= '0'; llena_sync <= '0';
+          ivss_meta <= '0'; ovss_meta <= '0';
+        END IF;
+      END IF;
+    END PROCESS;
+    reset_local_na <= mgmt_reset_sync;
+    llena_local <= llena_sync AND cfg_mgmt_sync;
+  END GENERATE;
+  g_legacy_cdc : IF NOT AT_CDC GENERATE
+    reset_local_na <= reset_na;
+    llena_local <= llena;
+  END GENERATE;
+
   ----------------------------------------------------------------------------
   -- 4 lines delay to input
   i_vss<=lltune(0);
@@ -91,7 +153,10 @@ BEGIN
   Delay:PROCESS(i_clk) IS
   BEGIN
     IF rising_edge(i_clk) THEN
-      IF i_ce='1' THEN
+      IF AT_CDC AND (video_reset_sync='0' OR cfg_video_sync='0') THEN
+        i_de2 <= '0'; i_vss2 <= '0'; i_vss_delay <= '0';
+        i_linecpt <= 0; i_line <= 0; i_delay <= 0;
+      ELSIF i_ce='1' THEN
         -- Measure input line time.
         i_de2<=i_de;
         
@@ -119,9 +184,21 @@ BEGIN
   
   ----------------------------------------------------------------------------
   -- Sample image sizes
-  Sampler:PROCESS(clk,reset_na) IS
+  Sampler:PROCESS(clk,reset_local_na) IS
   BEGIN
-    IF reset_na='0' THEN
+    IF reset_local_na='0' THEN
+      IF AT_CDC THEN
+
+      otog <= '0'; itog <= '0';
+      ivss <= '0'; ivss2 <= '0'; ovss <= '0'; ovss2 <= '0';
+      icpt <= 0; ocpt <= 0; o2cpt <= 0; ofsize <= 0; ifsize <= 0;
+      osize <= (OTHERS => '0'); osizep <= (OTHERS => '0');
+      offset <= (OTHERS => '0'); udiff <= 0;
+      sync <= '0'; pulse <= '0'; expand <= false;
+      ssh <= 0; logcpt <= 25; los <= '0'; lop <= '0';
+      tune_freq <= (OTHERS => '0'); tune_phase <= (OTHERS => '0');
+      ELSE
+
 --pragma synthesis_off
       otog<='0';
       itog<='0';
@@ -131,13 +208,16 @@ BEGIN
       ovss2<='0';
 --pragma synthesis_on
       
+      END IF;
     ELSIF rising_edge(clk) THEN
       -- Clock domain crossing
       
-      ivss<=i_vss_delay; -- <ASYNC>
+      IF AT_CDC THEN ivss<=ivss_meta;
+      ELSE ivss<=i_vss_delay; END IF;
       ivss2<=ivss;
       
-      ovss<=lltune(4); -- <ASYNC>
+      IF AT_CDC THEN ovss<=ovss_meta;
+      ELSE ovss<=lltune(4); END IF;
       ovss2<=ovss;
       
       otog<=otog XOR (ovss AND NOT ovss2);
@@ -229,6 +309,17 @@ BEGIN
         logcpt<=logcpt+1;
       END IF;
 
+      IF AT_CDC AND cfg_mgmt_sync='0' THEN
+
+      otog <= '0'; itog <= '0';
+      ivss <= '0'; ivss2 <= '0'; ovss <= '0'; ovss2 <= '0';
+      icpt <= 0; ocpt <= 0; o2cpt <= 0; ofsize <= 0; ifsize <= 0;
+      osize <= (OTHERS => '0'); osizep <= (OTHERS => '0');
+      offset <= (OTHERS => '0'); udiff <= 0;
+      sync <= '0'; pulse <= '0'; expand <= false;
+      ssh <= 0; logcpt <= 25; los <= '0'; lop <= '0';
+      tune_freq <= (OTHERS => '0'); tune_phase <= (OTHERS => '0');
+      END IF;
     END IF;
   END PROCESS Sampler;
   
@@ -254,13 +345,13 @@ BEGIN
   i_waitrequest<=o_waitrequest WHEN state=sIDLE ELSE '0';
     
   ----------------------------------------------------------------------------
-  Schmurtz:PROCESS(clk,reset_na) IS
+  Schmurtz:PROCESS(clk,reset_local_na) IS
     VARIABLE off_v,ofp_v : natural RANGE 0 TO 63;
     VARIABLE diff_v : unsigned(40 DOWNTO 0);
     VARIABLE mulco : unsigned(15 DOWNTO 0);
     VARIABLE up_v,sign_v : std_logic;
   BEGIN
-    IF reset_na='0' THEN
+    IF reset_local_na='0' THEN
       modo<='0';
       state<=sIDLE;
     ELSIF rising_edge(clk) THEN
@@ -294,7 +385,7 @@ BEGIN
       IF ofp_v<4 THEN ofp_v:=4; END IF;
       
       IF off_v>=18 AND ofp_v>=18 THEN
-        locked<=llena;
+        locked<=llena_local;
       ELSE
         locked<='0';
       END IF;
@@ -302,7 +393,7 @@ BEGIN
       up_v:='0';
       IF pulse='1' THEN
         cpt<=(cpt+1) MOD 4;
-        IF llena='0' THEN 
+        IF llena_local='0' THEN
           -- Recover original freq when disabling low lag mode
           cpt<=0;
           col<=0;
