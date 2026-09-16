@@ -2,7 +2,9 @@
 
 module spk286_decoder_tb;
     logic [7:0] opcode;
+    logic extended_opcode = 1'b0;
     wire supported;
+    wire invalid_opcode;
     wire [2:0] destination, source_index;
     wire [spk286_microcode_pkg::MC_ADDR_WIDTH-1:0] entry;
     integer checks = 0;
@@ -10,11 +12,16 @@ module spk286_decoder_tb;
     initial begin
         for (integer i = 0; i < 256; i = i + 1) begin
             opcode = 8'(i); #1;
-            if (supported !== (i == 15 || i == 105 || i == 107 || (i >= 216 && i <= 223) || (i >= 228 && i <= 231) || (i >= 236 && i <= 239) || (i >= 108 && i <= 111) || (i >= 164 && i <= 167) || (i >= 170 && i <= 175) || i == 196 || i == 197 || i == 154 || i == 234 || i == 202 || i == 203 || i == 96 || i == 97 || i == 98 || i == 200 || i == 201 || i == 6 || i == 7 || i == 14 || i == 22 || i == 23 || i == 30 || i == 31 || i == 140 || i == 142 || i == 39 || i == 47 || i == 55 || i == 63 || i == 212 || i == 213 || i == 254 || i == 134 || i == 135 || i == 141 || (i >= 144 && i <= 151) || (i >= 160 && i <= 163) || i == 215 || i == 192 || i == 193 || (i >= 208 && i <= 211) || (i >= 64 && i < 80) || i == 152 || i == 153 || i == 158 || i == 159 || i == 245 || i == 248 || i == 249 || i == 252 || i == 253 || i == 132 || i == 133 || i == 168 || i == 169 || i == 246 || i == 247 || i == 156 || i == 157 || (i >= 204 && i <= 207) || i == 244 || i == 250 || i == 251 ||
+            if (supported !== (i == 99 || i == 105 || i == 107 || (i >= 216 && i <= 223) || (i >= 228 && i <= 231) || (i >= 236 && i <= 239) || (i >= 108 && i <= 111) || (i >= 164 && i <= 167) || (i >= 170 && i <= 175) || i == 196 || i == 197 || i == 154 || i == 234 || i == 202 || i == 203 || i == 96 || i == 97 || i == 98 || i == 200 || i == 201 || i == 6 || i == 7 || i == 14 || i == 22 || i == 23 || i == 30 || i == 31 || i == 140 || i == 142 || i == 39 || i == 47 || i == 55 || i == 63 || i == 212 || i == 213 || i == 254 || i == 134 || i == 135 || i == 141 || (i >= 144 && i <= 151) || (i >= 160 && i <= 163) || i == 215 || i == 192 || i == 193 || (i >= 208 && i <= 211) || (i >= 64 && i < 80) || i == 152 || i == 153 || i == 158 || i == 159 || i == 245 || i == 248 || i == 249 || i == 252 || i == 253 || i == 132 || i == 133 || i == 168 || i == 169 || i == 246 || i == 247 || i == 156 || i == 157 || (i >= 204 && i <= 207) || i == 244 || i == 250 || i == 251 ||
                               (i >= 80 && i <= 95) || (i >= 112 && i <= 127) || i == 104 || i == 106 || i == 143 || i == 255 ||
                               i == 194 || i == 195 || (i >= 224 && i <= 227) || i == 232 || i == 233 || i == 235 ||
                               (i >= 176 && i <= 191) || i == 136 || i == 138 || i == 198 || i == 199 || i == 128 || i == 137 || i == 139 || i == 129 || i == 131 ||
-                              (i < 64 && (i % 8 <= 5)))) $fatal(1, "opcode support %h", opcode);
+                              i == 214 || (i < 64 && (i % 8 <= 5)))) $fatal(1, "opcode support %h", opcode);
+            if (i == 214 && (destination != 0 || source_index != 0 ||
+                entry != spk286_microcode_pkg::MC_ENTRY_LOAD_CARRY_BYTE))
+                $fatal(1, "SALC destination/entry metadata");
+            if (invalid_opcode !== (i >= 100 && i <= 103))
+                $fatal(1, "primary opcode classification %h", opcode);
             if (i >= 184 && i <= 191 && (destination !== 3'(i - 184) ||
                 entry !== spk286_microcode_pkg::MC_ENTRY_MOV_R16_IMM16))
                 $fatal(1, "MOV decoder metadata %h", opcode);
@@ -80,6 +87,12 @@ module spk286_decoder_tb;
             if(i==105 && entry!=spk286_microcode_pkg::MC_ENTRY_IMUL_R16_RM16_IMM16) $fatal(1,"IMUL immediate word entry");
             if(i==107 && entry!=spk286_microcode_pkg::MC_ENTRY_IMUL_R16_RM16_IMM8S) $fatal(1,"IMUL signed byte entry");
             checks = checks + 1;
+        end
+        extended_opcode = 1'b1;
+        for (integer i = 0; i < 256; i = i + 1) begin
+            opcode = 8'(i); #1;
+            if (invalid_opcode !== !(i == 0 || i == 1 || i == 2 || i == 3 || i == 5 || i == 6))
+                $fatal(1, "extended opcode classification %h", opcode);
         end
         $display("DECODER PASS: %0d opcode checks; MOV and word ALU forms", checks);
         $finish;

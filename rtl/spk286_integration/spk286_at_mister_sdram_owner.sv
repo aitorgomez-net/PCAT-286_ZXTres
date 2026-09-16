@@ -42,13 +42,6 @@ module spk286_at_mister_sdram_owner #(
     output logic        physical_idle,
     output logic        protocol_error,
 
-    // Passive bring-up observations; no diagnostic signal controls this owner.
-    output logic [23:0] debug_kf_address,
-    output logic [15:0] debug_kf_data_out,
-    output logic        debug_kf_read_request,
-    output logic        debug_kf_read_flag,
-    output logic [3:0]  debug_owner_state,
-
     output logic [12:0] sdram_address,
     output logic        sdram_cke,
     output logic        sdram_cs,
@@ -140,13 +133,6 @@ module spk286_at_mister_sdram_owner #(
     // not a left shift.  Loader and CPU share this mapper in either layout.
     assign kf_address = {1'b0, mapped_address[23:1]};
     assign kf_data_in = active_q ? data_out_q : request_data_out;
-    assign debug_kf_address = kf_address;
-    assign debug_kf_data_out = kf_data_out;
-    assign debug_kf_read_request = kf_read_request;
-    assign debug_kf_read_flag = kf_read_flag;
-    // Packed owner flags, not a historical 286 bus-state encoding.
-    assign debug_owner_state = {active_q, response_pending_q,
-                                 owner_refresh_q, kf_idle};
 
     always_comb begin
         physical_write       = 1'b0;

@@ -20,9 +20,14 @@ module spk286_at_bus_bridge (
     input  logic         cpu_bus_bhe_n,
     input  logic [3:0]   cpu_bus_status,
     input  logic         cpu_bus_lock,
-    // Board address decode, sampled with the CPU request. I/O and INTA
-    // always retain byte-wide sequencing regardless of this input.
+    // Board address decode, sampled with the CPU request. Memory width and
+    // selected ISA16 I/O width are separate so ordinary ISA peripherals
+    // retain byte-wide sequencing.
     input  logic         cpu_memory_word_capable,
+    // Selected I/O targets may advertise a native x16 transfer. This is
+    // intentionally separate from the memory-width decode because most ISA
+    // peripherals remain byte-wide.
+    input  logic         cpu_io_word_capable,
     output logic         cpu_ready,
     output logic [15:0]  cpu_data_in,
 
@@ -104,10 +109,18 @@ module spk286_at_bus_bridge (
                                ((cpu_bus_status == 4'h5) ||
                                 (cpu_bus_status == 4'h6) ||
                                 (cpu_bus_status == 4'hD));
-    wire native_word_request = cpu_memory_word_capable &&
-                               ((cpu_bus_status == 4'h5) ||
-                                (cpu_bus_status == 4'h6) ||
-                                (cpu_bus_status == 4'hD)) &&
+    wire memory_native_word_request = cpu_memory_word_capable &&
+                                      ((cpu_bus_status == 4'h5) ||
+                                       (cpu_bus_status == 4'h6) ||
+                                       (cpu_bus_status == 4'hD));
+    // Case equality makes an omitted legacy testbench connection behave as
+    // the conservative byte-wide default instead of propagating X/Z into
+    // the bridge's transaction-shape state.
+    wire io_native_word_request = (cpu_io_word_capable === 1'b1) &&
+                                  ((cpu_bus_status == 4'h9) ||
+                                   (cpu_bus_status == 4'hA));
+    wire native_word_request = (memory_native_word_request ||
+                                io_native_word_request) &&
                                !cpu_address[0] && !cpu_bus_bhe_n;
 
     logic [23:0] beat_address;

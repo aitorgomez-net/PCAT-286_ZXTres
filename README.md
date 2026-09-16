@@ -1,6 +1,6 @@
 # PCAT-286 for MiSTer
 
-Adopt the AT profile as the project baseline and incorporate native word transfers, instruction buffering and the current SPK286 CPU update.
+Use ISA16 IDE data transfers and standard ports; align invalid-opcode behavior and add BIOS interrupt compatibility with directed PIC, PIT and option-ROM probes.
 
 This development snapshot is part of the consolidated chronological
 history. Its source state comes from 2026-09-16.

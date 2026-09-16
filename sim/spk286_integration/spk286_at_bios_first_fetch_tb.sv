@@ -4,8 +4,8 @@
 // By default verify first BIOS fetches. Optional LANDMARK_CASE values select
 // isolated DMA routines (1/2), original-entry investigation (3), and original
 // parity/memory/PIT/refresh-status routines (4..9), NMI (10), RAM header (11),
-// distinct DS/ES (12), injected low/high-byte faults (13/14), and original POST
-// through RAM (15), PM-skip CPU/RAM continuations (16/17), ROM checksums (18),
+// distinct DS/ES (12), and original POST through RAM (15), PM-skip CPU/RAM
+// continuations (16/17), ROM checksums (18),
 // the original 8042 controller/scan-lines routines (19/20), and the original
 // floppy-adapter/read routines (21/22).
 // Cases other than 0/3/15 set
@@ -36,14 +36,8 @@ module spk286_at_bios_first_fetch_tb;
     logic [15:0] routine_entry;
     logic [7:0] last_port61;
     integer ram_reads=0, ram_writes=0;
-    logic ram_test_active=0, injected=0;
+    logic ram_test_active=0;
     logic [23:0] oracle_base=0;
-    wire [23:0] inject_address = landmark_case==14 ? 24'h000001 : 24'h000000;
-    logic [1:0] ram_trace_page=0;
-    wire [127:0] ram_trace_words;
-    wire ram_trace_captured, ram_trace_armed;
-    wire [15:0] ram_trace_comparisons;
-
     function automatic [7:0] memory_pattern(input integer beat);
         case(beat / 16384)
             0: memory_pattern=8'hff;
@@ -292,56 +286,6 @@ module spk286_at_bios_first_fetch_tb;
     logic saw_opcode=0;
     logic [23:0] captured_word_address;
     wire [23:0] cs_base;
-    wire [127:0] boot_words;
-    wire boot_valid;
-    wire [5:0] boot_count;
-    spk286_at_ram_trace ram_trace (
-        .clk(clk), .reset(reset),
-        .cpu_reset(machine_boot_reset | cpu_boot_reset | cpu_reset_request),
-        .retired(dut.debug_instruction_retired),
-        .instruction_ip(dut.debug_instruction_ip),
-        .cpu_cs(debug_cs),
-        .cpu_cs_base(dut.debug_cs_base), .cpu_flags(dut.debug_flags),
-        .cpu_opcode(debug_opcode), .cpu_gpr(dut.debug_gpr),
-        .cpu_segments(dut.debug_segment_selectors),
-        .cpu_segment_bases(dut.debug_segment_bases),
-        .cpu_valid(cpu_bus_valid), .cpu_ready(cpu_ready),
-        .cpu_write(cpu_bus_write), .cpu_bhe_n(cpu_bus_bhe_n),
-        .cpu_status(cpu_bus_status), .cpu_address(cpu_address),
-        .cpu_data_in(cpu_data_in), .backend_accept(backend_accept),
-        .backend_ready(backend_ready), .backend_read_valid(backend_read_data_valid),
-        .backend_code(backend_code_fetch), .backend_write(backend_write),
-        .backend_owner(backend_owner), .backend_be(backend_byte_enable),
-        .backend_address(backend_address), .backend_data_in(backend_read_data),
-        .backend_data_out(backend_data_out), .kf_address(sdram_owner.debug_kf_address),
-        .kf_data(sdram_owner.debug_kf_data_out), .kf_read_request(sdram_owner.debug_kf_read_request),
-        .kf_read_flag(sdram_owner.debug_kf_read_flag),
-        .sdram_read_command(!sdram_cs && sdram_ras && !sdram_cas && sdram_we),
-        .owner_state(sdram_owner.debug_owner_state), .sdram_dqm({sdram_udqm, sdram_ldqm}),
-        .select_page(ram_trace_page), .selected_words(ram_trace_words),
-        .captured(ram_trace_captured), .armed(ram_trace_armed),
-        .comparisons(ram_trace_comparisons)
-    );
-
-    spk286_at_boot_trace boot_trace (
-        .clk(clk), .reset(reset | cpu_boot_reset),
-        .cpu_valid(cpu_bus_valid), .cpu_write(cpu_bus_write), .cpu_status(cpu_bus_status),
-        .cpu_address(cpu_address), .cpu_ready(cpu_ready), .cpu_data_in(cpu_data_in),
-        .cpu_halted(cpu_halted), .cpu_cs(debug_cs), .cpu_ip(debug_ip),
-        .cpu_cs_base(cs_base), .cpu_opcode(debug_opcode),
-        .backend_valid(backend_valid), .backend_command_valid(backend_command_valid),
-        .backend_code(backend_code_fetch), .backend_write(backend_write),
-        .backend_accept(backend_accept), .backend_ready(backend_ready),
-        .backend_read_valid(backend_read_data_valid), .backend_address(backend_address),
-        .backend_byte_enable(backend_byte_enable), .backend_read_data(backend_read_data),
-        .kf_address(sdram_owner.debug_kf_address), .kf_data(sdram_owner.debug_kf_data_out),
-        .kf_read_request(sdram_owner.debug_kf_read_request), .kf_read_flag(sdram_owner.debug_kf_read_flag),
-        .owner_state(sdram_owner.debug_owner_state),
-        .sdram_read_command(!sdram_cs && sdram_ras && !sdram_cas && sdram_we),
-        .sdram_dqm({sdram_udqm,sdram_ldqm}), .select_index(5'd0), .select_detail(1'b0),
-        .selected_words(boot_words), .selected_valid(boot_valid), .capture_count(boot_count),
-        .full(), .capture_pending()
-    );
     always @(posedge clk) begin
         if(!reset && sdram_owner.u_KFSDRAM.read_flag_comb && pin_dq_valid!==2'b11)
             $fatal(1,"KF samples invalid DQ addr=%h valid=%b",sdram_owner.kf_address,pin_dq_valid);
@@ -469,7 +413,7 @@ module spk286_at_bios_first_fetch_tb;
                 1: begin rom[16'hfff1]=8'h4b; rom[16'hfff2]=8'h8c; end
                 2: begin rom[16'hfff1]=8'h74; rom[16'hfff2]=8'h8d; end
                 3,15: begin end // Original reset entry; 15 continues through the first RAM test.
-                4,5,6,7,8,9,11,12,13,14,16,17,18,19,20,21,22,23: begin
+                4,5,6,7,8,9,11,12,16,17,18,19,20,21,22,23: begin
                     // Test fixture only: set SS like POST, gate timer2 on,
                     // then execute untouched diagnostic instructions in ROM.
                     case(landmark_case)
@@ -487,7 +431,7 @@ module spk286_at_bios_first_fetch_tb;
                         20: routine_entry=16'h91c0; // 8042 command-byte write and quiet scan lines
                         21,22: routine_entry=16'h923f; // Floppy adapter, then read
                         23: routine_entry=16'h91f6; // CMOS RAM save, 55h/AAh test and restore
-                        12,13,14: routine_entry=16'h8df6; // Same isolated test with DS != ES
+                        12: routine_entry=16'h8df6; // Same isolated test with DS != ES
                     endcase
                     rom[16'hfff1]=0; rom[16'hfff2]=8'hff;
                     // CLI; MOV AX,F000; MOV SS,AX; XOR CX,CX;
@@ -527,7 +471,7 @@ module spk286_at_bios_first_fetch_tb;
                         rom[16'hff0b]=routine_entry[15:8];
                         rom[16'hff0c]=0; rom[16'hff0d]=8'hf0;
                     end
-                    if(landmark_case>=12 && landmark_case<=14) begin
+                    if(landmark_case==12) begin
                         // MOV AX,B800; MOV DS,AX; JMP FAR F000:8DF6.
                         rom[16'hff0c]=8'hb8; rom[16'hff0d]=0; rom[16'hff0e]=8'hb8;
                         rom[16'hff0f]=8'h8e; rom[16'hff10]=8'hd8;
@@ -751,8 +695,8 @@ module spk286_at_bios_first_fetch_tb;
         .debug_physical_read_count(), .debug_invalidation_count()
     );
 
-    // Keep the existing trace probes observing the logical memory-port side
-    // after inserting P03 between the port and the physical owner.
+    // Observe the logical memory-port side after inserting P03 between the
+    // port and the physical owner.
     assign backend_accept          = p03_in_accept;
     assign backend_ready           = p03_in_ready;
     assign backend_read_data       = p03_in_read_data;
@@ -957,19 +901,11 @@ module spk286_at_bios_first_fetch_tb;
                     $fatal(1,"RAM_ENTRY_SEGMENT case=%0d SI=%h",landmark_case,dut.debug_gpr[96 +: 16]);
                 ram_reads=0; ram_writes=0;
             end
-            if((landmark_case==13 || landmark_case==14) && !injected && ram_test_active && backend_accept &&
-               backend_owner==0 && !backend_code_fetch && !backend_write && backend_address==inject_address) begin
-                if(ram_writes!=16384) $fatal(1,"RAM_INJECTION_BEFORE_PATTERN_COMPLETE");
-                // Inject one real storage bit before the pin model observes READ.
-                pins.mem[0] = pins.mem[0] ^ (landmark_case==14 ? 16'h0100 : 16'h0001);
-                injected=1;
-                $display("RAM_INJECT address=%h storage_word=%h",inject_address,pins.mem[0]);
-            end
             if(landmark_case>=11 && dut.u_cpu.cpu.opcode_start &&
                 (debug_ip==16'h8df6 || debug_ip==16'h9f14 || debug_ip==16'h9f3b ||
                  debug_ip==16'h9f4d || debug_ip==16'h9e49 || debug_ip==16'h9e93))
-                $display("RAM_CONTEXT ip=%h gpr=%h seg=%h bases=%h flags=%h",debug_ip,
-                    dut.debug_gpr,dut.debug_segment_selectors,dut.debug_segment_bases,dut.debug_flags);
+                $display("RAM_CONTEXT ip=%h gpr=%h seg=%h flags=%h",debug_ip,
+                    dut.debug_gpr,dut.debug_segment_selectors,dut.debug_flags);
             if (landmark_case != 0) begin
                 if(landmark_case==21 || landmark_case==22) begin
                     if(irq_request[6] && !floppy_irq_previous)
@@ -1035,40 +971,11 @@ module spk286_at_bios_first_fetch_tb;
                 // Observe instruction admission, not speculative prefetch past RET.
                 // The header ends at 9B67, immediately before the fail handler.
                 if(landmark_case>=4 && landmark_case<=15 && (landmark_case!=15 || ram_test_active) && dut.u_cpu.cpu.opcode_start && debug_cs==16'hf000) begin
-                    if((landmark_case==13 || landmark_case==14) && debug_ip==16'h9e49) begin
-                        if(!injected || !ram_trace_captured || !ram_trace_armed)
-                            $fatal(1,"RAM_TRACE_MISSING_CAPTURE");
-                        if(ram_trace.frozen_q[31:0] !== 32'hC1FFFEFE ||
-                           ram_trace.frozen_q[63:32] !== 32'hF0009F37 ||
-                           ram_trace.frozen_q[64 +: 16] !== 16'(inject_address+1) ||
-                           ram_trace.frozen_q[128 +: 24] !== inject_address ||
-                           ram_trace.frozen_q[160 +: 24] !== inject_address ||
-                           ram_trace.frozen_q[192 +: 24] !== 24'd0 ||
-                           ram_trace.frozen_q[224 +: 16] !== (landmark_case==14 ? 16'hFEFF : 16'hFFFE) ||
-                           ram_trace.frozen_q[240 +: 16] !== (landmark_case==14 ? 16'hFE00 : 16'h00FE) ||
-                           ram_trace.frozen_q[256 +: 16] !== (landmark_case==14 ? 16'h0A00 : 16'h0600) ||
-                           ram_trace.frozen_q[184 +: 8] !== (landmark_case==14 ? 8'hE8 : 8'hE4) ||
-                           ram_trace.frozen_q[216 +: 8] !== 8'hF0 ||
-                           ram_trace.frozen_q[272 +: 16] !== (landmark_case==14 ? 16'hFEFF : 16'hFFFE))
-                            $fatal(1,"RAM_TRACE_WRONG_VALUES words=%0128h",ram_trace.frozen_q);
-                        if(protocol_error || cpu_fault) $fatal(1,"RAM_INJECTION_INTERNAL_FAULT");
-                        for(integer pg=0;pg<4;pg=pg+1) begin
-                            ram_trace_page=2'(pg);
-                            repeat(3) @(negedge clk);
-                            if(ram_trace_words !== ram_trace.frozen_q[pg*128 +: 128]) $fatal(1,"RAM_TRACE_PAGE_SELECTION");
-                            $display("RAM_TRACE_PAGE page=%0d words=%032h",pg,ram_trace_words);
-                        end
-                        $display("AT_RAM_TRACE_INJECTION_PASS case=%0d address=%h expected=FF received=FE native_backend_KF_checked",landmark_case,inject_address);
-                        $finish;
-                    end
                     if(debug_ip==16'h9b68 || ((landmark_case==5 || landmark_case>=11) &&
                        (debug_ip==16'h9e49 || debug_ip==16'h9e93)))
                         $fatal(1,"LANDMARK_PERIPHERAL_FAIL case=%0d target=%h port61=%h ram_reads=%0d writes=%0d gpr=%h seg=%h",landmark_case,backend_address,last_port61,ram_reads,ram_writes,dut.debug_gpr,dut.debug_segment_selectors);
                     if(debug_ip==16'h9cb5) begin
                         if(protocol_error || cpu_fault) $fatal(1,"routine passed with fault");
-                        if((landmark_case==13 || landmark_case==14)) $fatal(1,"RAM_INJECTION_NOT_DETECTED");
-                        if((landmark_case==5 || landmark_case>=11) && (!ram_trace_armed || ram_trace_captured || ram_trace_comparisons!=16'hFFFF))
-                            $fatal(1,"RAM_TRACE_FALSE_POSITIVE_OR_MISSING_COMPARISONS captured=%b count=%h",ram_trace_captured,ram_trace_comparisons);
                         if((landmark_case==5 || landmark_case==11 || landmark_case==12 || landmark_case==15) && (ram_reads!=81920 || ram_writes!=81920))
                             $fatal(1,"memory coverage incomplete reads=%0d writes=%0d",ram_reads,ram_writes);
                         $display("LANDMARK_PERIPHERAL_PASS case=%0d cycles=%0d io=%0d port61=%h ram_reads=%0d writes=%0d",landmark_case,cycles,io_completed,last_port61,ram_reads,ram_writes);
@@ -1146,11 +1053,6 @@ module spk286_at_bios_first_fetch_tb;
             if((landmark_case==0 && (cpu_fault || protocol_error)) || memory_port_protocol_error || sdram_owner_protocol_error || loader_error || cpu_shutdown)
                 $fatal(1,"first fetch fault cycle=%0d csip=%h:%h op=%h",cycles,debug_cs,debug_ip,debug_opcode);
             if(landmark_case==0 && fetch_returns>=32 && cpu_fetch_returns>=16 && saw_opcode && saw_low_rom_fetch) begin
-                if(!boot_valid || boot_count<16 || boot_words[23:0]!==24'hfffff0 ||
-                   boot_words[55:32]!==24'h07fff8 || boot_words[95:64]!==32'hf000fff0 ||
-                   boot_words[127:112]!=={rom[16'hfff1],rom[16'hfff0]})
-                    $fatal(1,"boot trace real CPU/backend association failed: count=%0d words=%h",boot_count,boot_words);
-                $display("AT_BOOT_TRACE_INTEGRATION_PASS count=%0d entry0=%032h",boot_count,boot_words);
                 $display("AT_BIOS_FIRST_FETCH_PASS fetches=%0d cpu_responses=%0d opcode=%02h cycles=%0d",fetch_returns,cpu_fetch_returns,rom[16'hfff0],cycles);
                 $finish;
             end

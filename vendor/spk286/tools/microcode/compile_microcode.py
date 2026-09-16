@@ -17,8 +17,8 @@ import re
 import sys
 from typing import Mapping
 
-COMPILER_VERSION = "19.0"
-FORMAT_VERSION = 20
+COMPILER_VERSION = "21.0"
+FORMAT_VERSION = 21
 MAX_ADDRESS_WIDTH = 12  # Current numeric CPU debug interface.
 OPERATIONS = {"INVALID": 0, "FETCH_IMM16": 1, "MOVE": 2, "END": 3,
               "DECODE_MODRM": 4, "READ_REG16": 5, "READ_RM16": 6,
@@ -71,6 +71,7 @@ OPERATIONS.update({'IO_READ8': 131, 'IO_READ16': 132, 'IO_WRITE8': 133, 'IO_WRIT
 ROOT = Path(__file__).resolve().parents[2]
 
 OPERATIONS.update({'MULDIV8': 116, 'MULDIV16': 117, 'IMUL_IMM16': 118, 'WRITE_RESULT_AX16': 119, 'WRITE_RESULT_DX16': 120})
+OPERATIONS['CARRY_FILL8'] = 171
 
 
 @dataclass(frozen=True)
@@ -132,7 +133,7 @@ class Program:
 
     @property
     def word_width(self) -> int:
-        return {1: 2, 2: 4, 3: 5, 4: 5, 5: 6, 6: 6, 7: 6, 8: 6, 9: 7, 10: 7, 11: 7, 12: 7, 13: 7, 14: 7, 15: 7, 16: 8, 17: 8, 18: 8, 19: 8, 20: 8}[self.format_version]
+        return {1: 2, 2: 4, 3: 5, 4: 5, 5: 6, 6: 6, 7: 6, 8: 6, 9: 7, 10: 7, 11: 7, 12: 7, 13: 7, 14: 7, 15: 7, 16: 8, 17: 8, 18: 8, 19: 8, 20: 8, 21: 8}[self.format_version]
 
 
 def parse_statement(text: str, location: Location, format_version: int = 1) -> Statement:
@@ -252,6 +253,8 @@ def parse_statement(text: str, location: Location, format_version: int = 1) -> S
     if format_version >= 8 and normalized in shift_extensions:
         op, args = shift_extensions[normalized]
         return Statement(location, op, args, text)
+    if format_version >= 21 and normalized == 'CARRY_FILL8 TMP0':
+        return Statement(location, 'CARRY_FILL8', ('TMP0',), text)
     scalar_extensions = {
         'FLAGS DECODED': ('FLAGS_DECODED', ()),
         'SIGN_EXTEND8 TMP0': ('SIGN_EXTEND8', ('TMP0',)),
@@ -475,6 +478,13 @@ def validate_muldiv(block: Block) -> None:
 
 
 def validate_block(block: Block) -> None:
+    if block.location.entry == 'LOAD_CARRY_BYTE' or any(s.operation == 'CARRY_FILL8' for s in block.statements):
+        if block.format_version < 21:
+            raise CompileError(block.location, 'carry fill requires microcode_format 21')
+        if tuple(s.operation for s in block.statements) != ('READ_FLAGS', 'CARRY_FILL8', 'MOVE8', 'END'):
+            raise CompileError(block.location, 'invalid carry-byte capture, transform or commit protocol')
+        validate_scalar_block(block)
+        return
     if block.location.entry.startswith('SYSTEM_'):
         validate_system_block(block)
         return
@@ -648,6 +658,7 @@ def validate_scalar_block(block: Block) -> None:
     sequences = (
         ('FLAGS_DECODED', 'END'),
         ('READ_FLAGS', 'MOVE8', 'END'),
+        ('READ_FLAGS', 'CARRY_FILL8', 'MOVE8', 'END'),
         ('READ_DST16', 'SIGN_EXTEND8', 'MOVE', 'END'),
         ('READ_DST16', 'SIGN_FILL16', 'MOVE', 'END'),
         ('READ_DST16', 'CONST_ONE_TMP1', 'ALU', 'WRITE_RESULT_DST', 'COMMIT_FLAGS', 'END'),
@@ -655,7 +666,7 @@ def validate_scalar_block(block: Block) -> None:
     if ops not in sequences:
         raise CompileError(block.location, 'invalid scalar source, result or commit ordering')
     for s in block.statements:
-        expected = {'READ_DST16': ('TMP0',), 'SIGN_EXTEND8': ('TMP0',),
+        expected = {'READ_DST16': ('TMP0',), 'SIGN_EXTEND8': ('TMP0',), 'CARRY_FILL8': ('TMP0',),
                     'SIGN_FILL16': ('TMP0',), 'MOVE': ('TMP0', 'DST'),
                     'MOVE8': ('TMP0', 'DST8'), 'CONST_ONE_TMP1': ('TMP1',),
                     'WRITE_RESULT_DST': ('TMP2',)}.get(s.operation)
@@ -913,7 +924,7 @@ def generate(program: Program) -> dict[str, str]:
     width = program.address_width
     word_width = program.word_width
     operations = {name: value for name, value in OPERATIONS.items()
-                  if value < {1: 4, 2: 9, 3: 19, 4: 29, 5: 46, 6: 58, 7: 62, 8: 64, 9: 71, 10: 74, 11: 76, 12: 78, 13: 113, 14: 116, 15: 121, 16: 131, 17: 151, 18: 161, 19: 165, 20: 171}[program.format_version]}
+                if value < {1: 4, 2: 9, 3: 19, 4: 29, 5: 46, 6: 58, 7: 62, 8: 64, 9: 71, 10: 74, 11: 76, 12: 78, 13: 113, 14: 116, 15: 121, 16: 131, 17: 151, 18: 161, 19: 165, 20: 171, 21: 172}[program.format_version]}
     package = banner + ("`timescale 1ns/1ps\n"
                         "// Public constants: standalone consumers use only a subset.\n"
                         "/* verilator lint_off UNUSEDPARAM */\n"

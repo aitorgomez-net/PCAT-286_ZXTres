@@ -239,6 +239,7 @@ module spk286 (
     logic [15:0] event_error_code;
     logic opcode_start, service_start, raw_retired, context_commit, vector_request, halt_request;
     logic software_request, software_taken, fault_request, invalid_form, demanded_code_fault;
+    logic opcode_invalid, invalid_opcode_fault;
     logic [7:0] software_vector, selected_software_vector, fault_vector;
     logic [15:0] context_cs, vector_offset;
     logic ack_request, ack_request_ready, ack_response_valid, ack_response_ready, ack_pending_q, ack_done;
@@ -679,6 +680,7 @@ module spk286 (
 
     spk286_decoder decoder (
         .opcode(queue_consume_data), .extended_opcode(extended_opcode_active), .supported(decode_supported),
+        .invalid_opcode(opcode_invalid),
         .destination(decode_destination), .source_index(decode_source_index), .entry(decode_entry)
     );
 
@@ -961,12 +963,19 @@ module spk286 (
                            ((opcode_q == 8'h8C && operand_reg > 3) || (opcode_q == 8'h8E && (operand_reg > 3 || operand_reg == 1))) || (opcode_q == 8'hFE && operand_reg > 1) || ((opcode_q == 8'h8D || opcode_q == 8'h62 || opcode_q == 8'hC4 || opcode_q == 8'hC5) && operand_register_direct) || ((opcode_q == 8'h8F || opcode_q == 8'hC6 || opcode_q == 8'hC7) && operand_reg != 0) ||
                            (opcode_q == 8'hFF && (operand_reg == 7 ||
                             (operand_register_direct && (operand_reg == 3 || operand_reg == 5)))));
+    // Only the decoder's explicit invalid-opcode classification raises #UD.
+    // A legal but unimplemented instruction remains a development diagnostic.
+    assign invalid_opcode_fault = execution_allowed && decode_ready && !event_active &&
+                                  !raw_retired && !event_completed && queue_consume_valid &&
+                                  !is_prefix && !length_fault && opcode_invalid;
     assign demanded_code_fault = execution_allowed && !event_active && !raw_retired && !event_completed &&
                                  !queue_consume_valid && !fetch_response_valid && !fetch_bus_valid && fetch_blocked &&
                                  (micro_active ? executor_byte_ready : decode_ready);
-    assign fault_request = range_fault || bounds_fault || arithmetic_fault || operand_blocked || invalid_form || system_limit_fault || system_fault ||
+    assign fault_request = range_fault || bounds_fault || arithmetic_fault || operand_blocked || invalid_form ||
+                           invalid_opcode_fault || system_limit_fault || system_fault ||
                            protected_access_fault || protected_fetch_fault || demanded_code_fault || length_fault;
-    assign fault_vector = invalid_form ? 8'd6 : system_fault ? system_fault_vector :
+    assign fault_vector = (invalid_form || invalid_opcode_fault) ? 8'd6 :
+                          system_fault ? system_fault_vector :
                           protected_access_ss_fault ? 8'd12 : protected_access_fault ? 8'd13 :
                           protected_fetch_fault ? 8'd13 : bounds_fault ? 8'd5 : arithmetic_fault ? 8'd0 : 8'd13;
     // PM3c frame contract: protected selector faults in the #TS/#NP/#SS/#GP

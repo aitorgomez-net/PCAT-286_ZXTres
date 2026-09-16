@@ -7,7 +7,6 @@ mkdir -p "$build_dir"
 cd "$root"
 
 sources=(
-  rtl/common/simple_ram.v
   rtl/common/simple_fifo.v
   rtl/common/floppy.v
   rtl/common/ide.v

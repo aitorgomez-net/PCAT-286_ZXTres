@@ -20,6 +20,7 @@ module spk286_at_bus_bridge_tb;
     logic [3:0] cpu_bus_status = 4'hF;
     logic cpu_bus_lock = 1'b0;
     logic cpu_memory_word_capable = 1'b0;
+    logic cpu_io_word_capable = 1'b0;
     wire cpu_ready;
     wire [15:0] cpu_data_in;
 
@@ -75,6 +76,7 @@ module spk286_at_bus_bridge_tb;
         .cpu_bus_write(cpu_bus_write), .cpu_bus_bhe_n(cpu_bus_bhe_n),
         .cpu_bus_status(cpu_bus_status), .cpu_bus_lock(cpu_bus_lock),
         .cpu_memory_word_capable(cpu_memory_word_capable),
+        .cpu_io_word_capable(cpu_io_word_capable),
         .cpu_ready(cpu_ready), .cpu_data_in(cpu_data_in),
         .at_valid(at_valid), .at_command_valid(at_command_valid),
         .at_owner(at_owner), .at_cycle_class(at_cycle_class),

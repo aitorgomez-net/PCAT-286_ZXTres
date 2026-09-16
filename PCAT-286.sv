@@ -22,13 +22,7 @@ module emu_at
 `ifndef SPK286_AT_NO_DEBUG
     localparam CONF_STR_AT_DEBUG = {
         "P1O[71],SPK286 Debug,Off,On;",
-        "P1O[73:72],Debug Page,CPU,Registers,Bus,Trace;",
-        "P1O[79],Boot Fetch Trace,Off,On;",
-        "P1O[78:74],Boot Fetch Index,00,01,02,03,04,05,06,07,08,09,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31;",
-        "P1O[80],Boot Fetch View,Address,Data;",
-        "P1O[81],First Fault Trace,Off,On;",
-        "P1O[82],Landmark RAM Trace,Off,On;",
-        "P1O[84:83],RAM Trace Page,Compare,Read path,SDRAM,Registers;"
+        "P1O[73:72],Debug Page,CPU,Registers,Bus,Trace;"
     };
 `endif
 
@@ -105,10 +99,6 @@ module emu_at
     wire [15:0]  hps_status_menumask;
     wire         at_debug_enable = hps_status[71];
     wire [1:0]   at_debug_page = hps_status[73:72];
-    wire         at_debug_ram_view = hps_status[82];
-    wire         at_debug_fault_view = hps_status[81] && !at_debug_ram_view;
-    wire         at_debug_boot_view = hps_status[79] && !at_debug_fault_view && !at_debug_ram_view;
-    wire         at_debug_raw_view = at_debug_boot_view || at_debug_fault_view || at_debug_ram_view;
     wire [10:0]  ps2_key;
     wire          ps2_kbd_clk_out;
     wire          ps2_kbd_data_out;
@@ -287,6 +277,7 @@ module emu_at
     wire        at_cpu_ready;
     wire        at_cpu_halted;
     wire        at_cpu_shutdown;
+    wire        at_debug_bridge_error;
     wire        at_debug_control_error;
     wire        at_debug_unsupported_opcode;
     wire        at_debug_microcode_fault;
@@ -299,9 +290,6 @@ module emu_at
     wire [23:0] at_debug_cs_base;
     wire [15:0] at_debug_ip;
     wire [15:0] at_debug_flags;
-    wire at_debug_instruction_retired;
-    wire [15:0] at_debug_instruction_ip;
-    wire [95:0] at_debug_segment_bases;
     wire [127:0] at_debug_gpr;
     wire [63:0] at_debug_segment_selectors;
     wire        at_debug_fetch_blocked;
@@ -400,7 +388,7 @@ module emu_at
     wire [31:0] p03_physical_read_count;
     wire [31:0] p03_invalidation_count;
 
-    // Keep the existing logical-backend trace names pointed at the response
+    // Keep the existing logical-backend debug names pointed at the response
     // seen by the memory port. The physical owner handshake is intentionally
     // private to the P03 fill/bypass state machine.
     assign backend_accept          = p03_in_accept;
@@ -509,11 +497,6 @@ module emu_at
     );
 
     wire        sdram_owner_protocol_error;
-    wire [23:0] at_trace_kf_address;
-    wire [15:0] at_trace_kf_data;
-    wire        at_trace_kf_read_request;
-    wire        at_trace_kf_read_flag;
-    wire [3:0]  at_trace_owner_state;
     spk286_at_mister_sdram_owner u_at_sdram_owner (
         .clk                    (CLK_50M),
         .reset                  (RESET),
@@ -533,11 +516,6 @@ module emu_at
         .request_read_data_valid(p03_out_read_data_valid),
         .physical_idle          (physical_idle),
         .protocol_error         (sdram_owner_protocol_error),
-        .debug_kf_address       (at_trace_kf_address),
-        .debug_kf_data_out      (at_trace_kf_data),
-        .debug_kf_read_request  (at_trace_kf_read_request),
-        .debug_kf_read_flag     (at_trace_kf_read_flag),
-        .debug_owner_state     (at_trace_owner_state),
         .sdram_address           (sdram_address),
         .sdram_cke               (sdram_cke),
         .sdram_cs                (sdram_cs),
@@ -680,9 +658,6 @@ module emu_at
     end
     wire cpu_fault;
     wire machine_protocol_error;
-    wire [15:0] at_machine_fault_sources;
-    wire [127:0] at_fault_words;
-    wire at_fault_captured;
 
     // Raw EGA timing and colour signals stay in the raster clock domain until
     // they enter the established 57.272 MHz MiSTer output pipeline below.
@@ -747,6 +722,7 @@ module emu_at
         .cpu_halted             (at_cpu_halted),
         .cpu_shutdown           (at_cpu_shutdown),
 `ifndef SPK286_AT_NO_DEBUG
+        .debug_bridge_error     (at_debug_bridge_error),
         .debug_control_error    (at_debug_control_error),
         .debug_unsupported_opcode(at_debug_unsupported_opcode),
         .debug_microcode_fault  (at_debug_microcode_fault),
@@ -759,9 +735,6 @@ module emu_at
         .debug_cs_base          (at_debug_cs_base),
         .debug_ip               (at_debug_ip),
         .debug_flags            (at_debug_flags),
-        .debug_instruction_retired(at_debug_instruction_retired),
-        .debug_instruction_ip(at_debug_instruction_ip),
-        .debug_segment_bases(at_debug_segment_bases),
         .debug_gpr              (at_debug_gpr),
         .debug_segment_selectors(at_debug_segment_selectors),
         .debug_fetch_blocked    (at_debug_fetch_blocked),
@@ -828,7 +801,6 @@ module emu_at
         .refresh_memory_accept  (refresh_memory_accept),
         .refresh_memory_ready   (refresh_memory_ready),
         .cpu_fault              (cpu_fault),
-        .debug_fault_sources    (at_machine_fault_sources),
         .cpu_reset_request      (at_cpu_reset_request),
         .speaker_active         (at_speaker_active),
         .speaker_level          (at_speaker_level),
@@ -934,98 +906,8 @@ module emu_at
     wire [23:0] at_debug_rgb_out;
 
 `ifndef SPK286_AT_NO_DEBUG
-    wire [127:0] at_boot_trace_words;
-    wire at_boot_trace_valid;
-    wire [5:0] at_boot_trace_count;
-    wire at_boot_trace_full;
-    wire at_boot_trace_pending;
-    spk286_at_boot_trace u_at_boot_trace (
-        .clk                    (CLK_50M),
-        .reset                  (at_machine_reset | at_cpu_reset_request),
-        .cpu_valid              (at_cpu_bus_valid),
-        .cpu_write              (at_cpu_bus_write),
-        .cpu_status             (at_cpu_bus_status),
-        .cpu_address            (at_cpu_address),
-        .cpu_ready              (at_cpu_ready),
-        .cpu_data_in            (at_cpu_data_in),
-        .cpu_halted             (at_cpu_halted),
-        .cpu_cs                 (at_debug_cs),
-        .cpu_ip                 (at_debug_ip),
-        .cpu_cs_base            (at_debug_cs_base),
-        .cpu_opcode             (at_debug_opcode),
-        .backend_valid          (backend_valid),
-        .backend_command_valid  (backend_command_valid),
-        .backend_code           (backend_code_fetch),
-        .backend_write          (backend_write),
-        .backend_accept         (backend_accept),
-        .backend_ready          (backend_ready),
-        .backend_read_valid     (backend_read_data_valid),
-        .backend_address        (backend_address),
-        .backend_byte_enable    (backend_byte_enable),
-        .backend_read_data      (backend_read_data),
-        .kf_address             (at_trace_kf_address),
-        .kf_data                (at_trace_kf_data),
-        .kf_read_request        (at_trace_kf_read_request),
-        .kf_read_flag           (at_trace_kf_read_flag),
-        .owner_state            (at_trace_owner_state),
-        .sdram_read_command     (!sdram_cs && sdram_ras && !sdram_cas && sdram_we),
-        .sdram_dqm              ({sdram_udqm, sdram_ldqm}),
-        .select_index           (hps_status[78:74]),
-        .select_detail          (hps_status[80]),
-        .selected_words         (at_boot_trace_words),
-        .selected_valid         (at_boot_trace_valid),
-        .capture_count          (at_boot_trace_count),
-        .full                   (at_boot_trace_full),
-        .capture_pending        (at_boot_trace_pending)
-    );
-
-    wire [127:0] at_ram_trace_words;
-    wire at_ram_trace_captured, at_ram_trace_armed;
-    wire [15:0] at_ram_trace_comparisons;
-    spk286_at_ram_trace u_at_ram_trace (
-        .clk(CLK_50M), .reset(at_boot_reset),
-        .cpu_reset(at_machine_reset | at_cpu_reset_request),
-        .retired(at_debug_instruction_retired),
-        .instruction_ip(at_debug_instruction_ip),
-        .cpu_cs(at_debug_cs),
-        .cpu_cs_base(at_debug_cs_base), .cpu_flags(at_debug_flags),
-        .cpu_opcode(at_debug_opcode), .cpu_gpr(at_debug_gpr),
-        .cpu_segments(at_debug_segment_selectors),
-        .cpu_segment_bases(at_debug_segment_bases),
-        .cpu_valid(at_cpu_bus_valid), .cpu_ready(at_cpu_ready),
-        .cpu_write(at_cpu_bus_write), .cpu_bhe_n(at_cpu_bus_bhe_n),
-        .cpu_status(at_cpu_bus_status), .cpu_address(at_cpu_address),
-        .cpu_data_in(at_cpu_data_in), .backend_accept(backend_accept),
-        .backend_ready(backend_ready), .backend_read_valid(backend_read_data_valid),
-        .backend_code(backend_code_fetch), .backend_write(backend_write),
-        .backend_owner(backend_owner), .backend_be(backend_byte_enable),
-        .backend_address(backend_address), .backend_data_in(backend_read_data),
-        .backend_data_out(backend_data_out), .kf_address(at_trace_kf_address),
-        .kf_data(at_trace_kf_data), .kf_read_request(at_trace_kf_read_request),
-        .kf_read_flag(at_trace_kf_read_flag),
-        .sdram_read_command(!sdram_cs && sdram_ras && !sdram_cas && sdram_we),
-        .owner_state(at_trace_owner_state), .sdram_dqm({sdram_udqm, sdram_ldqm}),
-        .select_page(hps_status[84:83]), .selected_words(at_ram_trace_words),
-        .captured(at_ram_trace_captured), .armed(at_ram_trace_armed),
-        .comparisons(at_ram_trace_comparisons)
-    );
-
-    spk286_at_fault_trace u_at_fault_trace (
-        .clk(CLK_50M), .reset(at_boot_reset),
-        .sources({loader_protocol_error, sdram_owner_protocol_error,
-                  memory_port_protocol_error, at_machine_fault_sources}),
-        .cpu_cs(at_debug_cs), .cpu_ip(at_debug_ip),
-        .cpu_address(at_cpu_address), .cpu_opcode(at_debug_opcode),
-        .bus_flags({at_machine_reset | at_cpu_reset_request, at_cpu_halted,
-            at_cpu_bus_valid, at_cpu_ready, at_debug_io, at_cpu_bus_write,
-            at_debug_code, at_cpu_bus_status, at_cpu_address[0], at_cpu_bus_bhe_n}),
-        .captured(at_fault_captured), .words(at_fault_words)
-    );
-
-    // The AT profile uses the same four-page diagnostic overlay and the same
-    // status bits as the XT profile.  Its XT-labelled bus inputs are fed by
-    // the normalized AT transaction so the existing snapshot/CDC logic is
-    // reused without touching the machine datapath.
+    // The overlay is intentionally limited to live CPU, register, bus and
+    // rolling transaction views. It is passive and never drives the machine.
     spk286_debug_overlay #(
         .COLW   (8),
         .AT_MODE(1'b1)
@@ -1044,10 +926,7 @@ module emu_at
         .rgb_in                  ({at_video_r_out_q,
                                    at_video_g_out_q,
                                    at_video_b_out_q}),
-        .page                    (at_debug_raw_view ? 2'd3 : at_debug_page),
-        .boot_trace_view         (at_debug_boot_view),
-        .fault_trace_view        (at_debug_fault_view),
-        .ram_trace_view          (at_debug_ram_view),
+        .page                    (at_debug_page),
         .cpu_reset               (at_machine_reset | at_cpu_reset_request),
         .cpu_halted              (at_cpu_halted),
         .cpu_shutdown            (at_cpu_shutdown),
@@ -1097,16 +976,16 @@ module emu_at
         .xt_cycle_active         (at_debug_cycle_active),
         .xt_ready                (at_debug_ready),
         .bridge_idle             (at_debug_bridge_idle),
-        .bridge_error            (machine_protocol_error | keyboard_event_overflow),
+        .bridge_error            (at_debug_bridge_error | keyboard_event_overflow),
         .hold_request            (at_debug_hold_request),
         .biu_detail              (at_debug_biu_detail),
         .last_post               (at_debug_last_post),
-        .cpu_cycle_count         (at_debug_ram_view ? at_ram_trace_comparisons : at_debug_boot_view ? {10'd0, at_boot_trace_count} : at_debug_cpu_cycle_count),
-        .xt_cycle_count          (at_debug_ram_view ? {12'd0, at_ram_trace_armed, at_ram_trace_captured, hps_status[84:83]} : at_debug_boot_view ? {7'd0, at_boot_trace_pending, at_boot_trace_full, at_boot_trace_valid, hps_status[80], hps_status[78:74]} : at_debug_at_cycle_count),
-        .trace0                  (at_debug_ram_view ? at_ram_trace_words[31:0] : at_debug_fault_view ? at_fault_words[31:0] : at_debug_boot_view ? at_boot_trace_words[31:0] : at_debug_trace0),
-        .trace1                  (at_debug_ram_view ? at_ram_trace_words[63:32] : at_debug_fault_view ? at_fault_words[63:32] : at_debug_boot_view ? at_boot_trace_words[63:32] : at_debug_trace1),
-        .trace2                  (at_debug_ram_view ? at_ram_trace_words[95:64] : at_debug_fault_view ? at_fault_words[95:64] : at_debug_boot_view ? at_boot_trace_words[95:64] : at_debug_trace2),
-        .trace3                  (at_debug_ram_view ? at_ram_trace_words[127:96] : at_debug_fault_view ? at_fault_words[127:96] : at_debug_boot_view ? at_boot_trace_words[127:96] : at_debug_trace3),
+        .cpu_cycle_count         (at_debug_cpu_cycle_count),
+        .xt_cycle_count          (at_debug_at_cycle_count),
+        .trace0                  (at_debug_trace0),
+        .trace1                  (at_debug_trace1),
+        .trace2                  (at_debug_trace2),
+        .trace3                  (at_debug_trace3),
         .keyboard_keycode        (at_debug_keyboard_keycode),
         .keyboard_irq            (at_debug_keyboard_irq),
         .keyboard_port_b         (at_debug_keyboard_port_b),

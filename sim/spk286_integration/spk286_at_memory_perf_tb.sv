@@ -69,6 +69,7 @@ module spk286_at_memory_perf_tb;
         .cpu_bus_write(bus_write), .cpu_bus_bhe_n(bus_bhe_n),
         .cpu_bus_status(bus_status), .cpu_bus_lock(bus_lock),
         .cpu_memory_word_capable(width_capable && native_width != 0),
+        .cpu_io_word_capable(1'b0),
         .cpu_ready(ready), .cpu_data_in(data_in),
         .at_valid(at_valid), .at_command_valid(at_command),
         .at_cycle_class(at_class), .at_address(at_address),

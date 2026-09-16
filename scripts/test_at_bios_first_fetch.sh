@@ -19,7 +19,6 @@ mapfile -t sources < <(
     rtl/spk286_integration/spk286_integration.qip
 )
 sources+=(
-  rtl/common/simple_ram.v
   rtl/common/simple_fifo.v
   rtl/common/floppy.v
   rtl/common/ide.v
@@ -60,8 +59,6 @@ for source in rtl/KFPC-XT/HDL/KF8259/HDL/*.sv; do
 done
 
 sources+=(rtl/spk286_integration/spk286_at_hps_rom_loader.sv
-  rtl/spk286_integration/spk286_at_boot_trace.sv
-  rtl/spk286_integration/spk286_at_ram_trace.sv
   sim/spk286_integration/spk286_sdram_pin_model.sv
   sim/spk286_integration/spk286_at_bios_first_fetch_tb.sv)
 verilator -Irtl/KFPC-XT/HDL/KF8253/HDL --binary --timing --trace-fst --trace-depth 3 \

@@ -130,7 +130,6 @@ module spk286_at_machine (
     output logic         cpu_halted,
     output logic         cpu_shutdown,
     output logic         cpu_fault,
-    output wire [15:0]   debug_fault_sources,
     output logic         debug_control_error,
     output logic         debug_unsupported_opcode,
     output logic         debug_microcode_fault,
@@ -146,9 +145,6 @@ module spk286_at_machine (
     output logic [15:0]  debug_flags,
     output logic [127:0] debug_gpr,
     output logic [63:0]  debug_segment_selectors,
-    output logic         debug_instruction_retired,
-    output logic [15:0]  debug_instruction_ip,
-    output logic [95:0]  debug_segment_bases,
     output logic         debug_fetch_blocked,
     output logic [16:0]  debug_fetch_cursor,
     output logic [11:0]  debug_micro_pc,
@@ -186,6 +182,7 @@ module spk286_at_machine (
     output logic [15:0]  refresh_count,
     output logic [15:0]  dma_side_effect_count,
     output logic [15:0]  device_side_effect_count,
+    output logic         debug_bridge_error,
     output logic         protocol_error
 );
     localparam logic [3:0] CYCLE_INTA = 4'h0;
@@ -342,7 +339,6 @@ module spk286_at_machine (
     logic        nmi_source_active_q;
 
     logic [15:0] debug_cpu_cycle_count_q;
-    wire [3:0] device_fault_sources;
     logic [15:0] debug_at_cycle_count_q;
     logic [31:0] debug_trace0_q;
     logic [31:0] debug_trace1_q;
@@ -392,10 +388,6 @@ module spk286_at_machine (
             is_a5_io_port = (port == 16'h0060) || (port == 16'h0064) ||
                             (port == 16'h0070) || (port == 16'h0071) ||
                             ((port >= 16'h01F0) && (port <= 16'h01F7)) ||
-                            // Forward XT-IDE before the unmapped-I/O FFh sink.
-                            // 308h is the high-byte latch; 309h stays unmapped.
-                            ((port >= 16'h0300) && (port <= 16'h030F) &&
-                             (port != 16'h0309)) ||
                             ((port >= 16'h03B0) && (port <= 16'h03DF)) ||
                             ((port >= 16'h03F0) && (port <= 16'h03F7));
         end
@@ -453,13 +445,10 @@ module spk286_at_machine (
         .debug_cs               (debug_cs),
         .debug_cs_base          (spk_debug_cs_base),
         .debug_ip                (debug_ip),
-        .debug_flags             (spk_debug_flags),
-        .debug_gpr               (spk_debug_gpr),
-        .debug_segment_selectors (spk_debug_segment_selectors),
-        .debug_instruction_retired(debug_instruction_retired),
-        .debug_instruction_ip(debug_instruction_ip),
-        .debug_segment_bases(debug_segment_bases),
-        .fetch_blocked           (spk_fetch_blocked),
+         .debug_flags             (spk_debug_flags),
+         .debug_gpr               (spk_debug_gpr),
+         .debug_segment_selectors (spk_debug_segment_selectors),
+         .fetch_blocked           (spk_fetch_blocked),
         .debug_fetch_cursor      (spk_debug_fetch_cursor),
         .debug_micro_pc          (spk_debug_micro_pc),
         .debug_micro_entry       (spk_debug_micro_entry),
@@ -478,6 +467,13 @@ module spk286_at_machine (
     // authoritative map, including the high reset-ROM alias. The ordinary
     // decode below continues to own routing and write protection.
     wire cpu_memory_word_capable;
+    // The standard AT IDE data register is an ISA16 target. Keep all other
+    // I/O on the bridge's byte-serialized path.
+    wire cpu_io_word_capable = cpu_bus_valid &&
+                                ((cpu_bus_status == 4'h9) ||
+                                 (cpu_bus_status == 4'hA)) &&
+                                !cpu_address[0] && !cpu_bus_bhe_n &&
+                                (cpu_address[15:0] == 16'h01F0);
     spk286_at_memory_decode u_cpu_width_decode (
         .request_valid          (cpu_bus_valid),
         .request_write          (cpu_bus_write),
@@ -503,6 +499,7 @@ module spk286_at_machine (
         .cpu_bus_status         (cpu_bus_status),
         .cpu_bus_lock           (cpu_bus_lock),
         .cpu_memory_word_capable (cpu_memory_word_capable),
+        .cpu_io_word_capable    (cpu_io_word_capable),
         .cpu_ready              (cpu_ready_i),
         .cpu_data_in            (cpu_data_in_i),
         .at_valid               (at_valid),
@@ -640,7 +637,6 @@ module spk286_at_machine (
         .video_active_lines     (video_active_lines),
         .side_effect_count      (device_side_effect_count),
         .irq_request             (devices_irq_request),
-        .debug_fault_sources     (device_fault_sources),
         .protocol_error          (devices_protocol_error)
     );
 
@@ -1023,20 +1019,14 @@ module spk286_at_machine (
         end
     end
 
-    // Bits 0..4 CPU, 5 bridge, 6 arbiter, 7 PIC, 8 PIT, 9 DMA,
-    // 10 refresh, 11 router, 12 keyboard, 13 RTC, 14 storage, 15 aggregate devices (including system control 61h).
-    assign debug_fault_sources = {(devices_protocol_error | sys_protocol_error), device_fault_sources,
-        refresh_protocol_error, dma_protocol_error, pit_protocol_error,
-        pic_protocol_error, arbiter_protocol_error, bridge_protocol_error,
-        spk_operand_blocked, spk_microcode_fault, spk_unsupported_opcode,
-        spk_control_error, spk_shutdown};
+    assign debug_bridge_error = bridge_protocol_error | arbiter_protocol_error |
+                                pic_protocol_error | pit_protocol_error |
+                                dma_protocol_error | refresh_protocol_error |
+                                devices_protocol_error | sys_protocol_error;
 
     assign cpu_fault = spk_shutdown | spk_control_error |
                        spk_unsupported_opcode | spk_microcode_fault |
-                       spk_operand_blocked | bridge_protocol_error |
-                       arbiter_protocol_error | pic_protocol_error |
-                       pit_protocol_error | dma_protocol_error |
-                       refresh_protocol_error | devices_protocol_error | sys_protocol_error;
+                       spk_operand_blocked | debug_bridge_error;
 
     assign protocol_error = cpu_fault;
 endmodule

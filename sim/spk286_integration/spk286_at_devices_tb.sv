@@ -603,28 +603,39 @@ module spk286_at_devices_tb;
         router_write(16'h0070, 8'h8C);
         check(nmi_mask, "RTC index write did not set the NMI mask");
 
-        // ATA primary channel: IDENTIFY command, status IRQ14 and word data.
+        // Standard AT primary channel: initialize the real common IDE engine,
+        // issue IDENTIFY at 1F7h, feed one sector through its management FIFO,
+        // then consume one native x16 word at 1F0h. This replaces the former
+        // byte-only fake ATA model and also checks the 3F6h alternate port.
+        mgmt_write_word(16'hF006, 16'h0009);
+        mgmt_write_word(16'hF005, 16'h40A0);
+        router_write(16'h01F6, 8'hA0);
         router_write(16'h01F7, 8'hEC);
         #1;
-        check(irq14 && irq_request[14], "ATA command did not assert IRQ14");
+        check(ide_request == 3'b100,
+              "AT IDE IDENTIFY command did not reach the HPS request path");
+        for (cycles = 0; cycles < 256; cycles = cycles + 1)
+            mgmt_write_word(16'hF0FF,
+                            (cycles == 0) ? 16'h0040 : 16'h0000);
+        mgmt_write_word(16'hF005, 16'h5EA0);
+        #1;
+        check(irq14 && irq_request[14],
+              "AT IDE data-ready state did not assert IRQ14");
+        router_read(16'h03F6, value);
+        check(value == 8'h58 && irq14,
+              "AT IDE alternate-status read was not ISA16 IDE status");
         router_read_word(16'h01F0, word_value);
-        check(word_value == 16'h0040, "ATA IDENTIFY data was not deterministic");
+        check(word_value == 16'h0040,
+              "AT IDE native word read returned the wrong IDENTIFY data");
         router_read(16'h01F7, value);
-        check(value == 8'h58 && !irq14, "ATA status read did not clear IRQ14");
+        check(value == 8'h58 && !irq14,
+              "AT IDE status read did not clear IRQ14");
 
-        // XT2IDE-compatible secondary window: management presence, command
-        // status, high-byte latch at 308h, and the single 309h hole.
-        mgmt_write_word(16'hF006, 16'h0009);
-        router_read(16'h0307, value);
-        check(value == 8'h80 && ide_request == 3'b110,
-              "XT-IDE status/presence path was incorrect");
-        router_write(16'h0308, 8'hA5);
-        router_read(16'h0308, value);
-        check(value == 8'hA5, "XT-IDE high-byte latch did not round-trip");
-        router_read(16'h0309, value);
-        check(value == 8'hFF, "XT-IDE 309h hole was unexpectedly decoded");
-        router_read(16'h030E, value);
-        check(value == 8'h80, "XT-IDE alternate status was not decoded");
+        // Return the shared engine to its post-reset state.
+        router_write(16'h03F6, 8'h04);
+        router_write(16'h03F6, 8'h00);
+        check(ide_request == 3'b110,
+              "AT IDE software reset did not restore the reset request");
 
         // EGA register and A0000 aperture are routed by the same table.
         router_write(16'h03C0, 8'hAA);

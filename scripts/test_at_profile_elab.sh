@@ -67,7 +67,6 @@ KF8259_DIR="$ROOT_DIR/rtl/KFPC-XT/HDL/KF8259/HDL"
 KF8253_DIR="$ROOT_DIR/rtl/KFPC-XT/HDL/KF8253/HDL"
 SOURCE_FILES=(
   "$ROOT_DIR/PCAT-286.sv"
-  "$ROOT_DIR/rtl/common/simple_ram.v"
   "$ROOT_DIR/rtl/common/simple_fifo.v"
   "$ROOT_DIR/rtl/common/floppy.v"
   "$ROOT_DIR/rtl/common/ide.v"

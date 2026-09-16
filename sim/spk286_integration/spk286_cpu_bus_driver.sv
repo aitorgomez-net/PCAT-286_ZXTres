@@ -85,4 +85,46 @@ module spk286_machine_cpu (
         logic [7:0] unused_value;
         io_byte(1, port, value, unused_value);
     endtask
+
+    // ISA16 I/O helper. The production bridge normally serializes I/O words
+    // for 8-bit peripherals, but the AT IDE data register is explicitly
+    // advertised as a native x16 target by the machine decode.
+    task automatic io_word(input logic write_cycle, input logic [15:0] port,
+                           input logic [15:0] value, output logic [15:0] result);
+        integer cycles;
+        begin
+            @(negedge clk);
+            repeat (idle_cycles) @(negedge clk);
+            address = {8'h00, port};
+            data_out = value;
+            bus_bhe_n = 1'b0;
+            bus_status = write_cycle ? 4'hA : 4'h9;
+            bus_write = write_cycle;
+            data_oe = write_cycle;
+            bus_valid = 1'b1;
+            cycles = 0;
+            do begin
+                @(negedge clk);
+                cycles = cycles + 1;
+            end while (!ready && cycles < 256);
+            if (!ready) $fatal(1, "CPU ISA16 I/O timeout at %04h", port);
+            result = data_in;
+            @(posedge clk);
+            @(negedge clk);
+            bus_valid = 1'b0;
+            bus_status = 4'hF;
+            bus_write = 1'b0;
+            data_oe = 1'b0;
+        end
+    endtask
+
+    task automatic io_read_word(input logic [15:0] port,
+                                 output logic [15:0] value);
+        io_word(1'b0, port, 16'h0000, value);
+    endtask
+    task automatic io_write_word(input logic [15:0] port,
+                                  input logic [15:0] value);
+        logic [15:0] unused_value;
+        io_word(1'b1, port, value, unused_value);
+    endtask
 endmodule

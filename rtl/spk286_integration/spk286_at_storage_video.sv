@@ -130,9 +130,13 @@ module spk286_at_storage_video (
         ata_selected = request_valid && request_command_valid && request_io &&
                        (request_address[15:0] >= 16'h01F0) &&
                        (request_address[15:0] <= 16'h01F7);
+        // 3F6h is the AT IDE alternate-status/device-control port. The
+        // neighboring floppy ports remain owned by the uPD765, including
+        // 3F7h (digital input/change register).
         floppy_selected = request_valid && request_command_valid && request_io &&
                           (request_address[15:0] >= 16'h03F0) &&
-                          (request_address[15:0] <= 16'h03F7);
+                          (request_address[15:0] <= 16'h03F7) &&
+                          (request_address[15:0] != 16'h03F6);
         video_io_selected = request_valid && request_command_valid && request_io &&
                             (request_address[15:0] >= 16'h03B0) &&
                             (request_address[15:0] <= 16'h03DF);
@@ -140,14 +144,13 @@ module spk286_at_storage_video (
                                 !request_io &&
                                 (request_address[23:0] >= 24'h0A0000) &&
                                 (request_address[23:0] <= 24'h0BFFFF);
-        // Match XT2IDE: 308h is the data high-byte latch, 309h is the only
-        // hole, and 30Ah-30Fh form the control block.
+        // Standard AT IDE channel: 1F0h-1F7h are the command block and 3F6h
+        // is the alternate-status/device-control register.
         xtide_selected = request_valid && request_command_valid &&
                          request_io &&
-                         (request_address[15:4] == 12'h030) &&
-                         ((!request_address[3]) ||
-                          (request_address[3:0] == 4'h8) ||
-                          (request_address[2:1] != 2'b00));
+                         (((request_address[15:0] >= 16'h01F0) &&
+                           (request_address[15:0] <= 16'h01F7)) ||
+                          (request_address[15:0] == 16'h03F6));
         device_selected = ata_selected || floppy_selected ||
                           video_io_selected || video_memory_selected ||
                           xtide_selected;
@@ -160,7 +163,7 @@ module spk286_at_storage_video (
                         (request_address[15:0] == 16'h01F0) &&
                         (request_byte_enable == 2'b11);
         xtide_data_word = xtide_selected &&
-                          (request_address[15:0] == 16'h0300) &&
+                          (request_address[15:0] == 16'h01F0) &&
                           (request_byte_enable == 2'b11);
         request_byte = request_byte_enable[1] ?
                        request_data_out[15:8] : request_data_out[7:0];
@@ -310,8 +313,11 @@ module spk286_at_storage_video (
     spk286_at_fdc u_fdc (
         .clk                    (clk),
         .reset                  (reset),
-        .request_valid          (request_valid),
-        .request_command_valid  (request_command_valid),
+        // 3F6h is shared in the broad ISA decode but belongs to IDE on an AT;
+        // keep the FDC endpoint from accepting it behind the top-level
+        // priority mux.
+        .request_valid          (request_valid && floppy_selected),
+        .request_command_valid  (request_command_valid && floppy_selected),
         .request_write          (request_write),
         .request_io             (request_io),
         .request_address        (request_address),

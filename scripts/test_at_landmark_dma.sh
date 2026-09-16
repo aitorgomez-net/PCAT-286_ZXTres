@@ -27,7 +27,6 @@ for source in vendor/spk286/rtl/*.sv; do
   esac
 done
 sources+=(
-  rtl/common/simple_ram.v
   rtl/common/simple_fifo.v
   rtl/common/floppy.v
   rtl/common/ide.v
@@ -55,6 +54,7 @@ sources+=(
   rtl/spk286_integration/spk286_at_device_router.sv
   rtl/spk286_integration/spk286_at_machine.sv
   rtl/spk286_integration/spk286_at_mister_memory_port.sv
+  rtl/spk286_integration/spk286_at_sdram_read_buffer.sv
   rtl/KFPC-XT/HDL/KFSDRAM/HDL/KFSDRAM.sv
   rtl/spk286_integration/spk286_at_mister_sdram_owner.sv
 )
@@ -67,8 +67,6 @@ for source in rtl/KFPC-XT/HDL/KF8259/HDL/*.sv; do
 done
 
 sources+=(rtl/spk286_integration/spk286_at_hps_rom_loader.sv
-  rtl/spk286_integration/spk286_at_boot_trace.sv
-  rtl/spk286_integration/spk286_at_ram_trace.sv
   sim/spk286_integration/spk286_sdram_pin_model.sv
   sim/spk286_integration/spk286_at_bios_first_fetch_tb.sv)
 verilator -DSPK286_P05_PARALLEL_LIMIT_CHECK -DSPK286_AT_NO_DEBUG \

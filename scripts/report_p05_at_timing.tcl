@@ -33,7 +33,7 @@ foreach_in_collection a [get_all_global_assignments -name VERILOG_MACRO] {
 }
 set debug [get_registers -nowarn {*u_at_debug_overlay|*source_snapshot*}]
 set observers [get_registers -nowarn {
-    *u_at_debug_overlay|* *u_at_boot_trace|* *u_at_ram_trace|* *u_at_fault_trace|*
+    *u_at_debug_overlay|*
 }]
 puts $inventory "no_debug=$no_debug observers=[get_collection_size $observers]"
 if {$no_debug} {

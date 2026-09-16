@@ -18,7 +18,6 @@ module spk286_at_xtide_machine_tb;
     wire [2:0] ide_request;
     wire [15:0] irq_request;
     wire protocol_error, unmapped_request;
-    wire [15:0] fault_sources;
     integer sink_reads = 0, ide_commands = 0;
 
     hps_ext transport (
@@ -43,13 +42,12 @@ module spk286_at_xtide_machine_tb;
         .memory_read_data(16'd0), .memory_read_data_valid(1'b0),
         .dma_memory_accept(1'b0), .dma_memory_ready(1'b0), .dma_memory_data_in(16'd0),
         .refresh_memory_accept(1'b0), .refresh_memory_ready(1'b0),
-        .unmapped_request(unmapped_request), .protocol_error(protocol_error),
-        .debug_fault_sources(fault_sources)
+        .unmapped_request(unmapped_request), .protocol_error(protocol_error)
     );
     always @(posedge clk) if (!reset) begin
         if (dut.io_sink_accept && !dut.at_write) sink_reads <= sink_reads + 1;
         if (dut.u_devices.u_storage_video.u_xtide.ide_io_write &&
-            dut.at_address == 24'h000307) ide_commands <= ide_commands + 1;
+            dut.at_address == 24'h0001F7) ide_commands <= ide_commands + 1;
     end
 
     task automatic check(input logic condition, input string message);
@@ -138,8 +136,7 @@ module spk286_at_xtide_machine_tb;
     endtask
 
     logic [15:0] reply, expected;
-    logic [7:0] low_byte, high_byte;
-    integer i, block_id;
+    integer i;
     initial begin
         repeat (8) @(negedge clk);
         reset = 0;
@@ -148,82 +145,50 @@ module spk286_at_xtide_machine_tb;
         check(reply[15:12] == 4'hE && reply[2:0] == 3'b110,
               "HPS did not see IDE reset request in bits 2:0");
         host_end();
+
+        // Preserve the shared IDE engine's floating-bus response when no
+        // drive is present. XUB bounds its polling using BIOS timer ticks.
+        cpu_read_expect(16'h01F7, 8'hFF);
+        cpu_read_expect(16'h03F6, 8'hFF);
+
         host_write(16'hF006, 16'h0089); // master present, slave absent
         host_regs(16'h0000, 16'h40A0); // host releases BSY after reset
         check(ide_request == 0, "HPS did not acknowledge IDE reset");
-        // This fails on 94fd21d: FFh despite a mounted/initialized controller.
-        cpu_read_expect(16'h0307, 8'h40);
-        check(sink_reads == 0, "Machine intercepted an XT-IDE status read");
-        dut.u_cpu.io_write(16'h0302, 8'h55);
-        dut.u_cpu.io_write(16'h0303, 8'hAA);
-        cpu_read_expect(16'h0302, 8'h55);
-        cpu_read_expect(16'h0303, 8'hAA);
-        cpu_read_expect(16'h0309, 8'hFF);
-        cpu_read_expect(16'h02FF, 8'hFF);
-        cpu_read_expect(16'h0310, 8'hFF);
-        check(sink_reads == 3, "XT-IDE window overdecoded neighboring ports");
+        // The AT-only core must leave the old XT2IDE window unmapped.
+        cpu_read_expect(16'h0300, 8'hFF);
+        cpu_read_expect(16'h0307, 8'hFF);
+        cpu_read_expect(16'h030E, 8'hFF);
+        check(sink_reads == 3, "Legacy XT2IDE 300h window is still decoded");
 
-        // Software reset uses the alternate control port, including host delay.
-        dut.u_cpu.io_write(16'h030E, 8'h04);
-        dut.u_cpu.io_write(16'h030E, 8'h00);
-        check(ide_request == 6, "CPU software reset did not reach IDE");
-        cpu_read_expect(16'h030E, 8'h80);
-        host_regs(16'h0000, 16'h40A0);
-
-        // Full IDENTIFY and sector-read payloads via 300h + 308h at maximum
-        // bridge throughput. Keep BSY set across several CPU polls to model HPS latency.
-        for (block_id = 0; block_id < 2; block_id = block_id + 1) begin
-            dut.u_cpu.io_write(16'h0306, 8'hA0);
-            dut.u_cpu.io_write(16'h0307, block_id == 0 ? 8'hEC : 8'h20);
-            check(ide_request == 4, "CPU command never reached IDE/HPS");
-            host_read(16'hF005, reply);
-            check(reply == (block_id == 0 ? 16'hECA0 : 16'h20A0),
-                  "HPS command or selected drive mismatch");
-            repeat (8) cpu_read_expect(16'h0307, 8'h80);
-            host_send_sector(block_id);
-            host_regs(16'h0001, 16'h5EA0); // 256 words, DRQ, IRQ, last block
-            check(irq_request[14], "IDE data-ready IRQ missing");
-            cpu_read_expect(16'h030E, 8'h58);
-            check(irq_request[14], "Alternate status incorrectly cleared IRQ");
-            cpu_read_expect(16'h0307, 8'h58);
-            check(!irq_request[14], "Status read did not clear IDE IRQ");
-            for (i = 0; i < 256; i = i + 1) begin
-                dut.u_cpu.io_read(16'h0300, low_byte);
-                dut.u_cpu.io_read(16'h0308, high_byte);
-                expected = payload(block_id, i);
-                check({high_byte, low_byte} === expected,
-                      $sformatf("Read block %0d word %0d: expected %04h, got %02h%02h",
-                                block_id, i, expected, high_byte, low_byte));
-            end
-            cpu_read_expect(16'h0307, 8'h40);
-            check(ide_request == 0, "Last read unexpectedly requested another block");
-        end
-
-        // Write a sector in XTIDE byte order and inspect all 256 host words.
-        dut.u_cpu.io_write(16'h0307, 8'h30);
-        check(ide_request == 4, "WRITE command did not reach HPS");
-        host_regs(16'h0001, 16'h48A0);
+        // The AT ROM uses the standard IDE channel 1F0h-1F7h plus 3F6h, and
+        // REP INSW must arrive at the common IDE engine as one native ISA16
+        // transaction at 1F0h.
+        dut.u_cpu.io_write(16'h01F6, 8'hA0);
+        dut.u_cpu.io_write(16'h01F7, 8'h20);
+        check(ide_request == 4, "AT IDE command never reached HPS");
+        host_read(16'hF005, reply);
+        check(reply == 16'h20A0,
+              "AT IDE command or selected drive mismatch");
+        repeat (8) cpu_read_expect(16'h03F6, 8'h80);
+        host_send_sector(3);
+        host_regs(16'h0001, 16'h5EA0);
+        check(irq_request[14], "AT IDE data-ready IRQ missing");
+        cpu_read_expect(16'h03F6, 8'h58);
+        check(irq_request[14], "AT alternate status incorrectly cleared IRQ");
         for (i = 0; i < 256; i = i + 1) begin
-            expected = payload(2, i);
-            dut.u_cpu.io_write(16'h0308, expected[15:8]);
-            dut.u_cpu.io_write(16'h0300, expected[7:0]);
+            dut.u_cpu.io_read_word(16'h01F0, expected);
+            check(expected === payload(3, i),
+                  $sformatf("AT IDE word %0d: expected %04h, got %04h",
+                            i, payload(3, i), expected));
         end
-        check(ide_request == 5, "Completed WRITE did not request HPS data transfer");
-        host_begin(16'h62, 16'hF0FF);
-        for (i = 0; i < 256; i = i + 1) begin
-            host_word(0, reply);
-            check(reply === payload(2, i),
-                  $sformatf("Write sector word %0d: expected %04h, got %04h (mgmt_cnt=%0d)",
-                            i, payload(2, i), reply,
-                            dut.u_devices.u_storage_video.u_xtide.u_ide.mgmt_cnt));
-        end
-        host_end();
-        host_regs(16'h0000, 16'h40A0);
-        cpu_read_expect(16'h0307, 8'h40);
-        check(ide_commands == 3, "Command was duplicated or dropped");
-        check(sink_reads == 3, "Valid XT-IDE reads reached the FFh sink");
-        check(!protocol_error, $sformatf("AT protocol fault: %04h", fault_sources));
-        $display("AT_XTIDE_MACHINE_PASS cpu_idle=%0d identify_words=256 read_words=256 write_words=256 hps=1 decode=1",
+        cpu_read_expect(16'h01F7, 8'h40);
+        check(!irq_request[14], "AT IDE status read did not clear IRQ14");
+        check(!protocol_error, "AT IDE standard-channel protocol fault");
+
+        check(ide_commands == 1, "AT IDE command was duplicated or dropped");
+        check(sink_reads == 3, "Valid AT IDE reads reached the FFh sink");
+        check(!protocol_error, "AT protocol fault");
+        $display("AT_XTIDE_MACHINE_PASS cpu_idle=%0d read_words=256 hps=1 decode=1 legacy_300=0",
                  dut.u_cpu.idle_cycles);
         $finish;
     end

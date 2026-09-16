@@ -86,13 +86,28 @@ module spk286_invalid_opcode_tb;
         cases=cases+1;
     endtask
 
+    task automatic expect_unsupported(input logic [7:0] first_byte, input logic [7:0] second_byte);
+        setup(first_byte,second_byte);
+        while (!unsupported_opcode && timeout_count<900) begin
+            service(); timeout_count=timeout_count+1;
+        end
+        check(unsupported_opcode,"legal but unimplemented opcode remains unsupported");
+        check(deliveries==0 && retires==0 && !halted && !shutdown,
+              "unsupported opcode neither faults nor retires");
+        cases=cases+1;
+    endtask
+
     initial begin
         for (integer i=0;i<1114112;i=i+1) memory[i]=8'h90;
+        // 64h is Intel's documented example of an invalid first byte.
+        expect_ud(8'h64,8'h90);
         // 66h is not an operand-size prefix on an 80286.
         expect_ud(8'h66,8'h90);
         // 0Fh is a two-byte opcode introducer; an invalid second byte faults.
         expect_ud(8'h0F,8'hFF);
-        $display("INVALID_OPCODE PASS: %0d #UD cases; %0d checks",cases,checks);
+        // 0F05 is the undocumented 286 LOADALL opcode. It is deferred, not #UD.
+        expect_unsupported(8'h0F,8'h05);
+        $display("INVALID_OPCODE PASS: %0d classification cases; %0d checks",cases,checks);
         $finish;
     end
 endmodule

@@ -9,7 +9,7 @@ sources=(
   sim/spk286_integration/spk286_cpu_bus_driver.sv
   sim/spk286_integration/dpram_model.sv
   rtl/hps_ext.v
-  rtl/common/simple_ram.v rtl/common/simple_fifo.v
+  rtl/common/simple_fifo.v
   rtl/common/floppy.v rtl/common/ide.v
   rtl/spk286_integration/spk286_at_bus_bridge.sv
   rtl/spk286_integration/spk286_at_memory_decode.sv
