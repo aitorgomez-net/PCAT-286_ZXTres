@@ -1,4 +1,12 @@
 `timescale 1ns/1ps
+
+`ifndef ENABLE_CMS
+`define ENABLE_CMS 0
+`endif
+`ifndef ENABLE_MIDI
+`define ENABLE_MIDI 0
+`endif
+
 // Regression for XT-IDE accesses being intercepted by the machine's FFh sink.
 // Exercise CPU bus -> real AT bridge/decode/router/IDE and the real hps_ext
 // transport. Host responses are modeled from Main_MiSTer/ide.cpp; no CPU
@@ -30,6 +38,12 @@ module spk286_at_xtide_machine_tb;
     spk286_at_machine dut (
         .clk(clk), .reset(reset), .cpu_reset(1'b0), .clk_video(clk),
         .splashscreen(1'b0), .execute_enable(1'b1), .counter_clock(1'b0),
+        .at286ctl_eff_opl2(2'd0), .at286ctl_eff_cms(1'b1),
+        .at286ctl_eff_tandy(1'b0),
+        .at286ctl_eff_mpu401(`ENABLE_MIDI),
+        .midi_baudce(1'b1), .uart_baudce(1'b1),
+        .midi_rx(1'b1), .uart2_rx(1'b1),
+        .uart2_cts_n(1'b1), .uart2_dsr_n(1'b1), .uart2_dcd_n(1'b1),
         .refresh_enable(1'b0), .keyboard_byte_valid(1'b0), .keyboard_byte(8'd0),
         .periodic_tick(1'b0), .second_tick(1'b0), .parity_event(1'b0),
         .channel_check_event(1'b0), .external_nmi_event(1'b0),
@@ -48,6 +62,11 @@ module spk286_at_xtide_machine_tb;
         if (dut.io_sink_accept && !dut.at_write) sink_reads <= sink_reads + 1;
         if (dut.u_devices.u_storage_video.u_xtide.ide_io_write &&
             dut.at_address == 24'h0001F7) ide_commands <= ide_commands + 1;
+        if (`ENABLE_CMS && dut.at_command_valid &&
+            (dut.at_address[15:4] == 12'h01F) &&
+            dut.u_devices.device_sound_candidate)
+            $fatal(1, "C/MS decoder claimed an AT IDE port %04h",
+                   dut.at_address[15:0]);
     end
 
     task automatic check(input logic condition, input string message);
@@ -154,6 +173,17 @@ module spk286_at_xtide_machine_tb;
         host_write(16'hF006, 16'h0089); // master present, slave absent
         host_regs(16'h0000, 16'h40A0); // host releases BSY after reset
         check(ide_request == 0, "HPS did not acknowledge IDE reset");
+
+        // C/MS initialization and detection must not perturb the independent
+        // AT IDE channel.  226h is the source-compatible C/MS detection write
+        // that is most likely to expose an over-broad 220h decoder.
+        if (`ENABLE_CMS) begin
+            dut.u_cpu.io_write(16'h0220, 8'h00);
+            dut.u_cpu.io_write(16'h0221, 8'h3F);
+            dut.u_cpu.io_write(16'h0226, 8'hA5);
+            cpu_read_expect(16'h022B, 8'hA5);
+        end
+
         // The AT-only core must leave the old XT2IDE window unmapped.
         cpu_read_expect(16'h0300, 8'hFF);
         cpu_read_expect(16'h0307, 8'hFF);

@@ -53,6 +53,9 @@ module spk286_at_bios_first_fetch_tb;
     integer io_wait_cycles = 0;
     integer max_cpu_cycles = 200000;
     logic protocol_reported = 0;
+    logic trace_boot = 1'b0;
+    logic trace_irq0_prev = 1'b0;
+    integer trace_lines = 0;
 
     logic execute_enable = 1'b1;
     logic cpu_boot_reset = 1;
@@ -333,6 +336,15 @@ module spk286_at_bios_first_fetch_tb;
             saw_low_rom_fetch <= 1'b0;
             first_bios_read_count <= 0;
         end else begin
+            if (trace_boot) begin
+                if (dut.irq0 != trace_irq0_prev && trace_lines < 160) begin
+                    $display("TRACE_IRQ0 level=%b csip=%04h:%04h ticks=%04h:%04h",
+                             dut.irq0, debug_cs, debug_ip,
+                             pins.mem[16'h0237], pins.mem[16'h0236]);
+                    trace_lines <= trace_lines + 1;
+                end
+                trace_irq0_prev <= dut.irq0;
+            end
             if (backend_accept && (backend_owner == 2'd0)) begin
                 accepted_memory_beats <= accepted_memory_beats + 1;
                 if (backend_address == 24'hFFFFF0)
@@ -382,6 +394,28 @@ module spk286_at_bios_first_fetch_tb;
                     port81_writes <= port81_writes + 1;
                 if (cpu_address[15:0] == 16'h0040) begin
                     pit_data_writes <= pit_data_writes + 1;
+                end
+                if (trace_boot &&
+                    ((cpu_address == 24'h00046C) ||
+                     (cpu_address == 24'h00046D) ||
+                     (cpu_address == 24'h00046E) ||
+                     (cpu_address == 24'h00046F)) &&
+                    trace_lines < 240) begin
+                    $display("TRACE_TICK_WRITE addr=%06h data=%04h csip=%04h:%04h",
+                             cpu_address, cpu_data_out, debug_cs, debug_ip);
+                    trace_lines <= trace_lines + 1;
+                end
+                if (trace_boot &&
+                    ((cpu_address[15:0] == 16'h01F0) ||
+                     (cpu_address[15:0] == 16'h01F1) ||
+                     (cpu_address[15:0] == 16'h01F6) ||
+                     (cpu_address[15:0] == 16'h01F7) ||
+                     (cpu_address[15:0] == 16'h03F6)) &&
+                    trace_lines < 240) begin
+                    $display("TRACE_IDE_IO wr=%b port=%04h data=%04h be=%b csip=%04h:%04h",
+                             cpu_bus_write, cpu_address[15:0], cpu_data_out,
+                             cpu_bus_bhe_n ? 2'b01 : 2'b11, debug_cs, debug_ip);
+                    trace_lines <= trace_lines + 1;
                 end
             end
         end
@@ -623,6 +657,9 @@ module spk286_at_bios_first_fetch_tb;
             max_cpu_cycles = landmark_case==15 ? 200000000 : 50000000;
             $display("LANDMARK_CASE=%0d entry=f000:%02h%02h",landmark_case,rom[16'hfff2],rom[16'hfff1]);
         end
+        if ($value$plusargs("MAX_CPU_CYCLES=%d", max_cpu_cycles))
+            $display("MAX_CPU_CYCLES=%0d", max_cpu_cycles);
+        trace_boot = $test$plusargs("TRACE_BOOT");
         for (index = 0; index < 4; index = index + 1)
             port80_sequence[index] = 8'h00;
     end
@@ -1052,12 +1089,14 @@ module spk286_at_bios_first_fetch_tb;
             end
             if((landmark_case==0 && (cpu_fault || protocol_error)) || memory_port_protocol_error || sdram_owner_protocol_error || loader_error || cpu_shutdown)
                 $fatal(1,"first fetch fault cycle=%0d csip=%h:%h op=%h",cycles,debug_cs,debug_ip,debug_opcode);
-            if(landmark_case==0 && fetch_returns>=32 && cpu_fetch_returns>=16 && saw_opcode && saw_low_rom_fetch) begin
+            if(landmark_case==0 && !$test$plusargs("FULL_BOOT") &&
+               fetch_returns>=32 && cpu_fetch_returns>=16 && saw_opcode &&
+               saw_low_rom_fetch) begin
                 $display("AT_BIOS_FIRST_FETCH_PASS fetches=%0d cpu_responses=%0d opcode=%02h cycles=%0d",fetch_returns,cpu_fetch_returns,rom[16'hfff0],cycles);
                 $finish;
             end
         end
-        $display("P03_STATE memport_active=%b accepted=%b owner=%b cancel=%b backend=%b/%b p03_state=%0d inflight=%b p03_out=%b/%b owner_active=%b kf_idle=%b refresh_req=%b refresh_grant=%b refresh_pending=%b refresh_active=%b arb_cpu_grant=%b hold=%b hlda=%b fetch_active=%b fetch_restart=%b fetch_req=%b fetch_ready=%b",
+        $display("P03_STATE memport_active=%b accepted=%b owner=%b cancel=%b backend=%b/%b p03_state=%0d inflight=%b p03_out=%b/%b owner_active=%b kf_idle=%b refresh_req=%b refresh_grant=%b refresh_pending=%b refresh_active=%b arb_cpu_grant=%b hold=%b hlda=%b fetch_active=%b fetch_restart=%b fetch_req=%b fetch_ready=%b pit0=%b pit0_count=%h pit0_run=%b pit0_mode=%h pit0_edge=%b",
                  memory_port.active_q, memory_port.accepted_q, memory_port.owner_q,
                  cpu_boot_reset, backend_valid, backend_command_valid,
                  p03_buffer.state_q, p03_buffer.physical_inflight_q,
@@ -1068,7 +1107,12 @@ module spk286_at_bios_first_fetch_tb;
                  dut.cpu_grant, cpu_hold_request, cpu_hlda,
                  dut.u_cpu.cpu.fetch.active_q, dut.u_cpu.cpu.fetch.restart_pending_q,
                  dut.u_cpu.cpu.fetch_request_internal,
-                 dut.u_cpu.cpu.fetch_request_ready_internal);
+                 dut.u_cpu.cpu.fetch_request_ready_internal,
+                 dut.pit_counter_out[0],
+                 dut.u_pit.u_timer.u_KF8253_Counter_0.count,
+                 dut.u_pit.u_timer.u_KF8253_Counter_0.start_counting,
+                 dut.u_pit.u_timer.u_KF8253_Counter_0.select_mode,
+                 dut.u_pit.u_timer.u_KF8253_Counter_0.count_edge);
         $fatal(1,"watchdog reads=%0d cpu=%0d csip=%h:%h hlt=%b ram_reads=%0d ram_writes=%0d gpr=%h",fetch_returns,cpu_fetch_returns,debug_cs,debug_ip,cpu_halted,ram_reads,ram_writes,dut.debug_gpr);
     end
     initial begin

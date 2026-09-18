@@ -15,9 +15,9 @@ org 100h
 ; the private VGA route and chain to the IBM EGA ROM.
 
 %define INT10_VECTOR      10h
-%define XTEGACTL_SIGNATURE 8980h
-%define XTEGACTL_VIDEO     8983h
-%define XTEGACTL_ID        'E'
+%define AT286CTL_SIGNATURE 8980h
+%define AT286CTL_VIDEO     8983h
+%define AT286CTL_ID        'E'
 %define VGA_CTRL_PORT    03CDh
 %define VGA_FB_SEG       0A000h
 %define VGA_DAC_READ      03C7h
@@ -43,7 +43,7 @@ start:
     pop ds
 
     ; VGA 13h+ is intentionally absent after reset. Enable it through the
-    ; XTEGACTL video field before installing the INT 10h hook. This keeps the
+    ; AT286CTL video field before installing the INT 10h hook. This keeps the
     ; OSD's Native/TV choice purely about raster timing: cycling it cannot
     ; remove a running VGA device underneath a game.
     call enable_vga13
@@ -94,7 +94,7 @@ int10_hook_entry:
     ; Any mode set, not just a mode 13h one, is where the hardware gets asked.
     ; It happens a handful of times in a session so it can afford to be
     ; thorough, and every game does one - which is what makes it a fair point to
-    ; notice a later XTEGACTL change. Preserves AX, so the masking
+    ; notice a later AT286CTL change. Preserves AX, so the masking
     ; and compare below are unaffected.
     call refresh_vga_cached
     ; Bit 7 of AL is the standard "do not clear video memory" flag, part of
@@ -119,7 +119,7 @@ int10_hook_entry:
     call vga_available
     pop ax
     je .set_mode13
-    ; VGA was disabled through XTEGACTL after we went resident. Treat the
+    ; VGA was disabled through AT286CTL after we went resident. Treat the
     ; request like any other mode set and let the video BIOS reject it, so the
     ; caller falls back instead of drawing into a mode nothing will display.
     jmp .clear_and_chain
@@ -437,7 +437,7 @@ clear_framebuffer:
 ;
 ; So the port is read where it is cheap to be thorough - a mode set, a handful
 ; of times a session, in refresh_vga_cached - and every call after that reads
-; the answer out of memory. A later software write that disables XTEGACTL's
+; the answer out of memory. A later software write that disables AT286CTL's
 ; video field likewise takes effect on the next mode set, and every game does
 ; one.
 vga_available:
@@ -798,16 +798,16 @@ vga_cached:     db 13h
 resident_end:
 
 ; Only reached before going resident, so keep it outside the retained block.
-; Enable XTEGACTL video field [1:0] = 2 (vga13), preserving any future upper
+; Enable AT286CTL video field [1:0] = 2 (vga13), preserving any future upper
 ; fields in the same byte. Carry returns set only when the core lacks the
-; XTEGACTL port block, which means this version of the TSR cannot control it.
+; AT286CTL port block, which means this version of the TSR cannot control it.
 enable_vga13:
-    mov dx, XTEGACTL_SIGNATURE
+    mov dx, AT286CTL_SIGNATURE
     in al, dx
-    cmp al, XTEGACTL_ID
+    cmp al, AT286CTL_ID
     jne .unsupported
 
-    mov dx, XTEGACTL_VIDEO
+    mov dx, AT286CTL_VIDEO
     in al, dx
     mov ah, al
     and al, 03h
@@ -827,7 +827,7 @@ enable_vga13:
     clc
     ret
 .unsupported:
-    mov dx, msg_no_xtegactl
+    mov dx, msg_no_at286ctl
     mov ah, 09h
     int 21h
     stc
@@ -862,4 +862,4 @@ tsr_installed:
 msg_activated:      db 'VGA 13h+ activated.', 13, 10, '$'
 msg_already_active: db 'VGA 13h+ was already active.', 13, 10, '$'
 msg_tsr_installed:  db 'VGATSR is already installed.', 13, 10, '$'
-msg_no_xtegactl:    db 'XTEGACTL port not found; TSR not installed.', 13, 10, '$'
+msg_no_at286ctl:    db 'AT286CTL port not found; TSR not installed.', 13, 10, '$'

@@ -50,7 +50,12 @@ sources+=(
   rtl/spk286_integration/spk286_at_xtide.sv
   rtl/spk286_integration/spk286_at_storage_video.sv
   rtl/spk286_integration/spk286_at_video_adapter.sv
+  rtl/spk286_integration/at286ctl.sv
   rtl/KFPC-XT/HDL/ega_vram_bram_frontend.sv
+  rtl/common/tandy_pcjr_joy.sv
+  rtl/spk286_integration/spk286_at_gameport.sv
+  rtl/spk286_integration/spk286_at_sound.sv
+  rtl/spk286_integration/spk286_at_serial.sv
   rtl/spk286_integration/spk286_at_device_router.sv
   rtl/spk286_integration/spk286_at_machine.sv
   rtl/spk286_integration/spk286_at_mister_memory_port.sv
@@ -69,7 +74,7 @@ done
 sources+=(rtl/spk286_integration/spk286_at_hps_rom_loader.sv
   sim/spk286_integration/spk286_sdram_pin_model.sv
   sim/spk286_integration/spk286_at_bios_first_fetch_tb.sv)
-verilator -DSPK286_P05_PARALLEL_LIMIT_CHECK -DSPK286_AT_NO_DEBUG \
+verilator -DSPK286_P05_PARALLEL_LIMIT_CHECK -DSPK286_AT_NO_DEBUG -DSPK286_AT_SIM_MODEL \
   -Irtl/KFPC-XT/HDL/KF8253/HDL --binary --timing --trace-fst --trace-depth 3 \
   --top-module spk286_at_bios_first_fetch_tb -Wno-fatal -j 4 \
   -Irtl/KFPC-XT/HDL/KF8259/HDL --Mdir "$build_dir/verilator-obj" -o first_fetch_vlt \

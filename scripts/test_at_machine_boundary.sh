@@ -45,7 +45,12 @@ sources+=(
   rtl/spk286_integration/spk286_at_xtide.sv
   rtl/spk286_integration/spk286_at_storage_video.sv
   rtl/spk286_integration/spk286_at_video_adapter.sv
+  rtl/spk286_integration/at286ctl.sv
   rtl/KFPC-XT/HDL/ega_vram_bram_frontend.sv
+  rtl/common/tandy_pcjr_joy.sv
+  rtl/spk286_integration/spk286_at_gameport.sv
+  rtl/spk286_integration/spk286_at_sound.sv
+  rtl/spk286_integration/spk286_at_serial.sv
   rtl/spk286_integration/spk286_at_device_router.sv
   rtl/spk286_integration/spk286_at_machine.sv
   rtl/spk286_integration/spk286_at_mister_memory_port.sv
@@ -61,28 +66,52 @@ for source in rtl/KFPC-XT/HDL/KF8259/HDL/*.sv; do
 done
 
 iverilog -g2012 -DSPK286_P05_PARALLEL_LIMIT_CHECK -DSPK286_AT_NO_DEBUG \
+  -DSPK286_AT_SIM_MODEL \
   -Irtl/KFPC-XT/HDL/KF8253/HDL -t null -Irtl/KFPC-XT/HDL/KF8259/HDL \
   -s spk286_at_machine "${sources[@]}" "${pic_sources[@]}" \
   >"$build_dir/iverilog-build.log" 2>&1
 echo AT_MACHINE_ICARUS_ELAB_PASS
 
 verilator -DSPK286_P05_PARALLEL_LIMIT_CHECK -DSPK286_AT_NO_DEBUG \
+  -DSPK286_AT_SIM_MODEL \
   -Irtl/KFPC-XT/HDL/KF8253/HDL --lint-only --timing --top-module spk286_at_machine \
   -Wno-fatal -Irtl/KFPC-XT/HDL/KF8259/HDL \
   "${sources[@]}" "${pic_sources[@]}" \
   >"$build_dir/verilator-production-lint.log" 2>&1
 echo AT_MACHINE_PRODUCTION_LINT_PASS
 
-rm -rf "$build_dir/verilator-obj"
-verilator -Irtl/KFPC-XT/HDL/KF8253/HDL --binary --timing -DAT_MACHINE_PIC_MODEL \
-  --top-module spk286_at_machine_tb \
-  -Wno-fatal -Irtl/KFPC-XT/HDL/KF8259/HDL \
-  --Mdir "$build_dir/verilator-obj" -o at_machine_vlt \
-  "${sources[@]}" sim/spk286_integration/spk286_at_machine_pic_model.sv \
-  sim/spk286_integration/spk286_at_machine_tb.sv \
-  >"$build_dir/verilator-build.log" 2>&1
-(cd "$root/rtl/video" && timeout 120s "$build_dir/verilator-obj/at_machine_vlt" "+ROM=$rom_path" \
-  "+MAX_CYCLES=${AT_SYSTEM_MAX_CYCLES:-2000000}") \
-  | tee "$build_dir/verilator-run.log"
+if [[ "${AT_REAL_PIC_ONLY:-0}" != 1 ]]; then
+  rm -rf "$build_dir/verilator-obj"
+  verilator -Irtl/KFPC-XT/HDL/KF8253/HDL --binary --timing -DAT_MACHINE_PIC_MODEL \
+    -DSPK286_AT_SIM_MODEL \
+    --top-module spk286_at_machine_tb \
+    -Wno-fatal -Irtl/KFPC-XT/HDL/KF8259/HDL \
+    --Mdir "$build_dir/verilator-obj" -o at_machine_vlt \
+    "${sources[@]}" sim/spk286_integration/spk286_at_machine_pic_model.sv \
+    sim/spk286_integration/spk286_at_machine_tb.sv \
+    >"$build_dir/verilator-build.log" 2>&1
+  (cd "$root/rtl/video" && timeout 120s "$build_dir/verilator-obj/at_machine_vlt" "+ROM=$rom_path" \
+    "+MAX_CYCLES=${AT_SYSTEM_MAX_CYCLES:-2000000}") \
+    | tee "$build_dir/verilator-run.log"
+fi
+
+if [[ "${AT_REAL_PIC_TEST:-0}" == 1 ]]; then
+  real_build_dir="$root/build/at-mpu-irq"
+  real_rom_path="${AT_MPU_ROM:-$real_build_dir/pcat286_mpu_irq_diag.rom}"
+  mkdir -p "$real_build_dir"
+  nasm -f bin -o "$real_build_dir/pcat286_mpu_irq_diag.rom" \
+    "$root/tests/firmware/pcat286_mpu_irq_diag.asm"
+  rm -rf "$real_build_dir/verilator-obj"
+  verilator -Irtl/KFPC-XT/HDL/KF8253/HDL --binary --timing \
+    -DENABLE_MIDI=1 -DSPK286_AT_SIM_MODEL --top-module spk286_at_machine_tb \
+    -Wno-fatal -Irtl/KFPC-XT/HDL/KF8259/HDL \
+    --Mdir "$real_build_dir/verilator-obj" -o at_mpu_irq_vlt \
+    "${sources[@]}" sim/spk286_integration/spk286_at_machine_tb.sv \
+    >"$real_build_dir/verilator-build.log" 2>&1
+  (cd "$root/rtl/video" && timeout 120s "$real_build_dir/verilator-obj/at_mpu_irq_vlt" \
+    "+ROM=$real_rom_path" "+MPU_RX_TEST" "+MAX_CYCLES=${AT_MPU_MAX_CYCLES:-2000000}") \
+    | tee "$real_build_dir/verilator-run.log"
+  echo AT_REAL_PIC_MPU_IRQ_TEST_PASS
+fi
 
 echo AT_MACHINE_BOUNDARY_TEST_PASS

@@ -63,6 +63,7 @@ module spk286_at_pic (
 
     logic [7:0] master_irq_request;
     logic       master_interrupt;
+    logic       intr_q;
     logic       slave_interrupt;
 
     logic [7:0] master_data_bus_out;
@@ -127,7 +128,12 @@ module spk286_at_pic (
     assign inta_second_active = inta_sequence_active &&
                                 transaction_is_inta_q && inta_index_q;
 
-    assign intr = master_interrupt;
+    // The normalized 286 event path samples a level at its clock boundary;
+    // unlike the XT peripheral wrapper it has no cpu_ce_negedge phase.  Keep
+    // one explicit register between the KF8259 output and the CPU boundary:
+    // this is the phase bridge used by the source profile and, importantly,
+    // lets the CPU leave HLT before the following INTA/EOI state is observed.
+    assign intr = intr_q;
     assign slave_intr = slave_interrupt;
 
     // Slave IRQ8..IRQ15 are presented to the master through IRQ2.  A direct
@@ -233,7 +239,9 @@ module spk286_at_pic (
             read_data_valid_q <= 1'b0;
             cascade_id_q <= 3'b000;
             protocol_error <= 1'b0;
+            intr_q <= 1'b0;
         end else begin
+            intr_q <= master_interrupt;
             case (transaction_state_q)
                 TRANSACTION_IDLE: begin
                     read_data_valid_q <= 1'b0;

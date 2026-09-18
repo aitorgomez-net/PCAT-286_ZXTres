@@ -5,6 +5,22 @@
 // SDRAM owner.
 `timescale 1ns/1ps
 
+`ifndef ENABLE_OPL2
+`define ENABLE_OPL2 0
+`endif
+`ifndef ENABLE_CMS
+`define ENABLE_CMS 0
+`endif
+`ifndef ENABLE_TANDY_AUDIO
+`define ENABLE_TANDY_AUDIO 0
+`endif
+`ifndef ENABLE_MIDI
+`define ENABLE_MIDI 0
+`endif
+`ifndef ENABLE_SB
+`define ENABLE_SB 0
+`endif
+
 module emu_at
 (
 `include "sys/emu_ports.vh"
@@ -26,8 +42,30 @@ module emu_at
     };
 `endif
 
+    // Keep the source profile's audio menu and status-bit placement.  The
+    // 220h selector has only the C/MS choices in this build: Sound Blaster is
+    // deliberately not part of the AT profile.
+    localparam CONF_STR_A220 = (`ENABLE_CMS ?
+        "P2OT,C/MS Audio,Enabled,Disabled;" : "");
+    localparam CONF_STR_OPL2 = (`ENABLE_OPL2 ?
+        "P2oAB,OPL2,Adlib 388h,SB FM 388h/228h, Disabled;" : "");
+    localparam CONF_STR_TANDY = (`ENABLE_TANDY_AUDIO ?
+        "P2oN,Tandy Sound,Disabled,Enabled;" : "");
+    // Keep the source profile's MIDI/MT32-pi page and status-bit placement.
+    // MPU-401 is the AT card at 330h; USER I/O selects the physical MIDI
+    // cable or the COM2 pins, while the h3P4 entries configure the external
+    // MT32-pi bridge and its LCD/status protocol.
+    localparam CONF_STR_MIDI = (`ENABLE_MIDI ?
+        "P3oO,MPU-401,Enabled,Disabled;P3-;P3O6,USER I/O,MIDI,COM2;P3-;h3P4,MT32-pi;h3P4-;h3P4OD,Use MT32-pi,Yes,No;h3P4-;h3P4o9,MT32-pi Mode,MT-32,General MIDI;h3P4O34,MT32-pi ROM,MT-32 v1,MT-32 v2,CM-32L,Reserved;h3P4oSU,MT32-pi SoundFont,#0,#1,#2,#3,#4,#5,#6,#7;h3P4-;h3P4r8,Reset Hanging Notes;h3P4-;" : "");
+
+    localparam CONF_STR_SYSTEM = "PCAT-286;";
+    localparam CONF_STR_UART = (`ENABLE_MIDI ?
+        "UART115200:115200,MIDI;" :
+        "UART115200:115200;");
+
     localparam CONF_STR_AT = {
-        "PCAT-286;",
+        CONF_STR_SYSTEM,
+        CONF_STR_UART,
         CONF_STR_HALT_AT,
         "S0,IMGIMAVFD,Floppy A:;",
         "S1,IMGIMAVFD,Floppy B:;",
@@ -50,6 +88,29 @@ module emu_at
         CONF_STR_AT_DEBUG,
 `endif
         "P1-;",
+        "P2,Audio & Video;",
+        "P2-;",
+        CONF_STR_A220,
+        CONF_STR_OPL2,
+        CONF_STR_TANDY,
+        "P2o01,Speaker Volume,1,2,3,4;",
+        "P2o45,Audio Boost,No,2x,4x;",
+        "P2o67,Stereo Mix,none,25%,50%,100%;",
+        "P2-;",
+        "P2oEH,CRT H offset,0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15;",
+        "P2oIK,CRT V offset,0,1,2,3,4,5,6,7;",
+        "P2O[66:64],VSync Width,Auto,1,2,3,4,5,6,7;",
+        "P2O[69:67],HSync Width,Auto,1,2,3,4,5,6,7;",
+        "P2OA,VGA 13h+ CRT,Native 70Hz,TV 60Hz;",
+        "P2-;",
+        "P3,Hardware;",
+        "P3-;",
+        "P3ONO,Joystick 1, Analog, Digital, Disabled;",
+        "P3OPQ,Joystick 2, Analog, Digital, Disabled;",
+        "P3OR,Sync Joy to CPU Speed,No,Yes;",
+        "P3oM,Swap Joysticks,No,Yes;",
+        CONF_STR_MIDI,
+        "P3-;",
         "-;",
         "R0,Reset & apply settings;",
         "J,Fire 1,Fire 2;",
@@ -99,6 +160,95 @@ module emu_at
     wire [15:0]  hps_status_menumask;
     wire         at_debug_enable = hps_status[71];
     wire [1:0]   at_debug_page = hps_status[73:72];
+    wire         at_vga_mode13_native_osd = ~hps_status[10];
+    wire [3:0]   at_crt_h_osd = hps_status[49:46];
+    wire [2:0]   at_crt_v_osd = hps_status[52:50];
+    wire [2:0]   at_vsync_width_osd = hps_status[66:64];
+    wire [2:0]   at_hsync_width_osd = hps_status[69:67];
+    wire         at_joy1_digital_osd = hps_status[23];
+    wire         at_joy1_disable_osd = hps_status[24];
+    wire         at_joy2_digital_osd = hps_status[25];
+    wire         at_joy2_disable_osd = hps_status[26];
+    wire         at_joy_sync_osd = hps_status[27];
+    wire         at_joy_swap_osd = hps_status[54];
+    wire         at_a220_cms_osd = `ENABLE_CMS ? ~hps_status[29] : 1'b0;
+
+    wire [7:0] at286ctl_cpu;
+    wire [7:0] at286ctl_exp;
+    wire [7:0] at286ctl_vid;
+    wire [7:0] at286ctl_inp;
+    wire [7:0] at286ctl_midi;
+    wire [7:0] at286ctl_exp2;
+    wire [7:0] at286ctl_crt;
+    wire [7:0] at286ctl_sync;
+    wire [39:0] at286ctl_status_effective;
+    wire [17:0] at286ctl_status_osd_match;
+    wire [1:0] at286ctl_eff_speed;
+    wire        at286ctl_eff_fake286;
+    wire [1:0] at286ctl_eff_opl2;
+    wire        at286ctl_eff_cms;
+    wire        at286ctl_eff_sb;
+    wire [2:0] at286ctl_eff_sb_irq;
+    wire        at286ctl_eff_ems;
+    wire        at286ctl_eff_umb;
+    wire        at286ctl_eff_vga13;
+    wire        at286ctl_eff_joy1_digital;
+    wire        at286ctl_eff_joy1_disable;
+    wire        at286ctl_eff_joy2_digital;
+    wire        at286ctl_eff_joy2_disable;
+    wire        at286ctl_eff_joy_sync;
+    wire        at286ctl_eff_joy_swap;
+    wire        at286ctl_eff_mt32_gm;
+    wire        at286ctl_eff_tandy;
+    wire        at286ctl_eff_mpu401;
+    wire [3:0] at286ctl_eff_crt_h;
+    wire [2:0] at286ctl_eff_crt_v;
+    wire [2:0] at286ctl_eff_vsync_width;
+    wire [2:0] at286ctl_eff_hsync_width;
+    wire [4:0] at_joy_opts = {at286ctl_eff_joy_sync,
+                               at286ctl_eff_joy2_disable,
+                               at286ctl_eff_joy2_digital,
+                               at286ctl_eff_joy1_disable,
+                               at286ctl_eff_joy1_digital};
+
+    // The AT profile currently implements the real VGA/EGA video path and
+    // PC speaker; the remaining compatibility fields stay available in the
+    // register map and resolve to their hardware-safe defaults.
+    at286ctl_resolve u_at286ctl_resolve (
+        .reg_cpu(at286ctl_cpu), .reg_exp(at286ctl_exp),
+        .reg_vid(at286ctl_vid), .reg_inp(at286ctl_inp),
+        .reg_midi(at286ctl_midi), .reg_exp2(at286ctl_exp2),
+        .osd_speed(2'd0), .osd_fake286(1'b0), .osd_opl2(hps_status[43:42]),
+        .osd_cms(at_a220_cms_osd), .osd_sb(1'b0), .osd_sb_irq(3'd5),
+        .osd_ems(1'b0), .osd_umb(1'b0),
+        .osd_joy1_digital(at_joy1_digital_osd), .osd_joy1_disable(at_joy1_disable_osd),
+        .osd_joy2_digital(at_joy2_digital_osd), .osd_joy2_disable(at_joy2_disable_osd),
+        .osd_joy_sync(at_joy_sync_osd), .osd_joy_swap(at_joy_swap_osd),
+        .osd_mt32_gm(hps_status[41]), .osd_tandy(hps_status[55]),
+        .osd_mpu401(~hps_status[56]),
+        .reg_crt(at286ctl_crt), .reg_sync(at286ctl_sync),
+        .osd_crt_h(at_crt_h_osd), .osd_crt_v(at_crt_v_osd),
+        .osd_vsync_w(at_vsync_width_osd), .osd_hsync_w(at_hsync_width_osd),
+        .build_sb(1'b0), .build_tandy(`ENABLE_TANDY_AUDIO ? 1'b1 : 1'b0),
+        .eff_speed(at286ctl_eff_speed), .eff_fake286(at286ctl_eff_fake286),
+        .eff_opl2(at286ctl_eff_opl2), .eff_cms(at286ctl_eff_cms),
+        .eff_sb(at286ctl_eff_sb), .eff_sb_irq(at286ctl_eff_sb_irq),
+        .eff_ems(at286ctl_eff_ems), .eff_umb(at286ctl_eff_umb),
+        .eff_vga13(at286ctl_eff_vga13),
+        .eff_joy1_digital(at286ctl_eff_joy1_digital),
+        .eff_joy1_disable(at286ctl_eff_joy1_disable),
+        .eff_joy2_digital(at286ctl_eff_joy2_digital),
+        .eff_joy2_disable(at286ctl_eff_joy2_disable),
+        .eff_joy_sync(at286ctl_eff_joy_sync),
+        .eff_joy_swap(at286ctl_eff_joy_swap),
+        .eff_mt32_gm(at286ctl_eff_mt32_gm), .eff_tandy(at286ctl_eff_tandy),
+        .eff_mpu401(at286ctl_eff_mpu401),
+        .eff_crt_h(at286ctl_eff_crt_h), .eff_crt_v(at286ctl_eff_crt_v),
+        .eff_vsync_w(at286ctl_eff_vsync_width),
+        .eff_hsync_w(at286ctl_eff_hsync_width),
+        .status_effective(at286ctl_status_effective),
+        .status_osd_match(at286ctl_status_osd_match)
+    );
     wire [10:0]  ps2_key;
     wire          ps2_kbd_clk_out;
     wire          ps2_kbd_data_out;
@@ -167,6 +317,80 @@ module emu_at
         .ioctl_din            (16'h0000)
     );
 
+    // The source profile routes the MiSTer UART menu's MIDI mode to the HPS
+    // UART and otherwise leaves MPU-401 MIDI on the external USER I/O cable.
+    // USER I/O can also expose COM2, matching the original option exactly.
+    wire hps_midi = (`ENABLE_MIDI) && (uart_mode >= 8'd3);
+    wire user_io_mt32 = (`ENABLE_MIDI) && !hps_status[6];
+    wire user_io_com2 = (`ENABLE_MIDI) && hps_status[6];
+    wire mt32_disable = hps_status[13];
+    wire [6:0] mt32_user_out;
+    wire       mt32_pi_midi_rx;
+    wire       mt32_available;
+    wire       mt32_midi_connected = user_io_mt32 && mt32_available;
+    // Match the source profile's priority: HPS UART in MIDI mode, otherwise
+    // the MT32-pi MIDI input after its connection handshake, and idle high
+    // while the selected USER I/O pins are floating or disconnected.  Without
+    // this qualification an un-driven SDA/RX pin is interpreted as a UART
+    // break, making 331h read 00h before the first MPU command.
+    wire       midi_rx = hps_midi ? UART_RXD :
+                         mt32_midi_connected ?
+                           mt32_pi_midi_rx : 1'b1;
+    wire       midi_tx;
+    wire       uart2_rx = user_io_mt32 ? 1'b1 : USER_IN[0];
+    wire       uart2_cts_n = user_io_mt32 ? 1'b1 : USER_IN[3];
+    wire       uart2_dsr_n = user_io_mt32 ? 1'b1 : USER_IN[5];
+    wire       uart2_dcd_n = user_io_mt32 ? 1'b1 : USER_IN[6];
+    wire       uart2_tx;
+    wire       uart2_rts_n;
+    wire       uart2_dtr_n;
+    wire       mt32_reset = hps_status[40] | RESET | hps_status[0] |
+                            hps_buttons[1];
+    wire       mt32_mode_req = at286ctl_eff_mt32_gm;
+    wire [1:0] mt32_rom_req = hps_status[4:3];
+    wire [7:0] mt32_sf_req = {5'd0, hps_status[62:60]};
+    wire [15:0] mt32_i2s_r;
+    wire [15:0] mt32_i2s_l;
+    wire [7:0] mt32_mode;
+    wire [7:0] mt32_rom;
+    wire [7:0] mt32_sf;
+    wire       mt32_newmode;
+    wire       mt32_lcd_en;
+    wire       mt32_lcd_pix;
+    wire       mt32_lcd_update;
+    wire       mt32_use = user_io_mt32 && !mt32_disable;
+    wire       mt32_mute = user_io_mt32 && mt32_disable;
+
+    // Exact MIDI baud enable: 50 MHz / (4 * 16 * 25) = 31250 baud. COM2
+    // receives the standard 1.8432 MHz x16 reference for 115200 baud.
+    logic [1:0]  midi_baud_div_q;
+    logic [25:0] uart_baud_phase_q;
+    logic        midi_baudce;
+    logic        uart_baudce;
+    always_ff @(posedge CLK_50M or posedge RESET) begin
+        if (RESET) begin
+            midi_baud_div_q  <= 2'd0;
+            midi_baudce      <= 1'b0;
+            uart_baud_phase_q <= 26'd0;
+            uart_baudce      <= 1'b0;
+        end else begin
+            midi_baudce <= (midi_baud_div_q == 2'd3);
+            if (midi_baud_div_q == 2'd3)
+                midi_baud_div_q <= 2'd0;
+            else
+                midi_baud_div_q <= midi_baud_div_q + 1'b1;
+
+            if ((uart_baud_phase_q + 26'd1_843_200) >= 26'd50_000_000) begin
+                uart_baud_phase_q <= uart_baud_phase_q + 26'd1_843_200 -
+                                     26'd50_000_000;
+                uart_baudce <= 1'b1;
+            end else begin
+                uart_baud_phase_q <= uart_baud_phase_q + 26'd1_843_200;
+                uart_baudce <= 1'b0;
+            end
+        end
+    end
+
     wire        physical_idle;
     wire [12:0] sdram_address;
     wire        sdram_cke;
@@ -219,12 +443,11 @@ module emu_at
     wire        loader_active;
     wire        loader_protocol_error;
 
-    // Match the PCXT status_menumask contract: bits 4 and 5 expose the
-    // missing-main/EGA indicators used by h4/h5 in the configuration string.
-    // The lower four bits are intentionally clear because this profile has no
-    // hidden MIDI/legacy entries occupying those positions.
+    // Match the source profile: bits 4 and 5 expose the missing-main/EGA
+    // indicators, while the lower menu bits control the MIDI/MT32-pi entries.
     assign hps_status_menumask = {10'd0, ~ega_rom_loaded, ~main_rom_loaded,
-                                  4'b0000};
+                                  (`ENABLE_MIDI && mt32_available && at286ctl_eff_mpu401),
+                                  3'b111};
 
     spk286_at_hps_rom_loader u_at_hps_rom_loader (
         .clk                (CLK_50M),
@@ -331,6 +554,10 @@ module emu_at
     wire        at_debug_bridge_idle;
     wire        at_speaker_active;
     wire        at_speaker_level;
+    wire signed [15:0] at_opl2_sound;
+    wire signed [15:0] at_cms_sound_l;
+    wire signed [15:0] at_cms_sound_r;
+    wire signed [10:0] at_tandy_sound;
 
     wire        dma_memory_valid;
     wire        dma_memory_write;
@@ -678,6 +905,9 @@ module emu_at
     wire [11:0] at_video_active_dots_raw;
     wire [9:0]  at_video_active_lines_raw;
 
+    // AT286CTL is clocked by the AT bus and its effective video fields are
+    // fed to the EGA/VGA adapter through the machine boundary.
+
     spk286_at_machine u_at_machine (
         .clk                    (CLK_50M),
         // Keep the AT devices and EGA raster alive during the splash.  Only
@@ -686,6 +916,31 @@ module emu_at
         .cpu_reset              (at_machine_reset),
         .clk_video              (at_video_clk_28),
         .splashscreen           (at_splashscreen),
+        .at286ctl_status_effective(at286ctl_status_effective),
+        .at286ctl_status_osd_match(at286ctl_status_osd_match),
+        .at286ctl_eff_opl2     (at286ctl_eff_opl2),
+        .at286ctl_eff_cms      (at286ctl_eff_cms),
+        .at286ctl_eff_tandy    (at286ctl_eff_tandy),
+        .at286ctl_eff_mpu401   (at286ctl_eff_mpu401),
+        .midi_baudce           (midi_baudce),
+        .uart_baudce           (uart_baudce),
+        .midi_rx               (midi_rx),
+        .uart2_rx              (uart2_rx),
+        .uart2_cts_n           (uart2_cts_n),
+        .uart2_dsr_n           (uart2_dsr_n),
+        .uart2_dcd_n           (uart2_dcd_n),
+        .vga_enabled            (at286ctl_eff_vga13),
+        .vga_mode13_native      (at_vga_mode13_native_osd),
+        .crt_h_offset           (at286ctl_eff_crt_h),
+        .crt_v_offset           (at286ctl_eff_crt_v),
+        .vsync_width_osd        (at286ctl_eff_vsync_width),
+        .hsync_width_osd        (at286ctl_eff_hsync_width),
+        .joy_clk_select         (at286ctl_eff_speed),
+        .joy_opts               (at_joy_opts),
+        .joy0                   (joystick_0[13:0]),
+        .joy1                   (joystick_1[13:0]),
+        .joya0                  (joystick_l_analog_0),
+        .joya1                  (joystick_l_analog_1),
         .execute_enable         (1'b1),
         .counter_clock          (counter_clock),
         .refresh_enable         (1'b1),
@@ -804,6 +1059,14 @@ module emu_at
         .cpu_reset_request      (at_cpu_reset_request),
         .speaker_active         (at_speaker_active),
         .speaker_level          (at_speaker_level),
+        .opl2_sound             (at_opl2_sound),
+        .cms_sound_l            (at_cms_sound_l),
+        .cms_sound_r            (at_cms_sound_r),
+        .tandy_sound            (at_tandy_sound),
+        .midi_tx               (midi_tx),
+        .uart2_tx              (uart2_tx),
+        .uart2_rts_n           (uart2_rts_n),
+        .uart2_dtr_n           (uart2_dtr_n),
         .protocol_error         (machine_protocol_error),
         .video_red              (at_video_red_raw),
         .video_green            (at_video_green_raw),
@@ -820,7 +1083,15 @@ module emu_at
         .video_vmode_toggle     (at_video_vmode_toggle_raw),
         .video_mode350          (at_video_mode350_raw),
         .video_active_dots      (at_video_active_dots_raw),
-        .video_active_lines     (at_video_active_lines_raw)
+        .video_active_lines     (at_video_active_lines_raw),
+        .at286ctl_cpu           (at286ctl_cpu),
+        .at286ctl_exp           (at286ctl_exp),
+        .at286ctl_vid           (at286ctl_vid),
+        .at286ctl_inp           (at286ctl_inp),
+        .at286ctl_midi          (at286ctl_midi),
+        .at286ctl_exp2          (at286ctl_exp2),
+        .at286ctl_crt           (at286ctl_crt),
+        .at286ctl_sync          (at286ctl_sync)
     );
 
     // The AT device owns the EGA registers, planar VRAM and raster.  The EGA
@@ -1062,15 +1333,120 @@ module emu_at
     assign LED_POWER    = 2'b00;
     assign LED_DISK     = {1'b0, main_rom_loaded};
     assign BUTTONS      = hps_buttons;
-    // Minimal PC speaker PCM.  The AT machine supplies a square-wave logic
-    // level from PIT channel 2; present it as a centered signed sample and
-    // leave the output at digital silence while the speaker is gated off.
-    assign AUDIO_L      = !at_speaker_active ? 16'h0000 :
-                          at_speaker_level ? 16'h4000 : 16'hC000;
-    assign AUDIO_R      = !at_speaker_active ? 16'h0000 :
-                          at_speaker_level ? 16'h4000 : 16'hC000;
+
+    // External MT32-pi bridge. It speaks the same USER I/O protocol as the
+    // source profile: MIDI serial to the MPU-401, I²S audio back into the
+    // core, and I²C status/LCD updates for the optional OSD overlay.
+    mt32pi u_mt32pi (
+        .CLK_AUDIO       (CLK_AUDIO),
+        .CLK_VIDEO       (CLK_VIDEO),
+        .CE_PIXEL        (CE_PIXEL),
+        .VGA_VS          (VGA_VS),
+        .VGA_DE          (VGA_DE),
+        // Do not let the MT32-pi receiver sample COM2's USER I/O pins when
+        // that connector is assigned to the UART; ao486 uses the same idle
+        // isolation to prevent a serial line from becoming a MIDI byte/IRQ.
+        .USER_IN         (user_io_mt32 ? USER_IN : 7'h7F),
+        .USER_OUT        (mt32_user_out),
+        .reset           (mt32_reset),
+        .midi_tx         (midi_tx | mt32_mute),
+        .midi_rx         (mt32_pi_midi_rx),
+        .mt32_i2s_r      (mt32_i2s_r),
+        .mt32_i2s_l      (mt32_i2s_l),
+        .mt32_available  (mt32_available),
+        .mt32_mode_req   (mt32_mode_req),
+        .mt32_rom_req    (mt32_rom_req),
+        .mt32_sf_req     (mt32_sf_req),
+        .mt32_mode       (mt32_mode),
+        .mt32_rom        (mt32_rom),
+        .mt32_sf         (mt32_sf),
+        .mt32_newmode    (mt32_newmode),
+        .mt32_lcd_en     (mt32_lcd_en),
+        .mt32_lcd_pix    (mt32_lcd_pix),
+        .mt32_lcd_update (mt32_lcd_update)
+    );
+
+    // MiSTer audio mixer. This retains the source profile's volume, boost
+    // and stereo-mix controls while summing only the PC speaker, OPL2, C/MS
+    // and Tandy sources. Sound Blaster is intentionally absent.
+    wire signed [16:0] audio_opl2 = {at_opl2_sound[15], at_opl2_sound};
+    wire signed [16:0] audio_cms_l = {at_cms_sound_l[15], at_cms_sound_l};
+    wire signed [16:0] audio_cms_r = {at_cms_sound_r[15], at_cms_sound_r};
+    wire [16:0] audio_tandy = `ENABLE_TANDY_AUDIO ?
+        {{{2{at_tandy_sound[10]}}, {4{at_tandy_sound[10]}}, at_tandy_sound}
+          << hps_status[33:32], 2'b00} : 17'd0;
+    wire [15:0] audio_speaker_amplitude =
+        16'h0800 << hps_status[33:32];
+    wire signed [16:0] audio_speaker = !at_speaker_active ? 17'sd0 :
+        at_speaker_level ? $signed({1'b0, audio_speaker_amplitude}) :
+                            -$signed({1'b0, audio_speaker_amplitude});
+    wire signed [16:0] audio_mt32_l_ext =
+        {mt32_i2s_l[15], mt32_i2s_l};
+    wire signed [16:0] audio_mt32_r_ext =
+        {mt32_i2s_r[15], mt32_i2s_r};
+    wire signed [16:0] audio_mt32_l = mt32_use ?
+        {audio_mt32_l_ext[16], audio_mt32_l_ext[16:1]} : 17'sd0;
+    wire signed [16:0] audio_mt32_r = mt32_use ?
+        {audio_mt32_r_ext[16], audio_mt32_r_ext[16:1]} : 17'sd0;
+    wire signed [16:0] audio_sum_l = audio_opl2 + audio_cms_l +
+                                      $signed(audio_tandy) + audio_speaker +
+                                      audio_mt32_l;
+    wire signed [16:0] audio_sum_r = audio_opl2 + audio_cms_r +
+                                      $signed(audio_tandy) + audio_speaker +
+                                      audio_mt32_r;
+
+    localparam integer COMP_F1 = 4;
+    localparam integer COMP_A1 = 2;
+    localparam integer COMP_X1 = ((32767 * (COMP_F1 - 1)) /
+                                  ((COMP_F1 * COMP_A1) - 1)) + 1;
+    localparam integer COMP_B1 = COMP_X1 * COMP_A1;
+    localparam integer COMP_F2 = 8;
+    localparam integer COMP_A2 = 4;
+    localparam integer COMP_X2 = ((32767 * (COMP_F2 - 1)) /
+                                  ((COMP_F2 * COMP_A2) - 1)) + 1;
+    localparam integer COMP_B2 = COMP_X2 * COMP_A2;
+
+    function automatic [15:0] compress_audio(input [15:0] inp);
+        reg [15:0] v;
+        reg [15:0] v1;
+        reg [15:0] v2;
+        begin
+            v  = inp[15] ? (~inp) + 1'd1 : inp;
+            v1 = (v < COMP_X1) ? (v * COMP_A1) :
+                 (((v - COMP_X1) / COMP_F1) + COMP_B1);
+            v2 = (v < COMP_X2) ? (v * COMP_A2) :
+                 (((v - COMP_X2) / COMP_F2) + COMP_B2);
+            v = hps_status[37] ? v2 : v1;
+            compress_audio = inp[15] ? ~(v - 1'd1) : v;
+        end
+    endfunction
+
+    logic signed [15:0] audio_out_l_q;
+    logic signed [15:0] audio_out_r_q;
+    logic signed [15:0] audio_cmp_l_q;
+    logic signed [15:0] audio_cmp_r_q;
+    always_ff @(posedge CLK_50M or posedge RESET) begin
+        if (RESET) begin
+            audio_out_l_q <= 16'sd0;
+            audio_out_r_q <= 16'sd0;
+            audio_cmp_l_q <= 16'sd0;
+            audio_cmp_r_q <= 16'sd0;
+        end else begin
+            audio_out_l_q <= (^audio_sum_l[16:15]) ?
+                             {audio_sum_l[16], {15{audio_sum_l[15]}}} :
+                             audio_sum_l[15:0];
+            audio_out_r_q <= (^audio_sum_r[16:15]) ?
+                             {audio_sum_r[16], {15{audio_sum_r[15]}}} :
+                             audio_sum_r[15:0];
+            audio_cmp_l_q <= compress_audio(audio_out_l_q);
+            audio_cmp_r_q <= compress_audio(audio_out_r_q);
+        end
+    end
+
+    assign AUDIO_L      = hps_status[37:36] ? audio_cmp_l_q : audio_out_l_q;
+    assign AUDIO_R      = hps_status[37:36] ? audio_cmp_r_q : audio_out_r_q;
     assign AUDIO_S      = 1'b1;
-    assign AUDIO_MIX    = 2'b00;
+    assign AUDIO_MIX    = hps_status[39:38];
     assign ADC_BUS      = 4'hz;
     assign SD_SCK       = 1'bz;
     assign SD_MOSI      = 1'bz;
@@ -1082,9 +1458,15 @@ module emu_at
     assign DDRAM_DIN    = 64'h0;
     assign DDRAM_BE     = 8'h0;
     assign DDRAM_WE     = 1'b0;
-    assign UART_RTS     = 1'b0;
-    assign UART_TXD     = 1'b1;
-    assign UART_DTR     = 1'b0;
-    assign USER_OUT     = 7'h00;
+    // The HPS UART becomes the MPU-401 MIDI transport in its MIDI mode;
+    // otherwise the selected COM2 path owns the pins. Match the source
+    // profile by releasing the HPS modem outputs while MIDI mode is active.
+    assign UART_TXD     = hps_midi ? midi_tx : uart2_tx;
+    assign UART_RTS     = hps_midi ? 1'b0 : uart2_rts_n;
+    assign UART_DTR     = hps_midi ? 1'b0 : uart2_dtr_n;
+    assign USER_OUT     = user_io_mt32 ? mt32_user_out :
+                          user_io_com2 ? {1'b1, 1'b1, uart2_dtr_n,
+                                           1'b1, uart2_rts_n,
+                                           uart2_tx, 1'b1} : 7'h7F;
 
 endmodule

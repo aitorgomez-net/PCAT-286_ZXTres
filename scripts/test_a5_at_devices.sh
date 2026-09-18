@@ -17,7 +17,12 @@ sources=(
   rtl/spk286_integration/spk286_at_xtide.sv
   rtl/spk286_integration/spk286_at_storage_video.sv
   rtl/spk286_integration/spk286_at_video_adapter.sv
+  rtl/spk286_integration/at286ctl.sv
   rtl/KFPC-XT/HDL/ega_vram_bram_frontend.sv
+  rtl/common/tandy_pcjr_joy.sv
+  rtl/spk286_integration/spk286_at_gameport.sv
+  rtl/spk286_integration/spk286_at_sound.sv
+  rtl/spk286_integration/spk286_at_serial.sv
   rtl/spk286_integration/spk286_at_device_router.sv
   rtl/spk286_integration/spk286_at_arbiter.sv
   rtl/spk286_integration/spk286_at_dma.sv
@@ -27,13 +32,13 @@ for source in rtl/video/*.v rtl/video/*.sv; do
   sources+=("$source")
 done
 
-iverilog -g2012 -s spk286_at_devices_tb \
+iverilog -g2012 -DSPK286_AT_SIM_MODEL -s spk286_at_devices_tb \
   -o "$build_dir/a5_iv" "${sources[@]}" \
   >"$build_dir/iverilog-build.log" 2>&1
 (cd "$root/rtl/video" && vvp "$build_dir/a5_iv") | tee "$build_dir/iverilog-run.log"
 
 rm -rf "$build_dir/verilator-obj"
-verilator --binary --timing --top-module spk286_at_devices_tb \
+verilator --binary --timing -DSPK286_AT_SIM_MODEL --top-module spk286_at_devices_tb \
   -Wno-fatal --Mdir "$build_dir/verilator-obj" -o a5_vlt \
   "${sources[@]}" >"$build_dir/verilator-build.log" 2>&1
 (cd "$root/rtl/video" && "$build_dir/verilator-obj/a5_vlt") | tee "$build_dir/verilator-run.log"

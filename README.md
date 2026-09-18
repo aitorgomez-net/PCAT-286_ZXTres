@@ -1,9 +1,9 @@
 # PCAT-286 for MiSTer
 
-Use ISA16 IDE data transfers and standard ports; align invalid-opcode behavior and add BIOS interrupt compatibility with directed PIC, PIT and option-ROM probes.
+Add VGA+ and AT286CTL, joystick gameport, AdLib, C/MS, Tandy and MPU-401/MT32-pi integration.
 
 This development snapshot is part of the consolidated chronological
-history. Its source state comes from 2026-09-16.
+history. Its source state comes from 2026-09-18.
 The latest revision contains the common technical reference and current
 validation instructions. Historical reports and compiled candidates are
 kept in the original development archive, outside this branch.

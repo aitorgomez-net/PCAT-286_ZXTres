@@ -1,5 +1,9 @@
 `timescale 1ns/1ps
 
+`ifndef ENABLE_MIDI
+`define ENABLE_MIDI 0
+`endif
+
 // Composed CPU-to-AT boundary test.  The memory model is intentionally small:
 // it provides the externally loaded 64 KiB system ROM, sparse conventional
 // memory and the same handshake used by a future MiSTer SDRAM owner.
@@ -149,6 +153,39 @@ module spk286_at_machine_tb;
     integer rom_file;
     integer loaded_bytes;
     reg [8*512-1:0] rom_path;
+    logic runtime_mpu_enable = `ENABLE_MIDI;
+    logic runtime_midi_rx = 1'b1;
+    logic runtime_mpu_test;
+    logic runtime_mpu_switched = 1'b0;
+    logic mpu_rx_started = 1'b0;
+
+    task automatic send_midi_test_byte(input logic [7:0] data);
+        integer bit_index;
+        begin
+            @(negedge clk);
+            runtime_midi_rx = 1'b0;
+            repeat (8) @(posedge clk);
+            for (bit_index = 0; bit_index < 8; bit_index = bit_index + 1) begin
+                runtime_midi_rx = data[bit_index];
+                repeat (16) @(posedge clk);
+            end
+            runtime_midi_rx = 1'b1;
+            repeat (16) @(posedge clk);
+        end
+    endtask
+
+    always @(posedge clk) begin
+        if (!reset && $test$plusargs("MPU_RX_TEST") && !mpu_rx_started &&
+            cpu_ready && cpu_bus_valid && cpu_bus_write &&
+            (cpu_bus_status == 4'hA) && (cpu_address[15:0] == 16'h0331) &&
+            ((cpu_data_out[7:0] == 8'h3f) ||
+             (cpu_data_out[15:8] == 8'h3f))) begin
+            mpu_rx_started = 1'b1;
+            fork
+                send_midi_test_byte(8'h55);
+            join_none
+        end
+    end
 
     integer accepted_memory_beats = 0;
     integer accepted_io_writes = 0;
@@ -406,6 +443,10 @@ module spk286_at_machine_tb;
 
     spk286_at_machine dut (
         .clk(clk), .reset(reset), .cpu_reset(reset), .clk_video(clk_video), .splashscreen(1'b0),
+        .at286ctl_eff_mpu401(runtime_mpu_enable),
+        .midi_baudce(1'b1), .uart_baudce(1'b1), .midi_rx(runtime_midi_rx),
+        .uart2_rx(1'b1), .uart2_cts_n(1'b1), .uart2_dsr_n(1'b1),
+        .uart2_dcd_n(1'b1),
         .execute_enable(execute_enable),
         .counter_clock(counter_clock), .refresh_enable(refresh_enable),
         .mgmt_address(16'h0000), .mgmt_writedata(16'h0000),
@@ -466,10 +507,22 @@ module spk286_at_machine_tb;
         if (!$value$plusargs("MAX_CYCLES=%d", max_cycles))
             max_cycles = 2000000;
 
+        runtime_mpu_test = $test$plusargs("RUNTIME_MPU_ENABLE");
+        if (runtime_mpu_test) begin
+            runtime_mpu_enable = 1'b0;
+            runtime_midi_rx = 1'b0;
+        end
+
         repeat (8) @(posedge clk);
         reset = 1'b0;
         for (cycles = 0; cycles < max_cycles; cycles = cycles + 1) begin
             @(negedge clk);
+            if (runtime_mpu_test && !runtime_mpu_switched &&
+                (cycles == 500)) begin
+                runtime_mpu_enable = 1'b1;
+                runtime_mpu_switched = 1'b1;
+                $display("AT_RUNTIME_MPU_ENABLED midi_rx=%b", runtime_midi_rx);
+            end
             if (cpu_fault || protocol_error)
                 $fatal(1, "AT_SYSTEM_FAULT cycle=%0d cs_ip=%04h:%04h opcode=%02h owner=%0d bridge_idle=%b fault=%b",
                        cycles, debug_cs, debug_ip, debug_opcode, bus_owner,

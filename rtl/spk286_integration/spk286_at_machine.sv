@@ -7,6 +7,19 @@
 // to the SDRAM/HPS/media/video owners without changing the CPU contract.
 `timescale 1ns/1ps
 
+`ifndef ENABLE_OPL2
+`define ENABLE_OPL2 0
+`endif
+`ifndef ENABLE_CMS
+`define ENABLE_CMS 0
+`endif
+`ifndef ENABLE_TANDY_AUDIO
+`define ENABLE_TANDY_AUDIO 0
+`endif
+`ifndef ENABLE_MIDI
+`define ENABLE_MIDI 0
+`endif
+
 module spk286_at_machine (
     input  logic         clk,
     input  logic         reset,
@@ -15,6 +28,31 @@ module spk286_at_machine (
     input  logic         cpu_reset,
     input  logic         clk_video,
     input  logic         splashscreen,
+    input  logic [39:0]  at286ctl_status_effective,
+    input  logic [17:0]  at286ctl_status_osd_match,
+    input  logic [1:0]   at286ctl_eff_opl2,
+    input  logic         at286ctl_eff_cms,
+    input  logic         at286ctl_eff_tandy,
+    input  logic         at286ctl_eff_mpu401,
+    input  logic         midi_baudce,
+    input  logic         uart_baudce,
+    input  logic         midi_rx,
+    input  logic         uart2_rx,
+    input  logic         uart2_cts_n,
+    input  logic         uart2_dsr_n,
+    input  logic         uart2_dcd_n,
+    input  logic         vga_enabled,
+    input  logic         vga_mode13_native,
+    input  logic [3:0]   crt_h_offset,
+    input  logic [2:0]   crt_v_offset,
+    input  logic [2:0]   vsync_width_osd,
+    input  logic [2:0]   hsync_width_osd,
+    input  logic [1:0]   joy_clk_select,
+    input  logic [4:0]   joy_opts,
+    input  logic [13:0]  joy0,
+    input  logic [13:0]  joy1,
+    input  logic [15:0]  joya0,
+    input  logic [15:0]  joya1,
     input  logic         execute_enable,
     input  logic         counter_clock,
     input  logic         refresh_enable,
@@ -85,6 +123,14 @@ module spk286_at_machine (
     output logic         nmi_mask,
     output logic         speaker_active,
     output logic         speaker_level,
+    output logic signed [15:0] opl2_sound,
+    output logic signed [15:0] cms_sound_l,
+    output logic signed [15:0] cms_sound_r,
+    output logic signed [10:0] tandy_sound,
+    output logic         midi_tx,
+    output logic         uart2_tx,
+    output logic         uart2_rts_n,
+    output logic         uart2_dtr_n,
 
     output logic [3:0]   selected_device,
     output logic         unmapped_request,
@@ -108,6 +154,14 @@ module spk286_at_machine (
     output logic         video_mode350,
     output logic [11:0]  video_active_dots,
     output logic [9:0]   video_active_lines,
+    output logic [7:0]   at286ctl_cpu,
+    output logic [7:0]   at286ctl_exp,
+    output logic [7:0]   at286ctl_vid,
+    output logic [7:0]   at286ctl_inp,
+    output logic [7:0]   at286ctl_midi,
+    output logic [7:0]   at286ctl_exp2,
+    output logic [7:0]   at286ctl_crt,
+    output logic [7:0]   at286ctl_sync,
 
     output logic         cpu_hold_request,
     output logic         cpu_hlda,
@@ -356,11 +410,27 @@ module spk286_at_machine (
     logic        cpu_owner_active;
     logic        cpu_memory_candidate;
     logic        device_request_candidate;
+    logic        sound_io_candidate;
+    logic        warm_boot_marker_event;
 
     // The 8042 reset is a CPU-local warm reset.  It must flush the CPU and
     // its retained bus transaction, but must not reset CMOS or the other AT
     // devices because the BIOS uses CMOS shutdown codes to resume POST.
     wire       cpu_core_reset = reset | cpu_reset | devices_cpu_reset_request;
+
+    // IBM AT BIOSes announce a warm reboot by storing 1234h at physical
+    // address 0040:0072. Keep this as a one-cycle event so AT286CTL can drop
+    // only its VGA+ enable while preserving other per-program overrides.
+    always_ff @(posedge clk or posedge reset) begin
+        if (reset)
+            warm_boot_marker_event <= 1'b0;
+        else
+            warm_boot_marker_event <= cpu_owner_active && at_command_valid &&
+                                      !at_io && at_write &&
+                                      (at_address[19:0] == 20'h00472) &&
+                                      (at_byte_enable == 2'b11) &&
+                                      (at_data_out == 16'h1234);
+    end
 
     function automatic logic is_pic_port(input logic [15:0] port);
         begin
@@ -387,7 +457,13 @@ module spk286_at_machine (
         begin
             is_a5_io_port = (port == 16'h0060) || (port == 16'h0064) ||
                             (port == 16'h0070) || (port == 16'h0071) ||
+                            ((port >= 16'h8980) && (port <= 16'h898F)) ||
                             ((port >= 16'h01F0) && (port <= 16'h01F7)) ||
+                            ((port >= 16'h0200) && (port <= 16'h0207)) ||
+                            ((`ENABLE_MIDI) &&
+                             (port >= 16'h02F8) && (port <= 16'h02FF)) ||
+                            ((`ENABLE_MIDI) &&
+                             (port >= 16'h0330) && (port <= 16'h0331)) ||
                             ((port >= 16'h03B0) && (port <= 16'h03DF)) ||
                             ((port >= 16'h03F0) && (port <= 16'h03F7));
         end
@@ -398,10 +474,34 @@ module spk286_at_machine (
     always_comb begin
         pic_io_candidate = at_io && is_pic_port(at_address[15:0]);
         pit_io_candidate = at_io && is_pit_port(at_address[15:0]);
-        dma_io_candidate = at_io && is_dma_port(at_address[15:0]);
+        sound_io_candidate = at_io &&
+                             (((`ENABLE_OPL2) &&
+                               (at286ctl_eff_opl2 != 2'd2) &&
+                               (((at_address[15:0] == 16'h0388) ||
+                                 (at_address[15:0] == 16'h0389)) ||
+                                ((at286ctl_eff_opl2 == 2'd1) &&
+                                 ((at_address[15:0] == 16'h0228) ||
+                                  (at_address[15:0] == 16'h0229))))) ||
+                              ((`ENABLE_CMS) && at286ctl_eff_cms &&
+                               (at_address[15:4] == 12'h022) &&
+                               (((at_write) && !at_address[3]) ||
+                                ((!at_write) &&
+                                 ((at_address[3:0] == 4'h4) ||
+                                  (at_address[3:0] == 4'hB))))) ||
+                              ((`ENABLE_TANDY_AUDIO) && at286ctl_eff_tandy &&
+                               at_write &&
+                               (at_address[15:4] == 12'h00C)));
+        // Tandy's C0h-CFh decode takes the first half of the AT secondary-DMA
+        // page, just as it does on the source XT profile. Keep D0h-DFh for
+        // the DMA controller when Tandy sound is enabled.
+        dma_io_candidate = at_io && is_dma_port(at_address[15:0]) &&
+                           !((`ENABLE_TANDY_AUDIO) && at286ctl_eff_tandy &&
+                             (at_address[15:4] == 12'h00C));
         a5_io_candidate = at_io && is_a5_io_port(at_address[15:0]);
         io_known_target = at_inta || pic_io_candidate || pit_io_candidate ||
-                          dma_io_candidate || a5_io_candidate || (at_io && at_address[15:0]==16'h61);
+                          dma_io_candidate || a5_io_candidate ||
+                          sound_io_candidate ||
+                          (at_io && at_address[15:0]==16'h61);
         io_unmapped_candidate = cpu_owner_active && at_io &&
                                 !io_known_target;
         memory_unmapped_candidate = cpu_owner_active && !at_io && !at_inta &&
@@ -410,7 +510,7 @@ module spk286_at_machine (
                                memory_cycle && !video_aperture_select &&
                                !rom_write_blocked;
         device_request_candidate = cpu_owner_active &&
-                                   (a5_io_candidate ||
+                                   (a5_io_candidate || sound_io_candidate ||
                                     video_aperture_select);
     end
 
@@ -563,6 +663,36 @@ module spk286_at_machine (
         .reset                  (reset),
         .clk_video              (clk_video),
         .splashscreen           (splashscreen),
+        .clear_vga13            (warm_boot_marker_event),
+        .at286ctl_status_effective(at286ctl_status_effective),
+        .at286ctl_status_osd_match(at286ctl_status_osd_match),
+        .vga_enabled            (vga_enabled),
+        .vga_mode13_native      (vga_mode13_native),
+        .crt_h_offset           (crt_h_offset),
+        .crt_v_offset           (crt_v_offset),
+        .vsync_width_osd        (vsync_width_osd),
+        .hsync_width_osd        (hsync_width_osd),
+        .joy_clk_select         (joy_clk_select),
+        .joy_opts               (joy_opts),
+        .joy0                   (joy0),
+        .joy1                   (joy1),
+        .joya0                  (joya0),
+        .joya1                  (joya1),
+        .at286ctl_eff_opl2     (at286ctl_eff_opl2),
+        .at286ctl_eff_cms      (at286ctl_eff_cms),
+        .at286ctl_eff_tandy    (at286ctl_eff_tandy),
+        .at286ctl_eff_mpu401   (at286ctl_eff_mpu401),
+        .midi_baudce           (midi_baudce),
+        .uart_baudce           (uart_baudce),
+        .midi_rx               (midi_rx),
+        .uart2_rx              (uart2_rx),
+        .uart2_cts_n           (uart2_cts_n),
+        .uart2_dsr_n           (uart2_dsr_n),
+        .uart2_dcd_n           (uart2_dcd_n),
+        .midi_tx               (midi_tx),
+        .uart2_tx              (uart2_tx),
+        .uart2_rts_n           (uart2_rts_n),
+        .uart2_dtr_n           (uart2_dtr_n),
         .request_valid          (device_request_candidate),
         .request_command_valid  (at_command_valid),
         .request_write          (at_write),
@@ -635,6 +765,18 @@ module spk286_at_machine (
         .video_mode350          (video_mode350),
         .video_active_dots      (video_active_dots),
         .video_active_lines     (video_active_lines),
+        .at286ctl_cpu           (at286ctl_cpu),
+        .at286ctl_exp           (at286ctl_exp),
+        .at286ctl_vid           (at286ctl_vid),
+        .at286ctl_inp           (at286ctl_inp),
+        .at286ctl_midi          (at286ctl_midi),
+        .at286ctl_exp2          (at286ctl_exp2),
+        .at286ctl_crt           (at286ctl_crt),
+        .at286ctl_sync          (at286ctl_sync),
+        .opl2_sound             (opl2_sound),
+        .cms_sound_l            (cms_sound_l),
+        .cms_sound_r            (cms_sound_r),
+        .tandy_sound            (tandy_sound),
         .side_effect_count      (device_side_effect_count),
         .irq_request             (devices_irq_request),
         .protocol_error          (devices_protocol_error)

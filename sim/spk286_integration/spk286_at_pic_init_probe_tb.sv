@@ -155,7 +155,26 @@ module spk286_at_pic_init_probe_tb;
         repeat (4) @(posedge clk);
         if (intr)
             $fatal(1, "AT IRQ14 EOI did not clear INTR");
-        $display("AT_PIC_INIT_PROBE_PASS master_state=%0d slave_state=%0d irq14_vector=76 intr=%b",
+
+        // MPU-401 is an AT slave-PIC device: IRQ9 must assert the cascade,
+        // complete the same two INTA beats and return vector 71h.  This is
+        // deliberately checked after IRQ14 so a stale slave in-service bit
+        // cannot hide a broken cascade hand-off.
+        write_pic(16'h00A1, 8'hFD); // unmask slave IRQ9 (MPU-401)
+        irq_request = 16'h0200;
+        repeat (8) @(posedge clk);
+        if (!intr || !slave_intr)
+            $fatal(1, "AT IRQ9 did not reach the cascaded PICs");
+        send_inta(1'b0, 8'h00);
+        send_inta(1'b1, 8'h71);
+        irq_request = 16'h0000;
+        write_pic(16'h00A0, 8'h20);
+        write_pic(16'h0020, 8'h20);
+        repeat (4) @(posedge clk);
+        if (intr)
+            $fatal(1, "AT IRQ9 EOI did not clear INTR");
+
+        $display("AT_PIC_INIT_PROBE_PASS master_state=%0d slave_state=%0d irq14_vector=76 irq9_vector=71 intr=%b",
                  dut.u_master_pic.u_Control_Logic.command_state,
                  dut.u_slave_pic.u_Control_Logic.command_state,
                  intr);

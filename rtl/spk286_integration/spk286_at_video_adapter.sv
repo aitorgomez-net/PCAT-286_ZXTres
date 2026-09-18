@@ -5,8 +5,9 @@
 // small toggle mailbox carries one I/O transaction at a time across that
 // boundary.  The request is held in the video domain long enough for
 // ega_top's settled-bus qualifier, and the response returns with a matching
-// toggle.  Video aperture accesses stay in the 50 MHz domain at the frontend,
-// while the frontend's dual-port planar VRAM is shared with the raster.
+// toggle.  Video aperture accesses stay in the 50 MHz domain at the
+// frontends; planar EGA VRAM and the packed VGA framebuffer are each shared
+// with the raster through their own dual-port memories.
 `timescale 1ns/1ps
 
 module spk286_at_video_adapter (
@@ -14,6 +15,12 @@ module spk286_at_video_adapter (
     input  logic        reset,
     input  logic        clk_video,
     input  logic        splashscreen,
+    input  logic        vga_enabled,
+    input  logic        vga_mode13_native,
+    input  logic [3:0]  crt_h_offset,
+    input  logic [2:0]  crt_v_offset,
+    input  logic [2:0]  vsync_width_osd,
+    input  logic [2:0]  hsync_width_osd,
 
     input  logic        request_valid,
     input  logic        request_command_valid,
@@ -142,7 +149,9 @@ module spk286_at_video_adapter (
     logic [7:0]  memory_data_q;
     logic [1:0]  memory_byte_enable_q;
     logic [7:0]  memory_read_data;
-    logic        memory_ready;
+    wire         vram_cpu_ready;
+    wire         vga_framebuffer_cpu_ready;
+    wire         memory_ready;
 
     wire io_idle = !io_busy_q;
     wire memory_idle = !memory_busy_q;
@@ -226,6 +235,7 @@ module spk286_at_video_adapter (
     end
 
     wire [7:0] vram_cpu_dout;
+    wire [7:0] vga_framebuffer_cpu_dout;
     wire [7:0] vram_plane0;
     wire [7:0] vram_plane1;
     wire [7:0] vram_plane2;
@@ -238,6 +248,12 @@ module spk286_at_video_adapter (
 
     wire [15:0] ega_fetch_addr;
     wire        ega_fetch_en;
+    wire [15:0] vga_framebuffer_addr;
+    wire        vga_framebuffer_read_en;
+    wire [7:0]  vga_framebuffer_pixel;
+    wire        vga_framebuffer_data_valid;
+    wire        vga_mode13_active_video;
+    wire        vga_planar_memory_active_video;
     wire [15:0] ega_text_cell_addr;
     wire [15:0] ega_text_font_addr;
     wire        ega_text_fetch_en;
@@ -262,7 +278,31 @@ module spk286_at_video_adapter (
     wire [1:0]  ega_rop_select;
     wire [2:0]  ega_rotate_count;
 
-    assign memory_read_data = vram_cpu_dout;
+    // Standard VGA mode 13h uses a packed 64 KiB A0000 framebuffer. Keep its
+    // CPU aperture separate from the planar EGA VRAM, whose Chain-4 path is
+    // intentionally handled by ega_vram_bram_frontend.
+    logic vga_packed_memory_sync1_q;
+    logic vga_packed_memory_sync2_q;
+    wire  vga_packed_memory_active = vga_packed_memory_sync2_q;
+    wire  vga_packed_memory_request = memory_busy_q &&
+                                       vga_packed_memory_active &&
+                                       !memory_a16_q;
+
+    assign memory_read_data = vga_packed_memory_request ?
+                               vga_framebuffer_cpu_dout : vram_cpu_dout;
+    assign memory_ready = vga_packed_memory_request ?
+                          vga_framebuffer_cpu_ready : vram_cpu_ready;
+
+    always_ff @(posedge clk or posedge reset) begin
+        if (reset) begin
+            vga_packed_memory_sync1_q <= 1'b0;
+            vga_packed_memory_sync2_q <= 1'b0;
+        end else begin
+            vga_packed_memory_sync1_q <= vga_mode13_active_video &&
+                                         !vga_planar_memory_active_video;
+            vga_packed_memory_sync2_q <= vga_packed_memory_sync1_q;
+        end
+    end
 
     // ega_top sees the memory access in its own clock domain.  The VRAM
     // frontend has its own two-stage configuration crossing back to clk.
@@ -292,10 +332,12 @@ module spk286_at_video_adapter (
         .cpu_addr           (memory_address_q),
         .cpu_a16            (memory_a16_q),
         .cpu_din            (memory_data_q),
-        .cpu_read           (memory_busy_q && memory_read_q),
-        .cpu_write         (memory_busy_q && memory_write_q),
+        .cpu_read           (memory_busy_q && memory_read_q &&
+                             !vga_packed_memory_request),
+        .cpu_write          (memory_busy_q && memory_write_q &&
+                             !vga_packed_memory_request),
         .cpu_dout           (vram_cpu_dout),
-        .cpu_ready          (memory_ready),
+        .cpu_ready          (vram_cpu_ready),
         .video_addr         (ega_fetch_addr),
         .video_read_en      (ega_fetch_en),
         .video_plane0       (vram_plane0),
@@ -329,6 +371,24 @@ module spk286_at_video_adapter (
         .enable_set_reset   (ega_enable_set_reset),
         .rop_select         (ega_rop_select),
         .rotate_count       (ega_rotate_count)
+    );
+
+    vga_framebuffer u_vga_framebuffer (
+        .clk_cpu            (clk),
+        .reset_cpu          (reset),
+        .cpu_addr           (memory_address_q),
+        .cpu_din            (memory_data_q),
+        .cpu_read           (memory_busy_q && memory_read_q &&
+                             vga_packed_memory_request),
+        .cpu_write          (memory_busy_q && memory_write_q &&
+                             vga_packed_memory_request),
+        .cpu_dout           (vga_framebuffer_cpu_dout),
+        .cpu_ready          (vga_framebuffer_cpu_ready),
+        .clk_video          (clk_video),
+        .video_addr         (vga_framebuffer_addr),
+        .video_read_en      (vga_framebuffer_read_en),
+        .video_pixel        (vga_framebuffer_pixel),
+        .video_data_valid   (vga_framebuffer_data_valid)
     );
 
     // Video-domain request mailbox.  The command fields are held constant by
@@ -447,10 +507,10 @@ module spk286_at_video_adapter (
         .ega_text_attr              (vram_text_attr),
         .ega_text_glyph             (vram_text_glyph),
         .ega_text_data_valid        (vram_text_valid),
-        .vga_framebuffer_addr       (),
-        .vga_framebuffer_read_en    (),
-        .vga_framebuffer_pixel      (8'h00),
-        .vga_framebuffer_data_valid (1'b0),
+        .vga_framebuffer_addr       (vga_framebuffer_addr),
+        .vga_framebuffer_read_en    (vga_framebuffer_read_en),
+        .vga_framebuffer_pixel      (vga_framebuffer_pixel),
+        .vga_framebuffer_data_valid (vga_framebuffer_data_valid),
         .cpu_mem_select             (memory_select_video2_q),
         .cpu_mem_write              (memory_write_video2_q),
         .ega_cfg_toggle             (ega_cfg_toggle),
@@ -498,19 +558,19 @@ module spk286_at_video_adapter (
         .scandouble_en              (1'b0),
         .ega_enabled                (1'b1),
         .ega_monitor_profile        (2'b00),
-        .vga_enabled                (1'b0),
-        .vga_mode13_native          (1'b0),
+        .vga_enabled                (vga_enabled),
+        .vga_mode13_native          (vga_mode13_native),
         .vga_mode13_set             (1'b0),
         .vga_mode13_clear           (1'b0),
-        .vga_mode13_active_out      (),
+        .vga_mode13_active_out      (vga_mode13_active_video),
         .vga_unchained256_active_out(),
         .vga_mode13_wide_clock_out  (),
-        .vga_planar_memory_active_out(),
+        .vga_planar_memory_active_out(vga_planar_memory_active_video),
         .vga_mode13_pixel_toggle_out(),
-        .crt_h_offset               (4'h0),
-        .crt_v_offset               (3'h0),
-        .vsync_width_osd            (3'h0),
-        .hsync_width_osd            (3'h0)
+        .crt_h_offset               (crt_h_offset),
+        .crt_v_offset               (crt_v_offset),
+        .vsync_width_osd            (vsync_width_osd),
+        .hsync_width_osd            (hsync_width_osd)
     );
 
 endmodule
