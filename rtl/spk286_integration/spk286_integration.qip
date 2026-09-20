@@ -67,3 +67,4 @@ set_global_assignment -name SYSTEMVERILOG_FILE "rtl/spk286_integration/spk286_at
 set_global_assignment -name SYSTEMVERILOG_FILE "rtl/spk286_integration/spk286_at_gameport.sv"
 set_global_assignment -name SYSTEMVERILOG_FILE "rtl/spk286_integration/spk286_at_sound.sv"
 set_global_assignment -name SYSTEMVERILOG_FILE "rtl/spk286_integration/spk286_at_serial.sv"
+set_global_assignment -name SYSTEMVERILOG_FILE "rtl/spk286_integration/spk286_at_ems.sv"

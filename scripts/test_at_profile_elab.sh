@@ -50,7 +50,7 @@ if ! grep -q '"P1O7,Boot Splash Screen,Yes,No;"' \
      "$ROOT_DIR/PCAT-286.sv" || \
    ! grep -q '"P1FC0,ROM,PCAT BIOS:;"' \
      "$ROOT_DIR/PCAT-286.sv" || \
-   ! grep -q '"P1FC2,ROM,EC00 BIOS:;"' \
+   ! grep -q '"P1FC2,ROM,C800 BIOS:;"' \
      "$ROOT_DIR/PCAT-286.sv" || \
    ! grep -q '"P1FC3,ROM,EGA BIOS:;"' \
      "$ROOT_DIR/PCAT-286.sv" || \
@@ -179,6 +179,8 @@ iverilog -g2012 -I"$KF8253_DIR" -Wall -Wno-timescale \
     -DENABLE_CMS=1 \
     -DENABLE_TANDY_AUDIO=1 \
     -DENABLE_MIDI=1 \
+    -DENABLE_EMS=1 \
+    -DENABLE_UMB=1 \
     -DSPK286_P05_PARALLEL_LIMIT_CHECK \
     -DSPK286_AT_NO_DEBUG \
     -DSPK286_AT_SIM_MODEL \

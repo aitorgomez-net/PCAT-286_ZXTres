@@ -1,6 +1,6 @@
 // AT transaction adapter for the same KF8253 counters used by PCXT.
 // The payload remains stable through the rising /WR edge and read release.
-// 8254 read-back commands are not implemented by this 8253-compatible backend.
+// Enable the 8254 count/status read-back interface required by AT software.
 `timescale 1ns/1ps
 
 module spk286_at_pit (
@@ -40,7 +40,7 @@ module spk286_at_pit (
     assign request_read_data = high_lane_q ? {read_q,8'h00} : {8'h00,read_q};
     assign irq0 = counter_out[0]; // AT IRQ0 is the timer OUT level.
 
-    KF8253 u_timer (
+    KF8253 #(.ENABLE_8254(1'b1)) u_timer (
         .clock(clk), .reset(reset),
         .chip_select_n(state_q == IDLE),
         .read_enable_n(!(state_q == STROBE && !write_q)),

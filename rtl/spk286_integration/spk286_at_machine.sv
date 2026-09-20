@@ -19,6 +19,12 @@
 `ifndef ENABLE_MIDI
 `define ENABLE_MIDI 0
 `endif
+`ifndef ENABLE_EMS
+`define ENABLE_EMS 0
+`endif
+`ifndef ENABLE_UMB
+`define ENABLE_UMB 0
+`endif
 
 module spk286_at_machine (
     input  logic         clk,
@@ -34,6 +40,8 @@ module spk286_at_machine (
     input  logic         at286ctl_eff_cms,
     input  logic         at286ctl_eff_tandy,
     input  logic         at286ctl_eff_mpu401,
+    input  logic         at286ctl_eff_ems,
+    input  logic         at286ctl_eff_umb,
     input  logic         midi_baudce,
     input  logic         uart_baudce,
     input  logic         midi_rx,
@@ -162,6 +170,8 @@ module spk286_at_machine (
     output logic [7:0]   at286ctl_exp2,
     output logic [7:0]   at286ctl_crt,
     output logic [7:0]   at286ctl_sync,
+    output logic [6:0]   ems_map[0:3],
+    output logic         ems_window_enabled[0:3],
 
     output logic         cpu_hold_request,
     output logic         cpu_hlda,
@@ -289,6 +299,23 @@ module spk286_at_machine (
     logic        at_read_data_valid;
     logic        bridge_protocol_error;
 
+    // The 8042 owns the AT A20 gate.  SPK286 deliberately exposes the
+    // carry into A20 as part of its physical address, so the motherboard
+    // must clear only address bit 20 while the gate is closed.  Keep the
+    // raw bridge address for diagnostics and apply this view to memory
+    // decode/transactions (I/O ports are unaffected).  The reset-vector
+    // alias is deliberately exempt: this profile maps FFF000h-FFFFFFh to
+    // the F0000h BIOS window before the memory owner, even while A20 is off.
+    logic [23:0] at_memory_address;
+    logic [23:0] memory_backend_address;
+    logic        ems_aperture_select;
+    logic        ems_runtime_enabled;
+    logic        umb_region_select;
+    logic        umb_runtime_enabled;
+
+    assign ems_runtime_enabled = (`ENABLE_EMS) && at286ctl_eff_ems;
+    assign umb_runtime_enabled = (`ENABLE_UMB) && at286ctl_eff_umb;
+
     logic        memory_cycle;
     logic        conventional_ram_select;
     logic        video_aperture_select;
@@ -298,6 +325,46 @@ module spk286_at_machine (
     logic        memory_write_allowed;
     logic        rom_write_blocked;
     logic        memory_unmapped_request;
+
+    function automatic logic ems_page_selected(input logic [23:0] address);
+        begin
+            ems_page_selected = 1'b0;
+            if (ems_runtime_enabled &&
+                (address >= 24'h0D0000) &&
+                (address <= 24'h0DFFFF)) begin
+                case (address[15:14])
+                    2'b00: ems_page_selected = ems_window_enabled[0];
+                    2'b01: ems_page_selected = ems_window_enabled[1];
+                    2'b10: ems_page_selected = ems_window_enabled[2];
+                    2'b11: ems_page_selected = ems_window_enabled[3];
+                    default: ems_page_selected = 1'b0;
+                endcase
+            end
+        end
+    endfunction
+
+    function automatic logic [23:0] ems_backend_address(
+        input logic [23:0] address
+    );
+        logic [6:0] selected_page;
+        begin
+            selected_page = 7'h00;
+            case (address[15:14])
+                2'b00: selected_page = ems_map[0];
+                2'b01: selected_page = ems_map[1];
+                2'b10: selected_page = ems_map[2];
+                2'b11: selected_page = ems_map[3];
+                default: selected_page = 7'h00;
+            endcase
+            // Preserve the source core's physical EMS layout:
+            // {1'b1, page[6:0], offset[13:0]} = 0x200000..0x3FFFFF.
+            if (ems_page_selected(address))
+                ems_backend_address = {2'b00, 1'b1, selected_page,
+                                        address[13:0]};
+            else
+                ems_backend_address = address;
+        end
+    endfunction
 
     logic        cpu_grant;
     logic        external_grant;
@@ -413,10 +480,12 @@ module spk286_at_machine (
     logic        sound_io_candidate;
     logic        warm_boot_marker_event;
 
-    // The 8042 reset is a CPU-local warm reset.  It must flush the CPU and
-    // its retained bus transaction, but must not reset CMOS or the other AT
-    // devices because the BIOS uses CMOS shutdown codes to resume POST.
-    wire       cpu_core_reset = reset | cpu_reset | devices_cpu_reset_request;
+    // Both the 8042 reset output and an 80286 SHUTDOWN cycle cause a
+    // CPU-local warm reset on an IBM AT. They must flush the CPU and its
+    // retained bus transaction, but must not reset CMOS or the other AT
+    // devices because the BIOS uses CMOS shutdown codes to resume execution.
+    wire       cpu_core_reset = reset | cpu_reset |
+                                devices_cpu_reset_request | spk_shutdown;
 
     // IBM AT BIOSes announce a warm reboot by storing 1234h at physical
     // address 0040:0072. Keep this as a one-cycle event so AT286CTL can drop
@@ -464,12 +533,22 @@ module spk286_at_machine (
                              (port >= 16'h02F8) && (port <= 16'h02FF)) ||
                             ((`ENABLE_MIDI) &&
                              (port >= 16'h0330) && (port <= 16'h0331)) ||
+                            (ems_runtime_enabled &&
+                             (port >= 16'h0260) && (port <= 16'h0263)) ||
                             ((port >= 16'h03B0) && (port <= 16'h03DF)) ||
                             ((port >= 16'h03F0) && (port <= 16'h03F7));
         end
     endfunction
 
     assign cpu_owner_active = cpu_grant && at_valid;
+
+    always_comb begin
+        at_memory_address = at_address;
+        if (!at_io && !a20_enable &&
+            !((at_address >= 24'hFFF000) &&
+              (at_address <= 24'hFFFFFF)))
+            at_memory_address[20] = 1'b0;
+    end
 
     always_comb begin
         pic_io_candidate = at_io && is_pic_port(at_address[15:0]);
@@ -579,11 +658,15 @@ module spk286_at_machine (
         .request_write          (cpu_bus_write),
         .cycle_class            (cpu_bus_status),
         .address                (cpu_address),
+        .ems_enabled            (ems_runtime_enabled),
+        .ems_window_enabled     (ems_window_enabled),
+        .umb_enabled            (umb_runtime_enabled),
         .word_capable           (cpu_memory_word_capable),
         .memory_cycle           (),
         .conventional_ram_select(), .video_aperture_select(),
         .option_region_select   (), .system_bios_select(),
-        .extended_ram_select    (), .write_allowed(),
+        .extended_ram_select    (), .ems_aperture_select(),
+        .write_allowed(),
         .rom_write_blocked      (), .unmapped_request()
     );
 
@@ -632,13 +715,18 @@ module spk286_at_machine (
         .request_valid          (cpu_owner_active),
         .request_write          (at_write),
         .cycle_class            (at_cycle_class),
-        .address                (at_address),
+        .address                (at_memory_address),
+        .ems_enabled            (ems_runtime_enabled),
+        .ems_window_enabled     (ems_window_enabled),
+        .umb_enabled            (umb_runtime_enabled),
         .memory_cycle           (memory_cycle),
         .conventional_ram_select(conventional_ram_select),
         .video_aperture_select  (video_aperture_select),
         .option_region_select   (option_region_select),
         .system_bios_select     (system_bios_select),
         .extended_ram_select    (extended_ram_select),
+        .ems_aperture_select    (ems_aperture_select),
+        .umb_region_select      (umb_region_select),
         .word_capable           (),
         .write_allowed          (memory_write_allowed),
         .rom_write_blocked      (rom_write_blocked),
@@ -650,7 +738,8 @@ module spk286_at_machine (
     assign memory_write = at_write;
     assign memory_code_fetch = at_code_fetch;
     assign memory_cycle_class = at_cycle_class;
-    assign memory_address = at_address;
+    assign memory_backend_address = ems_backend_address(at_memory_address);
+    assign memory_address = memory_backend_address;
     assign memory_byte_enable = at_byte_enable;
     assign memory_data_out = at_data_out;
 
@@ -682,6 +771,7 @@ module spk286_at_machine (
         .at286ctl_eff_cms      (at286ctl_eff_cms),
         .at286ctl_eff_tandy    (at286ctl_eff_tandy),
         .at286ctl_eff_mpu401   (at286ctl_eff_mpu401),
+        .at286ctl_eff_ems      (ems_runtime_enabled),
         .midi_baudce           (midi_baudce),
         .uart_baudce           (uart_baudce),
         .midi_rx               (midi_rx),
@@ -697,7 +787,7 @@ module spk286_at_machine (
         .request_command_valid  (at_command_valid),
         .request_write          (at_write),
         .request_io             (at_io),
-        .request_address        (at_address),
+        .request_address        (at_memory_address),
         .request_byte_enable    (at_byte_enable),
         .request_data_out       (at_data_out),
         .request_accept         (devices_request_accept),
@@ -773,6 +863,8 @@ module spk286_at_machine (
         .at286ctl_exp2          (at286ctl_exp2),
         .at286ctl_crt           (at286ctl_crt),
         .at286ctl_sync          (at286ctl_sync),
+        .ems_map                (ems_map),
+        .ems_window_enabled     (ems_window_enabled),
         .opl2_sound             (opl2_sound),
         .cms_sound_l            (cms_sound_l),
         .cms_sound_r            (cms_sound_r),
@@ -892,11 +984,17 @@ module spk286_at_machine (
     assign dma_memory_valid = dma_transfer_valid;
     assign dma_memory_write = dma_transfer_write_to_memory;
     assign dma_memory_read = dma_transfer_read_from_memory;
-    assign dma_memory_address = dma_transfer_address;
+    // The AT A20 gate belongs to the CPU memory path.  Legacy 8237 DMA
+    // presents its programmed physical address directly on the bus; 86Box
+    // models this with mem_read_phys()/mem_write_phys(), which bypass the
+    // CPU rammask.  Keep DMA independent of the CPU A20 state.
+    assign dma_memory_address = ems_backend_address(dma_transfer_address);
     assign dma_memory_byte_enable = dma_transfer_byte_enable;
     assign dma_memory_data_out = dma_transfer_data_out;
 
-    assign cpu_reset_request = devices_cpu_reset_request;
+    // Export the complete CPU-local reset event so the external serialized
+    // memory path can cancel any request owned by the pre-reset CPU context.
+    assign cpu_reset_request = devices_cpu_reset_request | spk_shutdown;
 
     // Minimal IBM AT PC speaker path.  The speaker only produces a waveform
     // when both port 61h's speaker-enable and GATE2 are asserted; PIT channel
@@ -982,7 +1080,9 @@ module spk286_at_machine (
                                         video_aperture_select |
                                         option_region_select |
                                         system_bios_select |
-                                        extended_ram_select;
+                                        extended_ram_select |
+                                        ems_aperture_select |
+                                        umb_region_select;
     assign debug_at_cycle_active   = at_valid;
     assign debug_at_ready         = at_ready;
 

@@ -316,6 +316,21 @@ module spk286_at_devices_tb;
         end
     endtask
 
+    task automatic router_wait_8042_output(output logic [7:0] status);
+        integer polls;
+        logic [7:0] sampled_status;
+        begin
+            sampled_status = 8'h00;
+            polls = 0;
+            while (!sampled_status[0] && polls < 4096) begin
+                router_read(16'h0064, sampled_status);
+                polls = polls + 1;
+            end
+            check(sampled_status[0], "8042 response did not assert OBF");
+            status = sampled_status;
+        end
+    endtask
+
     task automatic router_read_word(input logic [15:0] port,
                                     output logic [15:0] value);
         integer cycles;
@@ -553,12 +568,13 @@ module spk286_at_devices_tb;
         check(value[4] && !value[2] && !value[1] && !value[0],
               "8042 power-on status was incorrect");
         router_write(16'h0064, 8'hAA);
-        router_read(16'h0064, value);
+        router_wait_8042_output(value);
         check(value[3] && value[2] && value[0],
               "8042 self-test did not set command/system/output status");
         router_read(16'h0060, value);
         check(value == 8'h55, "8042 AA self-test response was not 55h");
         router_write(16'h0064, 8'hAB);
+        router_wait_8042_output(value);
         router_read(16'h0060, value);
         check(value == 8'h00, "8042 AB interface-test response was not 00h");
 
@@ -570,21 +586,26 @@ module spk286_at_devices_tb;
         check(!value[3] && value[2] && !value[0],
               "8042 command-byte write produced incorrect status");
         router_write(16'h0064, 8'h20);
+        router_wait_8042_output(value);
         router_read(16'h0060, value);
         check(value == 8'h44, "8042 command-byte readback was incorrect");
 
         router_write(16'h0064, 8'hAD);
         router_write(16'h0064, 8'h20);
+        router_wait_8042_output(value);
         router_read(16'h0060, value);
         check(value[4], "8042 disable command did not set command-byte bit 4");
         router_write(16'h0064, 8'hAE);
         router_write(16'h0064, 8'h20);
+        router_wait_8042_output(value);
         router_read(16'h0060, value);
         check(!value[4], "8042 enable command did not clear command-byte bit 4");
         router_write(16'h0064, 8'hC0);
+        router_wait_8042_output(value);
         router_read(16'h0060, value);
         check(value == 8'hA0, "8042 AT input-port image was incorrect");
         router_write(16'h0064, 8'hE0);
+        router_wait_8042_output(value);
         router_read(16'h0060, value);
         check(value == 8'h03, "8042 idle test-input image was incorrect");
 
@@ -607,6 +628,7 @@ module spk286_at_devices_tb;
         check(a20_enable && !cpu_reset_request,
               "8042 output port did not enable A20 safely");
         router_write(16'h0064, 8'hD0);
+        router_wait_8042_output(value);
         router_read(16'h0060, value);
         check(value == 8'h03, "8042 output-port readback was incorrect");
         router_read(16'h0064, value);
@@ -778,6 +800,9 @@ module spk286_at_devices_tb;
         fdc_write_fifo(8'h03);
         fdc_write_fifo(8'hCF);
         fdc_write_fifo(8'h02);
+        // The mounted 80x2x15 medium requires 500 kbit/s. The controller now
+        // rejects reads at its power-on rate of 250 kbit/s.
+        router_write(16'h03F7, 8'h00);
 
         // Program DMA1 channel 2 exactly as an AT floppy read: physical
         // 010200h, 512 byte count, device-to-memory, single transfer mode.

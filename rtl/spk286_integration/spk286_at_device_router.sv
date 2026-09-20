@@ -17,6 +17,9 @@
 `ifndef ENABLE_MIDI
 `define ENABLE_MIDI 0
 `endif
+`ifndef ENABLE_EMS
+`define ENABLE_EMS 0
+`endif
 
 module spk286_at_device_router (
     input  logic        clk,
@@ -42,6 +45,7 @@ module spk286_at_device_router (
     input  logic        at286ctl_eff_cms,
     input  logic        at286ctl_eff_tandy,
     input  logic        at286ctl_eff_mpu401,
+    input  logic        at286ctl_eff_ems,
     input  logic        midi_baudce,
     input  logic        uart_baudce,
     input  logic        midi_rx,
@@ -132,6 +136,8 @@ module spk286_at_device_router (
     output logic [7:0]  at286ctl_exp2,
     output logic [7:0]  at286ctl_crt,
     output logic [7:0]  at286ctl_sync,
+    output logic [6:0]  ems_map[0:3],
+    output logic        ems_window_enabled[0:3],
     output logic signed [15:0] opl2_sound,
     output logic signed [15:0] cms_sound_l,
     output logic signed [15:0] cms_sound_r,
@@ -153,6 +159,7 @@ module spk286_at_device_router (
     localparam logic [3:0] DEVICE_SOUND    = 4'd6;
     localparam logic [3:0] DEVICE_MPU401   = 4'd7;
     localparam logic [3:0] DEVICE_UART2    = 4'd8;
+    localparam logic [3:0] DEVICE_EMS      = 4'd9;
     localparam logic [3:0] DEVICE_UNMAPPED = 4'd15;
 
     logic [2:0] router_state_q;
@@ -162,6 +169,9 @@ module spk286_at_device_router (
     logic [15:0] response_data_q;
     logic        response_data_valid_q;
     logic        router_protocol_error_q;
+    logic        ems_runtime_enabled;
+
+    assign ems_runtime_enabled = (`ENABLE_EMS) && at286ctl_eff_ems;
 
     logic       device_8042_candidate;
     logic       device_rtc_candidate;
@@ -171,6 +181,7 @@ module spk286_at_device_router (
     logic       device_sound_candidate;
     logic       device_mpu401_candidate;
     logic       device_uart2_candidate;
+    logic       device_ems_candidate;
     logic       device_candidate;
     logic       lane_valid;
 
@@ -222,6 +233,12 @@ module spk286_at_device_router (
     logic        uart2_irq;
     logic        uart2_protocol_error;
     logic [15:0] uart2_side_effect_count;
+    logic        ems_request_accept;
+    logic        ems_request_ready;
+    logic [15:0] ems_read_data;
+    logic        ems_read_data_valid;
+    logic [15:0] ems_side_effect_count;
+    logic        ems_protocol_error;
     logic [2:0]  storage_ide_request;
     logic [7:0]  at286ctl_data_out;
     logic        at286ctl_output_enable;
@@ -263,6 +280,11 @@ module spk286_at_device_router (
                                  request_command_valid && request_io &&
                                  (request_address[15:0] >= 16'h02F8) &&
                                  (request_address[15:0] <= 16'h02FF);
+        device_ems_candidate = ems_runtime_enabled &&
+                               request_valid && request_command_valid &&
+                               request_io &&
+                               (request_address[15:0] >= 16'h0260) &&
+                               (request_address[15:0] <= 16'h0263);
         device_sound_candidate = request_valid && request_command_valid &&
                                  request_io &&
                                  (((`ENABLE_OPL2) &&
@@ -285,7 +307,8 @@ module spk286_at_device_router (
         device_candidate = device_8042_candidate || device_rtc_candidate ||
                            device_storage_candidate || device_at286ctl_candidate ||
                            device_gameport_candidate || device_sound_candidate ||
-                           device_mpu401_candidate || device_uart2_candidate;
+                           device_mpu401_candidate || device_uart2_candidate ||
+                           device_ems_candidate;
         lane_valid = ((request_address[0] == 1'b0) &&
                       (request_byte_enable == 2'b01)) ||
                      ((request_address[0] == 1'b1) &&
@@ -312,6 +335,8 @@ module spk286_at_device_router (
             selected_device = DEVICE_MPU401;
         else if (device_uart2_candidate)
             selected_device = DEVICE_UART2;
+        else if (device_ems_candidate)
+            selected_device = DEVICE_EMS;
         else if (device_sound_candidate)
             selected_device = DEVICE_SOUND;
         else if (device_storage_candidate)
@@ -453,6 +478,27 @@ module spk286_at_device_router (
         .protocol_error         (uart2_protocol_error)
     );
 
+    spk286_at_ems u_ems (
+        .clk                    (clk),
+        .reset                  (reset),
+        .ems_enabled             (ems_runtime_enabled),
+        .request_valid           (device_ems_candidate),
+        .request_command_valid   (request_command_valid),
+        .request_write           (request_write),
+        .request_io              (request_io),
+        .request_address         (request_address),
+        .request_byte_enable     (request_byte_enable),
+        .request_data_out        (request_data_out),
+        .request_accept          (ems_request_accept),
+        .request_ready            (ems_request_ready),
+        .request_read_data        (ems_read_data),
+        .request_read_data_valid  (ems_read_data_valid),
+        .map_ems                  (ems_map),
+        .window_enabled           (ems_window_enabled),
+        .side_effect_count        (ems_side_effect_count),
+        .protocol_error           (ems_protocol_error)
+    );
+
     spk286_at_rtc_cmos u_rtc (
         .clk(clk), .reset(reset),
         .request_valid(device_rtc_candidate),
@@ -567,6 +613,8 @@ module spk286_at_device_router (
                 request_accept = mpu_request_accept;
             else if (device_uart2_candidate)
                 request_accept = uart2_request_accept;
+            else if (device_ems_candidate)
+                request_accept = ems_request_accept;
             else if (device_sound_candidate)
                 request_accept = sound_request_accept;
             else if (device_storage_candidate)
@@ -587,7 +635,7 @@ module spk286_at_device_router (
         side_effect_count = kbd_side_effect_count + rtc_side_effect_count +
                              storage_side_effect_count + gameport_side_effect_count +
                              sound_side_effect_count + mpu_side_effect_count +
-                             uart2_side_effect_count;
+                             uart2_side_effect_count + ems_side_effect_count;
         irq_request = 16'h0000;
         irq_request[1] = irq1;
         // The AT has a slave PIC: MPU-401 is IRQ9, while IRQ2 is reserved
@@ -620,7 +668,8 @@ module spk286_at_device_router (
     assign protocol_error = router_protocol_error_q | kbd_protocol_error |
                             rtc_protocol_error | storage_protocol_error |
                             gameport_protocol_error | sound_protocol_error |
-                            mpu_protocol_error | uart2_protocol_error;
+                            mpu_protocol_error | uart2_protocol_error |
+                            ems_protocol_error;
 
     always_ff @(posedge clk) begin
         if (reset) begin
@@ -684,6 +733,11 @@ module spk286_at_device_router (
                         router_state_q <= ROUTER_DONE;
                         response_data_q <= uart2_read_data;
                         response_data_valid_q <= uart2_read_data_valid;
+                    end else if (target_device_q == DEVICE_EMS &&
+                                 ems_request_ready) begin
+                        router_state_q <= ROUTER_DONE;
+                        response_data_q <= ems_read_data;
+                        response_data_valid_q <= ems_read_data_valid;
                     end else if (target_device_q == DEVICE_SOUND &&
                                  sound_request_ready) begin
                         router_state_q <= ROUTER_DONE;

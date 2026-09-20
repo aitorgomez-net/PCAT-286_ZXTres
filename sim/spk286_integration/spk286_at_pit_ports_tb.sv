@@ -67,6 +67,13 @@ module spk286_at_pit_ports_tb;
       put(16'(16'h40+ch),8'h34); put(16'(16'h40+ch),8'h12);
       ticks(1); count_read(ch,value);
       if(value!==16'h1234) $fatal(1,"LOAD ch=%0d count=%h",ch,value);
+      // AT software (including Phoenix's F000:9447 wait helper) reads status
+      // through 8254 read-back. This must not consume the next count byte.
+      put(16'h43,8'(8'he0 | (2<<ch)));
+      access(0,16'(16'h40+ch),0,b);
+      if(b!==8'h30) $fatal(1,"PIT_READBACK_STATUS ch=%0d got=%h expected=30",ch,b);
+      count_read(ch,value);
+      if(value!==16'h1234) $fatal(1,"PIT_STATUS_CHANGED_COUNT_PHASE ch=%0d count=%h",ch,value);
       ticks(10); count_read(ch,value);
       if(value!==16'h122a) $fatal(1,"DECREMENT ch=%0d count=%h",ch,value);
       put(16'h43,8'(ch<<6));
@@ -79,6 +86,51 @@ module spk286_at_pit_ports_tb;
     if(value!==prior) $fatal(1,"GATE2_STOP");
     put(16'h61,1); ticks(5); count_read(2,value);
     if(value!==prior-16'd5) $fatal(1,"GATE2_RESUME count=%h expected=%h",value,prior-16'd5);
+    // Simultaneous count/status latch for all counters. Repeated requests
+    // must preserve the first snapshot while the underlying counters run.
+    for(ch=0;ch<3;ch++) begin
+      put(16'h43,8'((ch<<6)|8'h30));
+      put(16'(16'h40+ch),8'h34); put(16'(16'h40+ch),8'h12);
+    end
+    ticks(1); put(16'h43,8'hce); ticks(10); put(16'h43,8'hce);
+    for(ch=0;ch<3;ch++) begin
+      access(0,16'(16'h40+ch),0,b);
+      if(b!==8'h30) $fatal(1,"READBACK_MULTI_STATUS ch=%0d data=%h",ch,b);
+      access(0,16'(16'h40+ch),0,lo); access(0,16'(16'h40+ch),0,hi);
+      if({hi,lo}!==16'h1234) $fatal(1,"READBACK_MULTI_COUNT ch=%0d data=%h",ch,{hi,lo});
+      count_read(ch,value);
+      if(value!==16'h122a) $fatal(1,"READBACK_COUNTER_STOPPED");
+    end
+    // A status read between LSB and MSB must not lose the pending MSB.
+    put(16'h43,0); access(0,16'h40,0,lo);
+    put(16'h43,8'he2); access(0,16'h40,0,b);
+    access(0,16'h40,0,hi);
+    if(b!==8'h30 || {hi,lo}!==16'h122a) $fatal(1,"READBACK_MID_PAIR");
+    // Count-only read-back must not insert a status byte.
+    put(16'h43,8'hd2); ticks(10);
+    access(0,16'h40,0,lo); access(0,16'h40,0,hi);
+    if({hi,lo}!==16'h122a) $fatal(1,"READBACK_COUNT_ONLY");
+    // Status and its null-count bit are snapshots, independent of CE changes.
+    put(16'h43,8'h36); put(16'h43,8'he2);
+    put(16'h40,8'h20); put(16'h40,0); ticks(1);
+    put(16'h43,8'he2); access(0,16'h40,0,b);
+    if(b!==8'hf6) $fatal(1,"READBACK_STATUS_OVERWRITTEN data=%h",b);
+    put(16'h43,8'he2); access(0,16'h40,0,b);
+    if(b!==8'hb6) $fatal(1,"READBACK_LOADED_STATUS data=%h",b);
+    // Updating CR in mode3 takes effect at reload; the first byte is not a
+    // complete new count. A read-back command itself never changes null count.
+    put(16'h40,8'h40); put(16'h43,8'he2); access(0,16'h40,0,b);
+    if(b[6]!==0) $fatal(1,"READBACK_PARTIAL_WRITE_NULL");
+    put(16'h40,0); put(16'h43,8'he2); access(0,16'h40,0,b);
+    if(b[6]!==1) $fatal(1,"READBACK_NEW_COUNT_NULL");
+    ticks(16); put(16'h43,8'he2); access(0,16'h40,0,b);
+    if(b[6]!==0 || b[7]!==0) $fatal(1,"READBACK_RELOAD_OUT data=%h",b);
+    // Reprogramming the same RW format restarts the byte phases and releases
+    // old count/status latches, just as a new 8254 control word requires.
+    put(16'h43,8'hc2); access(0,16'h40,0,b); access(0,16'h40,0,lo);
+    put(16'h43,8'h30); put(16'h40,8'h78); put(16'h40,8'h56);
+    ticks(1); count_read(0,value);
+    if(value!==16'h5678) $fatal(1,"READBACK_REPROGRAM_PHASE count=%h",value);
     // Reload zero means 65536, not a stopped/zero counter.
     put(16'h43,8'h74); put(16'h41,0); put(16'h41,0);
     ticks(3); count_read(1,value);

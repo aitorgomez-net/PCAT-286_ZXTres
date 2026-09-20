@@ -35,6 +35,10 @@ module spk286_at_8042 (
 );
     localparam logic IO_IDLE = 1'b0;
     localparam logic IO_DONE = 1'b1;
+    // Keep command replies behind the host's IBF-completion poll.  The
+    // controller is asynchronous to the 286 bus and must not expose AA/C0/
+    // D0/E0 replies in the same polling window that clears IBF.
+    localparam logic [11:0] RESPONSE_DELAY_CYCLES = 12'd1023;
 
     logic       io_state_q;
     logic [1:0] io_byte_enable_q;
@@ -42,6 +46,10 @@ module spk286_at_8042 (
     logic       io_read_data_valid_q;
     logic [7:0] output_buffer_q;
     logic       output_buffer_valid_q;
+    logic       input_buffer_full_q;
+    logic       response_pending_q;
+    logic [7:0] response_pending_data_q;
+    logic [11:0] response_delay_q;
     logic [7:0] command_byte_q;
     logic [7:0] output_port_q;
     logic       write_command_byte_q;
@@ -67,7 +75,8 @@ module spk286_at_8042 (
     end
 
     assign request_accept = (io_state_q == IO_IDLE) && port_selected &&
-                            lane_valid;
+                            lane_valid &&
+                            (!request_write || !input_buffer_full_q);
     assign request_ready = (io_state_q == IO_DONE);
     assign request_read_data_valid = request_ready && io_read_data_valid_q;
     assign request_read_data = io_byte_enable_q[1] ?
@@ -98,7 +107,7 @@ module spk286_at_8042 (
             // last host write command/data, system flag, empty input buffer,
             // and the live controller output-buffer state.
             current_read_data = {3'b000, 1'b1, last_write_command_q,
-                                 command_byte_q[2], 1'b0,
+                                 command_byte_q[2], input_buffer_full_q,
                                  output_buffer_valid_q};
         else
             current_read_data = output_buffer_q;
@@ -112,7 +121,14 @@ module spk286_at_8042 (
             io_read_data_valid_q <= 1'b0;
             output_buffer_q <= 8'h00;
             output_buffer_valid_q <= 1'b0;
+            input_buffer_full_q <= 1'b0;
+            response_pending_q <= 1'b0;
+            response_pending_data_q <= 8'h00;
+            response_delay_q <= 12'd0;
             command_byte_q <= 8'h01;
+            // The IBM AT releases the CPU reset line with its A20 gate
+            // closed. BIOS POST opens it explicitly through the 8042
+            // output-port protocol (P2=01h; only bits 0 and 1 are modelled).
             output_port_q <= 8'h01;
             write_command_byte_q <= 1'b0;
             write_output_port_q <= 1'b0;
@@ -126,6 +142,22 @@ module spk286_at_8042 (
                 io_state_q <= IO_IDLE;
             reset_pulse_q <= 1'b0;
 
+            // The host input buffer remains busy for at least one controller
+            // cycle.  Controller replies are posted only after IBF has
+            // cleared, so BIOS code cannot mistake a command response for a
+            // pre-existing OBF byte while polling the command completion.
+            if (input_buffer_full_q)
+                input_buffer_full_q <= 1'b0;
+            else if (response_pending_q && !output_buffer_valid_q) begin
+                if (response_delay_q != 12'd0)
+                    response_delay_q <= response_delay_q - 12'd1;
+                else begin
+                    output_buffer_q <= response_pending_data_q;
+                    output_buffer_valid_q <= 1'b1;
+                    response_pending_q <= 1'b0;
+                end
+            end
+
             if (request_accept) begin
                 io_state_q <= IO_DONE;
                 io_byte_enable_q <= request_byte_enable;
@@ -137,26 +169,30 @@ module spk286_at_8042 (
                     if (request_address[15:0] == 16'h0060)
                         output_buffer_valid_q <= 1'b0;
                 end else if (request_address[15:0] == 16'h0064) begin
+                    input_buffer_full_q <= 1'b1;
                     last_write_command_q <= 1'b1;
                     write_command_byte_q <= 1'b0;
                     write_output_port_q <= 1'b0;
                     case (request_byte)
                         8'h20: begin
-                            output_buffer_q <= command_byte_q;
-                            output_buffer_valid_q <= 1'b1;
+                            response_pending_data_q <= command_byte_q;
+                            response_pending_q <= 1'b1;
+                            response_delay_q <= RESPONSE_DELAY_CYCLES;
                         end
                         8'h60: write_command_byte_q <= 1'b1;
                         8'hAA: begin
                             command_byte_q[2] <= 1'b1;
-                            output_buffer_q <= 8'h55;
-                            output_buffer_valid_q <= 1'b1;
+                            response_pending_data_q <= 8'h55;
+                            response_pending_q <= 1'b1;
+                            response_delay_q <= RESPONSE_DELAY_CYCLES;
                         end
                         8'hAB: begin
                             // The decoded MiSTer keyboard path has no exposed
                             // stuck-clock/data condition, so its interface
                             // diagnostic result is deterministically healthy.
-                            output_buffer_q <= 8'h00;
-                            output_buffer_valid_q <= 1'b1;
+                            response_pending_data_q <= 8'h00;
+                            response_pending_q <= 1'b1;
+                            response_delay_q <= RESPONSE_DELAY_CYCLES;
                         end
                         8'hAD: begin
                             command_byte_q[4] <= 1'b1;
@@ -169,19 +205,22 @@ module spk286_at_8042 (
                         8'hC0: begin
                             // AT input port: inhibit switch open, EGA/color,
                             // manufacturing jumper absent, 512 KiB planar RAM.
-                            output_buffer_q <= 8'hA0;
-                            output_buffer_valid_q <= 1'b1;
+                            response_pending_data_q <= 8'hA0;
+                            response_pending_q <= 1'b1;
+                            response_delay_q <= RESPONSE_DELAY_CYCLES;
                         end
                         8'hD0: begin
-                            output_buffer_q <= output_port_q;
-                            output_buffer_valid_q <= 1'b1;
+                            response_pending_data_q <= output_port_q;
+                            response_pending_q <= 1'b1;
+                            response_delay_q <= RESPONSE_DELAY_CYCLES;
                         end
                         8'hD1: write_output_port_q <= 1'b1;
                         8'hE0: begin
                             // T0/T1 observe the idle-high decoded clock/data
                             // interface represented by this boundary.
-                            output_buffer_q <= 8'h03;
-                            output_buffer_valid_q <= 1'b1;
+                            response_pending_data_q <= 8'h03;
+                            response_pending_q <= 1'b1;
+                            response_delay_q <= RESPONSE_DELAY_CYCLES;
                         end
                         8'hFE: reset_pulse_q <= 1'b1;
                         default: begin end

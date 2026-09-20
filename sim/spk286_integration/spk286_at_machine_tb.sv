@@ -15,25 +15,45 @@ module spk286_at_machine_tb;
     always #17.45 clk_video = ~clk_video;
 
     logic execute_enable = 1'b1;
-    logic counter_clock = 1'b0;
+    logic counter_clock_limited = 1'b0;
+    logic counter_clock_real;
+    logic counter_clock_fast = 1'b0;
+    logic counter_clock;
+    logic full_pit = 1'b0;
+    logic fast_pit = 1'b0;
     logic refresh_enable = 1'b1;
     logic pit_clock_active = 1'b0;
     integer pit_clock_rising_edges = 0;
     always_ff @(posedge clk) begin
         if (reset) begin
-            counter_clock <= 1'b0;
+            counter_clock_limited <= 1'b0;
             pit_clock_active <= 1'b0;
             pit_clock_rising_edges <= 0;
         end else if (!pit_clock_active) begin
-            counter_clock <= 1'b0;
+            counter_clock_limited <= 1'b0;
         end else if (pit_clock_rising_edges < 32) begin
-            counter_clock <= ~counter_clock;
-            if (!counter_clock)
+            counter_clock_limited <= ~counter_clock_limited;
+            if (!counter_clock_limited)
                 pit_clock_rising_edges <= pit_clock_rising_edges + 1;
         end else begin
-            counter_clock <= 1'b0;
+            counter_clock_limited <= 1'b0;
         end
     end
+
+    always_ff @(posedge clk) begin
+        if (reset)
+            counter_clock_fast <= 1'b0;
+        else if (full_pit)
+            counter_clock_fast <= ~counter_clock_fast;
+        else
+            counter_clock_fast <= 1'b0;
+    end
+
+    assign counter_clock = full_pit ?
+                           (fast_pit ? counter_clock_fast : counter_clock_real) :
+                           counter_clock_limited;
+    spk286_at_pit_clock pit_clock_model(
+        .clk(clk), .reset(reset), .counter_clock(counter_clock_real));
 
     logic keyboard_byte_valid = 1'b0;
     logic [7:0] keyboard_byte = 8'h00;
@@ -146,9 +166,10 @@ module spk286_at_machine_tb;
     wire protocol_error;
 
     logic [7:0] rom [0:65535];
-    logic [7:0] low_ram [0:4095];
-    logic [7:0] data_ram [0:4095];
-    logic [7:0] stack_ram [0:4095];
+    // The IBM 5170 POST probes conventional memory well beyond the first
+    // few KiB.  Model the installed 512 KiB as contiguous RAM; the old
+    // sparse windows made the BIOS's first-64-KiB test fail by construction.
+    logic [7:0] base_ram [0:524287];
     integer index;
     integer rom_file;
     integer loaded_bytes;
@@ -158,6 +179,9 @@ module spk286_at_machine_tb;
     logic runtime_mpu_test;
     logic runtime_mpu_switched = 1'b0;
     logic mpu_rx_started = 1'b0;
+    logic [7:0] trace_last_8042_status = 8'h00;
+    logic [15:0] trace_last_8042_ip = 16'h0000;
+    logic trace_last_8042_valid = 1'b0;
 
     task automatic send_midi_test_byte(input logic [7:0] data);
         integer bit_index;
@@ -206,12 +230,8 @@ module spk286_at_machine_tb;
             if (((address >= 24'h0F0000) && (address <= 24'h0FFFFF)) ||
                 ((address >= 24'hFFF000) && (address <= 24'hFFFFFF)))
                 memory_read_byte = rom[address[15:0]];
-            else if (address < 24'h001000)
-                memory_read_byte = low_ram[address[11:0]];
-            else if ((address >= 24'h010000) && (address < 24'h011000))
-                memory_read_byte = data_ram[address[11:0]];
-            else if ((address >= 24'h01F000) && (address < 24'h020000))
-                memory_read_byte = stack_ram[address[11:0]];
+            else if (address < 24'h080000)
+                memory_read_byte = base_ram[address[18:0]];
             else
                 memory_read_byte = 8'h00;
         end
@@ -220,12 +240,8 @@ module spk286_at_machine_tb;
     task automatic write_memory_byte(input logic [23:0] address,
                                      input logic [7:0] value);
         begin
-            if (address < 24'h001000)
-                low_ram[address[11:0]] <= value;
-            else if ((address >= 24'h010000) && (address < 24'h011000))
-                data_ram[address[11:0]] <= value;
-            else if ((address >= 24'h01F000) && (address < 24'h020000))
-                stack_ram[address[11:0]] <= value;
+            if (address < 24'h080000)
+                base_ram[address[18:0]] <= value;
         end
     endtask
 
@@ -334,8 +350,18 @@ module spk286_at_machine_tb;
 
             if (cpu_ready && cpu_bus_valid && cpu_bus_write &&
                 (cpu_bus_status == 4'hA)) begin
+                if ($test$plusargs("TRACE_8042") &&
+                    ((cpu_address[15:0] == 16'h0060) ||
+                     (cpu_address[15:0] == 16'h0064)))
+                    $display("TRACE_8042 cs:ip=%04h:%04h W port=%04h data=%04h status=%02h a20=%b",
+                             debug_cs, debug_ip, cpu_address[15:0], cpu_data_out,
+                             dut.u_devices.u_8042.current_read_data,
+                             a20_enable);
                 accepted_io_writes <= accepted_io_writes + 1;
                 if (cpu_address[15:0] == 16'h0080) begin
+                    if ($test$plusargs("TRACE_POST") && port80_writes < 64)
+                        $display("TRACE_POST t=%0t cs:ip=%04h:%04h code=%02h",
+                                 $time, debug_cs, debug_ip, cpu_data_out[7:0]);
                     if (port80_writes < 4)
                         port80_sequence[port80_writes] <= cpu_data_out[7:0];
                     port80_writes <= port80_writes + 1;
@@ -347,6 +373,27 @@ module spk286_at_machine_tb;
                     if (pit_data_writes == 1)
                         pit_clock_active <= 1'b1;
                 end
+            end
+            if ($test$plusargs("TRACE_8042") && cpu_ready && cpu_bus_valid &&
+                !cpu_bus_write && (cpu_bus_status == 4'h9) &&
+                (cpu_address[15:0] == 16'h0060))
+                $display("TRACE_8042 cs:ip=%04h:%04h R port=%04h data=%04h status=%02h a20=%b",
+                         debug_cs, debug_ip, cpu_address[15:0], cpu_data_in,
+                         dut.u_devices.u_8042.current_read_data,
+                         a20_enable);
+            if ($test$plusargs("TRACE_8042") && cpu_ready && cpu_bus_valid &&
+                !cpu_bus_write && (cpu_bus_status == 4'h9) &&
+                (cpu_address[15:0] == 16'h0064) &&
+                (!trace_last_8042_valid ||
+                 (cpu_data_in[7:0] != trace_last_8042_status) ||
+                 (debug_ip != trace_last_8042_ip))) begin
+                $display("TRACE_8042 cs:ip=%04h:%04h R port=%04h data=%04h status=%02h a20=%b",
+                         debug_cs, debug_ip, cpu_address[15:0], cpu_data_in,
+                         dut.u_devices.u_8042.current_read_data,
+                         a20_enable);
+                trace_last_8042_status <= cpu_data_in[7:0];
+                trace_last_8042_ip <= debug_ip;
+                trace_last_8042_valid <= 1'b1;
             end
         end
     end
@@ -362,11 +409,8 @@ module spk286_at_machine_tb;
         if (loaded_bytes != 65536)
             $fatal(1, "AT system ROM must be exactly 65536 bytes, got %0d",
                    loaded_bytes);
-        for (index = 0; index < 4096; index = index + 1) begin
-            low_ram[index] = 8'h00;
-            data_ram[index] = 8'h00;
-            stack_ram[index] = 8'h00;
-        end
+        for (index = 0; index < 524288; index = index + 1)
+            base_ram[index] = 8'h00;
         for (index = 0; index < 4; index = index + 1)
             port80_sequence[index] = 8'h00;
     end
@@ -375,7 +419,7 @@ module spk286_at_machine_tb;
     // that the future MiSTer SDRAM/HPS owner will use.
     spk286_at_mister_memory_port memory_port (
         .clk(clk), .reset(reset),
-        .cancel_cpu(1'b0),
+        .cancel_cpu(cpu_reset_request),
         .cpu_valid(memory_request_valid),
         .cpu_command_valid(memory_command_valid),
         .cpu_write(memory_write),
@@ -508,6 +552,8 @@ module spk286_at_machine_tb;
             max_cycles = 2000000;
 
         runtime_mpu_test = $test$plusargs("RUNTIME_MPU_ENABLE");
+        full_pit = $test$plusargs("FULL_PIT");
+        fast_pit = $test$plusargs("FAST_PIT");
         if (runtime_mpu_test) begin
             runtime_mpu_enable = 1'b0;
             runtime_midi_rx = 1'b0;
@@ -515,6 +561,64 @@ module spk286_at_machine_tb;
 
         repeat (8) @(posedge clk);
         reset = 1'b0;
+
+        // The AT motherboard converts the 80286 SHUTDOWN indication into a
+        // CPU-local reset and exports the same pulse to cancel a retained
+        // transaction at the serialized memory boundary.
+        force dut.spk_shutdown = 1'b1;
+        #1;
+        if (!dut.cpu_core_reset || !cpu_reset_request)
+            $fatal(1, "SHUTDOWN_WARM_RESET_PATH_FAILURE core=%b external=%b",
+                   dut.cpu_core_reset,cpu_reset_request);
+        release dut.spk_shutdown;
+        @(posedge clk);
+        #1;
+        if (dut.cpu_core_reset || cpu_reset_request)
+            $fatal(1, "SHUTDOWN_WARM_RESET_PATH_STUCK core=%b external=%b",
+                   dut.cpu_core_reset,cpu_reset_request);
+
+        // The IBM AT 8042 starts with A20 disabled; BIOS POST opens it
+        // explicitly through the output-port protocol.
+        // When explicitly gated, the machine boundary must reproduce the
+        // AT wrap at bit 20 for CPU memory transactions; the raw bridge
+        // address remains unchanged. Legacy DMA is independent of A20.
+        if (a20_enable)
+            $fatal(1, "A20_RESET_STATE_FAILURE expected disabled at reset");
+        force dut.at_address = 24'h10_1234;
+        force dut.at_io = 1'b0;
+        force dut.a20_enable = 1'b0;
+        #1;
+        if (dut.at_memory_address !== 24'h00_1234 ||
+            memory_address !== 24'h00_1234)
+            $fatal(1, "A20_OFF_CPU_GATE_FAILURE raw=%06h gated=%06h output=%06h",
+                   dut.at_address, dut.at_memory_address, memory_address);
+        force dut.at_address = 24'hFF_FFF0;
+        #1;
+        if (dut.at_memory_address !== 24'hFF_FFF0 ||
+            memory_address !== 24'hFF_FFF0)
+            $fatal(1, "A20_RESET_ALIAS_FAILURE gated=%06h output=%06h",
+                   dut.at_memory_address, memory_address);
+        force dut.at_address = 24'h10_1234;
+        force dut.a20_enable = 1'b1;
+        #1;
+        if (dut.at_memory_address !== 24'h10_1234 ||
+            memory_address !== 24'h10_1234)
+            $fatal(1, "A20_ON_CPU_GATE_FAILURE raw=%06h gated=%06h output=%06h",
+                   dut.at_address, dut.at_memory_address, memory_address);
+        force dut.at_io = 1'b1;
+        force dut.a20_enable = 1'b0;
+        #1;
+        if (dut.at_memory_address !== 24'h10_1234)
+            $fatal(1, "A20_IO_GATE_FAILURE address=%06h", dut.at_memory_address);
+        force dut.dma_transfer_address = 24'h10_5678;
+        #1;
+        if (dma_memory_address !== 24'h10_5678)
+            $fatal(1, "A20_DMA_MUST_BYPASS_GATE address=%06h", dma_memory_address);
+        release dut.dma_transfer_address;
+        release dut.at_io;
+        release dut.a20_enable;
+        release dut.at_address;
+
         for (cycles = 0; cycles < max_cycles; cycles = cycles + 1) begin
             @(negedge clk);
             if (runtime_mpu_test && !runtime_mpu_switched &&
@@ -533,13 +637,13 @@ module spk286_at_machine_tb;
             if (sdram_owner_protocol_error)
                 $fatal(1, "AT_SDRAM_OWNER_FAULT cycle=%0d owner=%0d address=%06h",
                        cycles, backend_owner, backend_address);
-            if (port81_writes != 0)
+            if (port81_writes != 0 && !full_pit)
                 $fatal(1, "AT_SYSTEM_DIAGNOSTIC_FAILURE cycle=%0d port81=%0d cs_ip=%04h:%04h",
                        cycles, port81_writes, debug_cs, debug_ip);
             if (cpu_shutdown)
                 $fatal(1, "AT_SYSTEM_SHUTDOWN cycle=%0d cs_ip=%04h:%04h",
                        cycles, debug_cs, debug_ip);
-            if (port80_writes >= 4 &&
+            if (!full_pit && port80_writes >= 4 &&
                 port80_sequence[0] == 8'h70 &&
                 port80_sequence[1] == 8'h72 &&
                 port80_sequence[2] == 8'h71 &&

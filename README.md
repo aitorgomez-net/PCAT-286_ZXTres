@@ -1,9 +1,9 @@
 # PCAT-286 for MiSTer
 
-Add VGA+ and AT286CTL, joystick gameport, AdLib, C/MS, Tandy and MPU-401/MT32-pi integration.
+Implement A20 and DMA addressing, EMS and UMB mapping, deferred keyboard-controller responses, option-ROM decode and BIOS warm-reset behavior.
 
 This development snapshot is part of the consolidated chronological
-history. Its source state comes from 2026-09-18.
+history. Its source state comes from 2026-09-20.
 The latest revision contains the common technical reference and current
 validation instructions. Historical reports and compiled candidates are
 kept in the original development archive, outside this branch.

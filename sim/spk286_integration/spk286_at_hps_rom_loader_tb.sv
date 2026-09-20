@@ -69,9 +69,7 @@ module spk286_at_hps_rom_loader_tb;
             loader_accept = 1'b0;
             check(loader_valid && ioctl_wait,
                   "loader dropped the word after acceptance");
-            check(loader_address == ((index[5:0] == 0) ?
-                                     24'h0F0000 + {8'h00, address[15:0]} :
-                                     ((index == 8'd2) ? 24'h0EC000 : 24'h0C0000) + {8'h00, address[15:0]}),
+            check(loader_address == rom_base(index) + {8'h00, address[15:0]},
                   "loader mapped the ROM address incorrectly");
             check(loader_data_out == data && loader_write &&
                   loader_byte_enable == 2'b11,
@@ -84,6 +82,14 @@ module spk286_at_hps_rom_loader_tb;
                   "loader did not return to idle after completion");
         end
     endtask
+
+    function automatic logic [23:0] rom_base(input logic [7:0] index);
+        case (index)
+            8'd0: rom_base = 24'h0F0000;
+            8'd2: rom_base = 24'h0C8000;
+            default: rom_base = 24'h0C0000;
+        endcase
+    endfunction
 
     function automatic logic target_loaded(input logic [7:0] index);
         case (index)
@@ -106,7 +112,7 @@ module spk286_at_hps_rom_loader_tb;
             @(posedge clk); #1;
             check(!target_loaded(index), "new download retained old ROM presence");
             @(negedge clk);
-            ioctl_addr = 25'h000FFF0;
+            ioctl_addr = (index == 8'd2) ? 25'h0001FF0 : 25'h000FFF0;
             ioctl_data = 16'h5BEA;
             ioctl_wr = 1'b1;
             @(posedge clk); #1;
@@ -162,11 +168,12 @@ module spk286_at_hps_rom_loader_tb;
 
         complete_word(8'd0, 25'h0000010, 16'h2860);
         complete_word(8'd3, 25'h0000020, 16'hE6A5);
+        complete_word(8'd2, 25'h0000010, 16'h1DEA);
         ioctl_wr = 1'b0;
         ioctl_download = 1'b0;
         @(posedge clk);
         #1;
-        check(main_rom_loaded && ega_rom_loaded,
+        check(main_rom_loaded && ega_rom_loaded && xtide_rom_loaded,
               "ROM presence was not latched after download completion");
         check(bios_protect_flag == 3'b011,
               "ROM protection was not restored after download");
@@ -180,10 +187,24 @@ module spk286_at_hps_rom_loader_tb;
         empty_reload(8'd3);
         empty_reload(8'd2);
         check(!protocol_error, "unexpected HPS loader protocol error");
+        @(negedge clk);
+        ioctl_index = 8'd2;
+        ioctl_addr = 25'h0002000;
+        ioctl_download = 1'b1;
+        ioctl_wr = 1'b1;
+        @(posedge clk); #1;
+        check(!loader_valid && !ioctl_wait,
+              "oversized XTIDE write escaped its 8 KiB ROM window");
+        ioctl_wr = 1'b0;
+        ioctl_download = 1'b0;
+        repeat (2) @(posedge clk);
+        #1;
+        check(!xtide_rom_loaded && protocol_error,
+              "oversized XTIDE image was accepted as a loaded ROM");
         if (failures != 0)
             $fatal(1, "AT_HPS_ROM_LOADER_FAILURES count=%0d", failures);
-        $display("AT_HPS_ROM_LOADER_PASS main=%b ega=%b", main_rom_loaded,
-                 ega_rom_loaded);
+        $display("AT_HPS_ROM_LOADER_PASS main=%b ega=%b xtide=%b",
+                 main_rom_loaded, ega_rom_loaded, xtide_rom_loaded);
         $finish;
     end
 endmodule

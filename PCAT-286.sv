@@ -20,6 +20,12 @@
 `ifndef ENABLE_SB
 `define ENABLE_SB 0
 `endif
+`ifndef ENABLE_EMS
+`define ENABLE_EMS 0
+`endif
+`ifndef ENABLE_UMB
+`define ENABLE_UMB 0
+`endif
 
 module emu_at
 (
@@ -51,6 +57,10 @@ module emu_at
         "P2oAB,OPL2,Adlib 388h,SB FM 388h/228h, Disabled;" : "");
     localparam CONF_STR_TANDY = (`ENABLE_TANDY_AUDIO ?
         "P2oN,Tandy Sound,Disabled,Enabled;" : "");
+    localparam CONF_STR_EMS = (`ENABLE_EMS ?
+        "P3OB,2MB EMS D000-DFFF,Enabled,Disabled;P3-;" : "");
+    localparam CONF_STR_UMB = (`ENABLE_UMB ?
+        "P3OC,UMB E000-EFFF,Enabled,Disabled;P3-;" : "");
     // Keep the source profile's MIDI/MT32-pi page and status-bit placement.
     // MPU-401 is the AT card at 330h; USER I/O selects the physical MIDI
     // cable or the COM2 pins, while the h3P4 entries configure the external
@@ -79,7 +89,7 @@ module emu_at
         "P1-;",
         "P1O7,Boot Splash Screen,Yes,No;",
         "P1FC0,ROM,PCAT BIOS:;",
-        "P1FC2,ROM,EC00 BIOS:;",
+        "P1FC2,ROM,C800 BIOS:;",
         "P1FC3,ROM,EGA BIOS:;",
         "P1-;",
         // An empty packed Verilog string is an 8-bit NUL, not zero bytes.
@@ -105,6 +115,8 @@ module emu_at
         "P2-;",
         "P3,Hardware;",
         "P3-;",
+        CONF_STR_EMS,
+        CONF_STR_UMB,
         "P3ONO,Joystick 1, Analog, Digital, Disabled;",
         "P3OPQ,Joystick 2, Analog, Digital, Disabled;",
         "P3OR,Sync Joy to CPU Speed,No,Yes;",
@@ -172,6 +184,8 @@ module emu_at
     wire         at_joy_sync_osd = hps_status[27];
     wire         at_joy_swap_osd = hps_status[54];
     wire         at_a220_cms_osd = `ENABLE_CMS ? ~hps_status[29] : 1'b0;
+    wire         at_ems_osd = `ENABLE_EMS ? ~hps_status[11] : 1'b0;
+    wire         at_umb_osd = `ENABLE_UMB ? ~hps_status[12] : 1'b0;
 
     wire [7:0] at286ctl_cpu;
     wire [7:0] at286ctl_exp;
@@ -220,7 +234,7 @@ module emu_at
         .reg_midi(at286ctl_midi), .reg_exp2(at286ctl_exp2),
         .osd_speed(2'd0), .osd_fake286(1'b0), .osd_opl2(hps_status[43:42]),
         .osd_cms(at_a220_cms_osd), .osd_sb(1'b0), .osd_sb_irq(3'd5),
-        .osd_ems(1'b0), .osd_umb(1'b0),
+        .osd_ems(at_ems_osd), .osd_umb(at_umb_osd),
         .osd_joy1_digital(at_joy1_digital_osd), .osd_joy1_disable(at_joy1_disable_osd),
         .osd_joy2_digital(at_joy2_digital_osd), .osd_joy2_disable(at_joy2_disable_osd),
         .osd_joy_sync(at_joy_sync_osd), .osd_joy_swap(at_joy_swap_osd),
@@ -922,6 +936,8 @@ module emu_at
         .at286ctl_eff_cms      (at286ctl_eff_cms),
         .at286ctl_eff_tandy    (at286ctl_eff_tandy),
         .at286ctl_eff_mpu401   (at286ctl_eff_mpu401),
+        .at286ctl_eff_ems      (at286ctl_eff_ems),
+        .at286ctl_eff_umb      (at286ctl_eff_umb),
         .midi_baudce           (midi_baudce),
         .uart_baudce           (uart_baudce),
         .midi_rx               (midi_rx),

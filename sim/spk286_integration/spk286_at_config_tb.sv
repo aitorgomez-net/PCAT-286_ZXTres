@@ -35,8 +35,10 @@ module spk286_at_config_tb;
         end
         if (!contains("PCAT-286;") ||
             !contains("P1FC0,ROM,PCAT BIOS:;") ||
-            !contains("P1FC2,ROM,EC00 BIOS:;") ||
+            !contains("P1FC2,ROM,C800 BIOS:;") ||
             !contains("P1FC3,ROM,EGA BIOS:;") ||
+            !contains("P3OB,2MB EMS D000-DFFF,Enabled,Disabled;") ||
+            !contains("P3OC,UMB E000-EFFF,Enabled,Disabled;") ||
             !contains("S2,VHD,IDE 0-0;") ||
             !contains("R0,Reset & apply settings;") ||
             !contains("J,Fire 1,Fire 2;") ||

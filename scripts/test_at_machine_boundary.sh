@@ -40,6 +40,7 @@ sources+=(
   rtl/KFPC-XT/HDL/KF8253/HDL/KF8253_Counter.sv
   rtl/KFPC-XT/HDL/KF8253/HDL/KF8253_Control_Logic.sv
   rtl/spk286_integration/spk286_at_8042.sv
+  rtl/spk286_integration/spk286_at_ems.sv
   rtl/spk286_integration/spk286_at_rtc_cmos.sv
   rtl/spk286_integration/spk286_at_fdc.sv
   rtl/spk286_integration/spk286_at_xtide.sv

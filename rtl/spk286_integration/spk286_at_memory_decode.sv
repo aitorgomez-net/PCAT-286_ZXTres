@@ -11,6 +11,9 @@ module spk286_at_memory_decode (
     input  logic         request_write,
     input  logic [3:0]   cycle_class,
     input  logic [23:0]  address,
+    input  logic         ems_enabled,
+    input  logic         ems_window_enabled[0:3],
+    input  logic         umb_enabled,
 
     output logic         memory_cycle,
     output logic         conventional_ram_select,
@@ -18,6 +21,8 @@ module spk286_at_memory_decode (
     output logic         option_region_select,
     output logic         system_bios_select,
     output logic         extended_ram_select,
+    output logic         ems_aperture_select,
+    output logic         umb_region_select,
     output logic         word_capable,
     output logic         write_allowed,
     output logic         rom_write_blocked,
@@ -32,6 +37,8 @@ module spk286_at_memory_decode (
 
     logic valid_memory_class;
     logic system_bios_alias_select;
+    logic ems_window_select;
+    logic ems_page_frame_select;
 
     always_comb begin
         case (cycle_class)
@@ -46,9 +53,6 @@ module spk286_at_memory_decode (
         video_aperture_select    = valid_memory_class &&
                                    (address >= 24'h0A0000) &&
                                    (address <= 24'h0BFFFF);
-        option_region_select     = valid_memory_class &&
-                                   (address >= 24'h0C0000) &&
-                                   (address <= 24'h0EFFFF);
         system_bios_alias_select = valid_memory_class &&
                                    (address >= SYSTEM_BIOS_ALIAS_BASE) &&
                                    (address <= SYSTEM_BIOS_ALIAS_LIMIT);
@@ -61,22 +65,58 @@ module spk286_at_memory_decode (
                                    (address <= EXTENDED_RAM_LIMIT) &&
                                    !system_bios_alias_select;
 
+        ems_window_select       = ((address[15:14] == 2'b00) &&
+                                   ems_window_enabled[0]) ||
+                                  ((address[15:14] == 2'b01) &&
+                                   ems_window_enabled[1]) ||
+                                  ((address[15:14] == 2'b10) &&
+                                   ems_window_enabled[2]) ||
+                                  ((address[15:14] == 2'b11) &&
+                                   ems_window_enabled[3]);
+        ems_aperture_select     = valid_memory_class && ems_enabled &&
+                                  (address >= 24'h0D0000) &&
+                                  (address <= 24'h0DFFFF) &&
+                                  ems_window_select;
+        ems_page_frame_select  = valid_memory_class && ems_enabled &&
+                                 (address >= 24'h0D0000) &&
+                                 (address <= 24'h0DFFFF);
+
+        // C4000-CFFFF is reserved for option ROMs, including XTIDE at
+        // C8000. Keep the optional UMB contiguous at E0000-EFFFF instead.
+        umb_region_select      = valid_memory_class && umb_enabled &&
+                                 (address >= 24'h0E0000) &&
+                                 (address <= 24'h0EFFFF);
+
+        // C0000-EFFFF is normally the option-ROM region. D0000-DFFFF is
+        // replaced by the EMS page frame when EMS is enabled; E0000-EFFFF
+        // is replaced by the optional UMB when that OSD feature is enabled.
+        option_region_select    = valid_memory_class &&
+                                   (address >= 24'h0C0000) &&
+                                   (address <= 24'h0EFFFF) &&
+                                   !umb_region_select &&
+                                   !ems_page_frame_select;
+
         memory_cycle = conventional_ram_select || video_aperture_select ||
                        option_region_select || system_bios_select ||
-                       extended_ram_select;
+                       extended_ram_select || ems_aperture_select ||
+                       umb_region_select;
         // These regions share the x16 SDRAM backend. EGA and unmapped
         // targets retain byte-lane transactions at the CPU bridge.
         word_capable = conventional_ram_select || option_region_select ||
-                       system_bios_select || extended_ram_select;
+                       system_bios_select || extended_ram_select ||
+                       ems_aperture_select || umb_region_select;
         rom_write_blocked = valid_memory_class && request_write &&
                             (option_region_select || system_bios_select);
         write_allowed = valid_memory_class && request_write &&
                         (conventional_ram_select || video_aperture_select ||
-                         extended_ram_select);
+                         extended_ram_select || ems_aperture_select ||
+                         umb_region_select);
 
         // Addresses above the installed 1 MiB profile (640 KiB conventional
-        // plus 384 KiB extended) are explicitly unmapped. The machine-level
-        // sink completes such reads with FFh instead of exposing spare SDRAM.
+        // plus 384 KiB extended) are explicitly unmapped, except for the
+        // separately-owned UMB and translated EMS apertures. The machine-
+        // level sink completes other reads with FFh instead of exposing
+        // spare SDRAM.
         unmapped_request = request_valid && !memory_cycle;
     end
 endmodule

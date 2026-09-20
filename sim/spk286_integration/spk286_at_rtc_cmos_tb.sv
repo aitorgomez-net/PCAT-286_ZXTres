@@ -153,9 +153,77 @@ module spk286_at_rtc_cmos_tb;
     initial begin
         logic [7:0] value;
 
-        repeat (4) @(posedge clk);
+        repeat (4) @(negedge clk);
+        // x86_init holds status[0] high while uploading F4xx. Both initial
+        // loading and later OSD resets must preserve the battery-backed CMOS.
+        mgmt_write_byte(16'hF410, 8'h44);
+        mgmt_write_byte(16'hF414, 8'h4D);
+        mgmt_write_byte(16'hF400, 8'h56);
+        mgmt_write_byte(16'hF40F, 8'h0A);
+        mgmt_write_byte(16'hF47F, 8'h5A);
+        mgmt_write_byte(16'hF418, 8'h3C); // Host RAM size is not our RAM size.
+        mgmt_write_byte(16'hF42E, 8'hFF); // Host checksum must not override ours.
+        mgmt_write_byte(16'hF42F, 8'hFF);
+        mgmt_write_byte(16'hF490, 8'h00); // Outside the 128-byte CMOS window.
+        repeat (8) @(negedge clk);
+        // A stray CPU write to the reset-selected seconds register must not
+        // reach retained RAM while the host is allowed to initialize it.
+        request_address = 24'h000071;
+        request_byte_enable = 2'b10;
+        request_data_out = 16'h9900;
+        request_valid = 1'b1;
+        request_command_valid = 1'b1;
+        request_write = 1'b1;
+        #1;
+        check(!request_accept, "RTC accepted CPU I/O during reset");
+        repeat (2) @(negedge clk);
+        request_valid = 1'b0;
+        request_command_valid = 1'b0;
+        request_write = 1'b0;
         reset = 1'b0;
-        repeat (2) @(posedge clk);
+        repeat (2) @(negedge clk);
+        check_cmos(7'h10, 8'h44, "host floppy types were lost during reset");
+        check_cmos(7'h14, 8'h4D, "host equipment byte was lost during reset");
+        check_cmos(7'h00, 8'h56, "host seconds were lost during reset");
+        check_cmos(7'h0F, 8'h0A, "host shutdown byte was lost during reset");
+        check_cmos(7'h7F, 8'h5A, "last host CMOS byte was lost during reset");
+        check_cmos(7'h18, 8'h01, "host reset upload replaced fixed RAM size");
+        check_cmos(7'h2E, 8'h01, "reset upload checksum high byte was wrong");
+        check_cmos(7'h2F, 8'h94, "reset upload checksum low byte was wrong");
+
+        cmos_write(7'h10, 8'h24);
+        // Even a BIOS-supplied checksum is RAM, not resettable device state.
+        cmos_write(7'h2E, 8'hBE);
+        cmos_write(7'h2F, 8'hEF);
+        @(negedge clk);
+        reset = 1'b1;
+        repeat (8) @(negedge clk);
+        reset = 1'b0;
+        repeat (2) @(negedge clk);
+        check_cmos(7'h10, 8'h24, "warm reset erased BIOS floppy configuration");
+        check_cmos(7'h00, 8'h56, "warm reset erased RTC time");
+        check_cmos(7'h0F, 8'h0A, "warm reset erased BIOS shutdown code");
+        check_cmos(7'h7F, 8'h5A, "warm reset erased CMOS RAM");
+        check_cmos(7'h2E, 8'hBE, "warm reset erased BIOS checksum high byte");
+        check_cmos(7'h2F, 8'hEF, "warm reset erased BIOS checksum low byte");
+
+        // A subsequent host upload during an OSD reset is also effective.
+        @(negedge clk);
+        reset = 1'b1;
+        mgmt_write_byte(16'hF410, 8'h34);
+        repeat (8) @(negedge clk);
+        reset = 1'b0;
+        repeat (2) @(negedge clk);
+        check_cmos(7'h10, 8'h34, "second host upload during reset was lost");
+        check_cmos(7'h2E, 8'hBE, "second upload checksum high byte was wrong");
+        check_cmos(7'h2F, 8'hFF, "second upload checksum low byte was wrong");
+
+        // Restore the initial configuration for the existing calendar/RAM tests.
+        cmos_write(7'h10, 8'h00);
+        cmos_write(7'h14, 8'h00);
+        cmos_write(7'h0F, 8'h00);
+        cmos_write(7'h2E, 8'h01);
+        cmos_write(7'h2F, 8'h03);
 
         // The CMOS description and actual decode agree on a 1 MiB AT:
         // 640 KiB conventional plus 384 KiB above 1 MiB.
@@ -295,7 +363,7 @@ module spk286_at_rtc_cmos_tb;
         check_cmos(7'h0D, 8'h80, "RTC valid-RAM status was not set");
         check(!protocol_error, "RTC reported a protocol error");
 
-        $display("AT_RTC_CMOS_PASS host_time=1 calendar=1 irq=1 memory_kib=1024 checksum=0104");
+        $display("AT_RTC_CMOS_PASS host_reset_upload=1 warm_retention=1 host_time=1 calendar=1 irq=1 memory_kib=1024 checksum=0104");
         $finish;
     end
 

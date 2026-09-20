@@ -4,6 +4,9 @@
 // reads or writes the selected byte. MiSTer's hps_ext transport supplies the
 // host date/time and CMOS defaults with writes in the F4xx management window,
 // matching the convention used by the ao486 and z486 cores.
+// x86_init uploads that window while holding the machine in reset. CMOS is
+// battery-backed state: initialize it at FPGA configuration, retain it across
+// machine resets, and accept host writes even while CPU I/O is held in reset.
 //
 // The first AT memory profile contains exactly 1 MiB of RAM: 640 KiB at
 // 000000h-09FFFFh plus 384 KiB at 100000h-15FFFFh. The corresponding CMOS
@@ -66,6 +69,24 @@ module spk286_at_rtc_cmos (
     logic       cpu_data_write;
     logic       mgmt_rtc_write;
     integer i;
+
+    initial begin
+        checksum_q = CMOS_INITIAL_SUM;
+        for (i = 0; i < 128; i = i + 1)
+            cmos_q[i] = 8'h00;
+        cmos_q[7'h06] = 8'h07;
+        cmos_q[7'h07] = 8'h01;
+        cmos_q[7'h08] = 8'h01;
+        cmos_q[7'h0A] = 8'h26;
+        cmos_q[7'h0B] = 8'h02;
+        cmos_q[7'h15] = CMOS_BASE_LOW;
+        cmos_q[7'h16] = CMOS_BASE_HIGH;
+        cmos_q[7'h17] = CMOS_EXTENDED_LOW;
+        cmos_q[7'h18] = CMOS_EXTENDED_HIGH;
+        cmos_q[7'h30] = CMOS_EXTENDED_LOW;
+        cmos_q[7'h31] = CMOS_EXTENDED_HIGH;
+        cmos_q[7'h32] = 8'h20;
+    end
 
     function automatic logic [7:0] bcd_to_binary(input logic [7:0] value);
         begin
@@ -271,7 +292,7 @@ module spk286_at_rtc_cmos (
         end
     end
 
-    assign request_accept = (io_state_q == IO_IDLE) && port_selected &&
+    assign request_accept = !reset && (io_state_q == IO_IDLE) && port_selected &&
                             lane_valid;
     assign request_ready = (io_state_q == IO_DONE);
     assign request_read_data_valid = request_ready && io_read_data_valid_q;
@@ -282,6 +303,44 @@ module spk286_at_rtc_cmos (
     assign nmi_mask = nmi_mask_q;
 
     always_ff @(posedge clk) begin
+        // The host initializes CMOS before releasing reset. Keep these writes
+        // outside the CPU-interface reset branch; a later reset must not erase
+        // date/time, drive configuration, shutdown codes or the BIOS checksum.
+        // Management takes priority over a simultaneous CPU data write.
+        if (mgmt_rtc_write) begin
+            if ((mgmt_address[6:0] != 7'h0C) &&
+                (mgmt_address[6:0] != 7'h0D) &&
+                (mgmt_address[6:0] != 7'h2E) &&
+                (mgmt_address[6:0] != 7'h2F) &&
+                !is_fixed_memory_address(mgmt_address[6:0])) begin
+                cmos_q[mgmt_address[6:0]] <= mgmt_writedata[7:0];
+                if (mgmt_address[6:0] == 7'h37)
+                    cmos_q[7'h32] <= mgmt_writedata[7:0];
+                if (is_checksum_address(mgmt_address[6:0]))
+                    checksum_q <= checksum_q -
+                                  {8'h00, cmos_q[mgmt_address[6:0]]} +
+                                  {8'h00, mgmt_writedata[7:0]};
+            end
+        end else if (cpu_data_write &&
+                     (index_q != 7'h0C) && (index_q != 7'h0D)) begin
+            // 2Eh/2Fh are ordinary CMOS RAM on real hardware. BIOS code
+            // computes and writes the checksum; Landmark also includes
+            // both bytes in its 10h-3Fh RAM pattern test.
+            if (index_q == 7'h2E)
+                checksum_q[15:8] <= request_byte;
+            else if (index_q == 7'h2F)
+                checksum_q[7:0] <= request_byte;
+            else begin
+                cmos_q[index_q] <= request_byte;
+                if (index_q == 7'h37)
+                    cmos_q[7'h32] <= request_byte;
+                if (is_checksum_address(index_q))
+                    checksum_q <= checksum_q -
+                                  {8'h00, cmos_q[index_q]} +
+                                  {8'h00, request_byte};
+            end
+        end
+
         if (reset) begin
             io_state_q <= IO_IDLE;
             io_byte_enable_q <= 2'b00;
@@ -294,26 +353,7 @@ module spk286_at_rtc_cmos (
             status_c_periodic_q <= 1'b0;
             status_c_alarm_q <= 1'b0;
             status_c_update_q <= 1'b0;
-            checksum_q <= CMOS_INITIAL_SUM;
             side_effect_count <= 16'h0000;
-            for (i = 0; i < 128; i = i + 1)
-                cmos_q[i] = 8'h00;
-            cmos_q[7'h00] <= 8'h00;
-            cmos_q[7'h02] <= 8'h00;
-            cmos_q[7'h04] <= 8'h00;
-            cmos_q[7'h06] <= 8'h07;
-            cmos_q[7'h07] <= 8'h01;
-            cmos_q[7'h08] <= 8'h01;
-            cmos_q[7'h09] <= 8'h00;
-            cmos_q[7'h0A] <= 8'h26;
-            cmos_q[7'h0B] <= 8'h02;
-            cmos_q[7'h15] <= CMOS_BASE_LOW;
-            cmos_q[7'h16] <= CMOS_BASE_HIGH;
-            cmos_q[7'h17] <= CMOS_EXTENDED_LOW;
-            cmos_q[7'h18] <= CMOS_EXTENDED_HIGH;
-            cmos_q[7'h30] <= CMOS_EXTENDED_LOW;
-            cmos_q[7'h31] <= CMOS_EXTENDED_HIGH;
-            cmos_q[7'h32] <= 8'h20;
         end else begin
             if (io_state_q == IO_DONE)
                 io_state_q <= IO_IDLE;
@@ -336,42 +376,6 @@ module spk286_at_rtc_cmos (
                 end else if (request_address[15:0] == 16'h0070) begin
                     index_q <= request_byte[6:0];
                     nmi_mask_q <= request_byte[7];
-                end
-            end
-
-            // CPU and HPS writes share the same CMOS state. Management has
-            // priority if both sources target the data array in one cycle.
-            if (mgmt_rtc_write) begin
-                if ((mgmt_address[6:0] != 7'h0C) &&
-                    (mgmt_address[6:0] != 7'h0D) &&
-                    (mgmt_address[6:0] != 7'h2E) &&
-                    (mgmt_address[6:0] != 7'h2F) &&
-                    !is_fixed_memory_address(mgmt_address[6:0])) begin
-                    cmos_q[mgmt_address[6:0]] <= mgmt_writedata[7:0];
-                    if (mgmt_address[6:0] == 7'h37)
-                        cmos_q[7'h32] <= mgmt_writedata[7:0];
-                    if (is_checksum_address(mgmt_address[6:0]))
-                        checksum_q <= checksum_q -
-                                      {8'h00, cmos_q[mgmt_address[6:0]]} +
-                                      {8'h00, mgmt_writedata[7:0]};
-                end
-            end else if (cpu_data_write &&
-                         (index_q != 7'h0C) && (index_q != 7'h0D)) begin
-                // 2Eh/2Fh are ordinary CMOS RAM on real hardware. BIOS code
-                // computes and writes the checksum; Landmark also includes
-                // both bytes in its 10h-3Fh RAM pattern test.
-                if (index_q == 7'h2E)
-                    checksum_q[15:8] <= request_byte;
-                else if (index_q == 7'h2F)
-                    checksum_q[7:0] <= request_byte;
-                else begin
-                    cmos_q[index_q] <= request_byte;
-                    if (index_q == 7'h37)
-                        cmos_q[7'h32] <= request_byte;
-                    if (is_checksum_address(index_q))
-                        checksum_q <= checksum_q -
-                                      {8'h00, cmos_q[index_q]} +
-                                      {8'h00, request_byte};
                 end
             end
 

@@ -5,20 +5,29 @@ module spk286_at_memory_decode_tb;
     logic request_write = 1'b0;
     logic [3:0] cycle_class = 4'hF;
     logic [23:0] address = 24'd0;
+    logic ems_enabled = 1'b0;
+    logic ems_window_enabled [0:3];
+    logic umb_enabled = 1'b0;
     wire memory_cycle, conventional_ram_select, video_aperture_select;
     wire option_region_select, system_bios_select, extended_ram_select;
+    wire ems_aperture_select;
+    wire umb_region_select;
     wire write_allowed, rom_write_blocked, unmapped_request;
     wire word_capable;
 
     spk286_at_memory_decode dut (
         .request_valid(request_valid), .request_write(request_write),
         .cycle_class(cycle_class), .address(address),
+        .ems_enabled(ems_enabled), .ems_window_enabled(ems_window_enabled),
+        .umb_enabled(umb_enabled),
         .memory_cycle(memory_cycle),
         .conventional_ram_select(conventional_ram_select),
         .video_aperture_select(video_aperture_select),
         .option_region_select(option_region_select),
         .system_bios_select(system_bios_select),
         .extended_ram_select(extended_ram_select),
+        .ems_aperture_select(ems_aperture_select),
+        .umb_region_select(umb_region_select),
         .word_capable(word_capable),
         .write_allowed(write_allowed),
         .rom_write_blocked(rom_write_blocked),
@@ -86,6 +95,48 @@ module spk286_at_memory_decode_tb;
         classify(24'hFFEFFF, 4'h6, 1'b1);
         check(!word_capable && !extended_ram_select && !write_allowed && unmapped_request,
               "high unmapped memory was exposed as SDRAM");
+
+        ems_enabled = 1'b1;
+        ems_window_enabled[0] = 1'b1;
+        classify(24'h0D0000, 4'h6, 1'b1);
+        check(word_capable && ems_aperture_select && !option_region_select &&
+              write_allowed && !rom_write_blocked,
+              "EMS D000 window was not writable expanded memory");
+        classify(24'h0D3FFF, 4'h5, 1'b0);
+        check(memory_cycle && ems_aperture_select && !option_region_select,
+              "EMS first 16 KiB window limit was not decoded");
+        classify(24'h0D4000, 4'h6, 1'b1);
+        check(!memory_cycle && !option_region_select && !ems_aperture_select &&
+              !write_allowed && unmapped_request,
+              "unmapped EMS window did not remain an unmapped page frame");
+        ems_enabled = 1'b0;
+
+        umb_enabled = 1'b1;
+        classify(24'h0C4000, 4'h6, 1'b1);
+        check(memory_cycle && option_region_select && !umb_region_select &&
+              word_capable && !write_allowed && rom_write_blocked,
+              "C400 option-ROM space was incorrectly exposed as UMB");
+        classify(24'h0C8000, 4'h5, 1'b0);
+        check(memory_cycle && option_region_select && !umb_region_select,
+              "XTIDE C800 window was not decoded as option ROM");
+        classify(24'h0CFFFF, 4'h5, 1'b0);
+        check(memory_cycle && option_region_select && !umb_region_select,
+              "CC000-CFFFF option-ROM space was not decoded");
+        classify(24'h0E0000, 4'h6, 1'b1);
+        check(memory_cycle && umb_region_select && !option_region_select &&
+              word_capable && write_allowed && !rom_write_blocked,
+              "UMB E000 window was not writable RAM");
+        classify(24'h0EFFFF, 4'h5, 1'b0);
+        check(memory_cycle && umb_region_select && !option_region_select,
+              "UMB E000-EFFF limit was not decoded");
+        classify(24'h0C0000, 4'h6, 1'b1);
+        check(option_region_select && !umb_region_select &&
+              !write_allowed && rom_write_blocked,
+              "EGA BIOS C000-C3FFF was incorrectly exposed as UMB");
+        umb_enabled = 1'b0;
+        classify(24'h0E0000, 4'h5, 1'b0);
+        check(memory_cycle && option_region_select && !umb_region_select,
+              "E000 option-ROM region disappeared with UMB disabled");
 
         classify(24'h0F0000, 4'h9, 1'b0);
         check(!word_capable && !memory_cycle && unmapped_request && !system_bios_select,
