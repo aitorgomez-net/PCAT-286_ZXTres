@@ -67,7 +67,7 @@ def main() -> None:
     require(common_qip, "floppy.v", "rtl/common/common.qip")
     require(common_qip, "simple_fifo.v", "rtl/common/common.qip")
     require(common_qip, "ide.v", "rtl/common/common.qip")
-    require(common_qip, "spk286_debug_overlay.sv", "rtl/common/common.qip")
+    require(common_qip, "spk286_debug_min_overlay.sv", "rtl/common/common.qip")
     reject(common_qip, "sound", "rtl/common/common.qip")
     reject(common_qip, "MSMouseWrapper", "rtl/common/common.qip")
 
@@ -79,13 +79,13 @@ def main() -> None:
     reject(top, "module emu\n", "PCAT-286.sv")
     reject(top, "spk286_xt_bridge", "PCAT-286.sv")
 
-    overlay = (ROOT / "rtl/common/spk286_debug_overlay.sv").read_text(
+    overlay = (ROOT / "rtl/common/spk286_debug_min_overlay.sv").read_text(
         encoding="utf-8"
     )
-    require(overlay, "snapshot_sequence", "spk286_debug_overlay.sv")
-    require(overlay, "fallback_raster", "spk286_debug_overlay.sv")
-    require(overlay, 'text_at("RASTER:N"', "spk286_debug_overlay.sv")
-    require(overlay, 'text_at("SNAP:00"', "spk286_debug_overlay.sv")
+    require(overlay, "video_sequence", "spk286_debug_min_overlay.sv")
+    require(overlay, "fallback_raster", "spk286_debug_min_overlay.sv")
+    require(overlay, 'text_at("RASTER:N"', "spk286_debug_min_overlay.sv")
+    require(overlay, 'text_at("SNAP:00"', "spk286_debug_min_overlay.sv")
 
     for required_test in (
         "scripts/test_at_profile_elab.sh",

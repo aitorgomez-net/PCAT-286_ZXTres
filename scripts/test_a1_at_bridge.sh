@@ -5,19 +5,20 @@ root=$(cd "$(dirname "$0")/.." && pwd)
 build_dir="${PCAT_BUILD_DIR:-$root/build/a1-at-bridge}"
 mkdir -p "$build_dir"
 cd "$root"
+source "$root/scripts/at_performance_flags.sh"
 
 sources=(
   rtl/spk286_integration/spk286_at_bus_bridge.sv
   sim/spk286_integration/spk286_at_bus_bridge_tb.sv
 )
 
-iverilog -g2012 -s spk286_at_bus_bridge_tb \
+iverilog -g2012 "${performance_flags[@]}" -s spk286_at_bus_bridge_tb \
   -o "$build_dir/at-bridge_iv" "${sources[@]}" \
   >"$build_dir/iverilog-build.log" 2>&1
 vvp "$build_dir/at-bridge_iv" | tee "$build_dir/iverilog-run.log"
 
 rm -rf "$build_dir/verilator-obj"
-verilator --binary --timing --top-module spk286_at_bus_bridge_tb \
+verilator --binary --timing "${performance_flags[@]}" --top-module spk286_at_bus_bridge_tb \
   -Wno-fatal --Mdir "$build_dir/verilator-obj" -o at_bridge_vlt \
   "${sources[@]}" >"$build_dir/verilator-build.log" 2>&1
 "$build_dir/verilator-obj/at_bridge_vlt" | tee "$build_dir/verilator-run.log"

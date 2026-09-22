@@ -27,7 +27,7 @@ module spk286_system_0f_integration_tb;
         for (integer i=0;i<1114112;i=i+1) memory[i]=8'h90;
         // CS=1000:0100 -> physical 10100.  SMSW AX is the first real-mode
         // 0F 01 form used by CheckIt before it sets PE with LMSW.
-        memory[24'h010100]=8'h0F; memory[24'h010101]=8'h01; memory[24'h010102]=8'hE0;
+        memory[21'h010100]=8'h0F; memory[21'h010101]=8'h01; memory[21'h010102]=8'hE0;
         reset=1; execute_enable=0; ready=0; tick(); reset=0;
         for (integer r=0;r<8;r=r+1) begin
             gpr_write_en=1; gpr_write_index=3'(r); gpr_write_data=16'hA500+16'(r); tick();
@@ -40,7 +40,9 @@ module spk286_system_0f_integration_tb;
         end
         segment_load_en=0; redirect=0; ip_write_en=0; execute_enable=1;
         for (cycles=0; cycles<1200 && retires<1; cycles=cycles+1) service();
-        if (retires!=1 || debug_ip!==16'h0103 || debug_gpr[15:0]!==16'h0000 || unsupported_opcode || halted || shutdown)
+        // Intel 80286/80287 Programmer's Reference Manual (1987), section 10.4:
+        // RESET initializes MSW to FFF0h; SMSW must preserve its reserved bits.
+        if (retires!=1 || debug_ip!==16'h0103 || debug_gpr[15:0]!==16'hFFF0 || unsupported_opcode || halted || shutdown)
             $fatal(1,"0F 01 integration failed retires=%0d IP=%h AX=%h unsupported=%b halted=%b shutdown=%b",
                    retires,debug_ip,debug_gpr[15:0],unsupported_opcode,halted,shutdown);
         $display("SYSTEM_0F_INTEGRATION PASS: SMSW real-mode path"); $finish;

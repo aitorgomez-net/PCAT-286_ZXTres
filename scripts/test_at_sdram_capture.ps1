@@ -38,7 +38,7 @@ try {
         $skewOutput = & $vvpPath $skewBinary
         $skewExitCode = $LASTEXITCODE
         $skewOutput | Set-Content -LiteralPath (Join-Path $buildPath "clock-skew-$wiring.log") -Encoding ascii
-        if (($skewExitCode -eq 0) -or (($skewOutput -join "`n") -notmatch 'CAPTURE_TEST read fffff0 expected=5bea actual=zzzz')) {
+        if (($skewExitCode -eq 0) -or (($skewOutput -join "`n") -notmatch 'CAPTURE_TEST read 0ffff0 expected=5bea actual=zzzz')) {
             throw 'Clock sensitivity control did not detect the expected invalid capture.'
         }
         'AT_SDRAM_CLOCK_SKEW_CONTROL_PASS (artificial +4ns forwarded clock exposes Z read)'

@@ -8,7 +8,9 @@
 // and no-NPU Whetstone pages.  The production CPU, AT bridge, memory port,
 // SDRAM owner and pin model remain in the path.  P03 can be toggled for an
 // A/B comparison without changing the architectural workload.
-module spk286_checkit_workload_tb;
+module spk286_checkit_workload_tb #(
+    parameter integer CODE_BUFFER_LINES = 64
+);
     logic clk = 1'b0;
     logic reset = 1'b1;
     logic cpu_reset = 1'b1;
@@ -32,6 +34,10 @@ module spk286_checkit_workload_tb;
     wire at_valid, at_command, at_write, at_code;
     wire at_accept, at_ready, at_read_valid, bridge_error;
     wire [23:0] at_address;
+    // This reduced harness bypasses spk286_at_machine. Supply its BIOS alias
+    // mapping explicitly; the physical SDRAM owner no longer masks addresses.
+    wire [24:0] mapped_at_address = at_address[23:16] == 8'hFF
+        ? {9'h00F, at_address[15:0]} : {1'b0, at_address};
     wire [1:0] at_lanes;
     wire [15:0] at_out, at_in;
     wire [3:0] at_class;
@@ -39,7 +45,7 @@ module spk286_checkit_workload_tb;
     wire backend_valid, backend_command, backend_write, backend_refresh;
     wire backend_code, backend_accept, backend_ready, backend_read_valid;
     wire [1:0] backend_owner;
-    wire [23:0] backend_address;
+    wire [24:0] backend_address;
     wire [1:0] backend_lanes;
     wire [15:0] backend_out, backend_in;
     wire [3:0] backend_class;
@@ -49,13 +55,15 @@ module spk286_checkit_workload_tb;
     wire [1:0] p03_out_owner;
     wire p03_out_write, p03_out_refresh, p03_out_code, p03_out_burst;
     wire [3:0] p03_out_class;
-    wire [23:0] p03_out_address;
+    wire [24:0] p03_out_address;
     wire [1:0] p03_out_lanes;
     wire [15:0] p03_out_data;
     wire p03_in_accept, p03_in_ready, p03_in_read_valid;
     wire [15:0] p03_in_data;
     wire p03_out_accept, p03_out_ready, p03_out_read_valid;
     wire [15:0] p03_out_read_data;
+    wire physical_accept, physical_ready, physical_read_valid;
+    wire [15:0] physical_read_data;
     wire [31:0] p03_hits, p03_misses, p03_fills, p03_physical_reads;
     wire [31:0] p03_invalidations;
 
@@ -79,11 +87,13 @@ module spk286_checkit_workload_tb;
 
     spk286_at_memory_decode width_decode (
         .request_valid(bus_valid), .request_write(bus_write),
-        .cycle_class(bus_status), .address(address), .word_capable(width_capable)
+        .cycle_class(bus_status), .address(address),
+        .installed_ram_size(3'd0), .word_capable(width_capable)
     );
 
     spk286_at_bus_bridge bridge (
-        .clk(clk), .reset(cpu_reset), .cpu_bus_valid(bus_valid),
+        .clk(clk), .reset(cpu_reset), .cpu_sample_edge(1'b1),
+        .cpu_bus_valid(bus_valid),
         .cpu_address(address), .cpu_data_out(data_out), .cpu_data_oe(data_oe),
         .cpu_bus_write(bus_write), .cpu_bus_bhe_n(bus_bhe_n),
         .cpu_bus_status(bus_status), .cpu_bus_lock(bus_lock),
@@ -102,14 +112,14 @@ module spk286_checkit_workload_tb;
         .clk(clk), .reset(reset), .cancel_cpu(cpu_reset),
         .cpu_valid(at_valid), .cpu_command_valid(at_command),
         .cpu_write(at_write), .cpu_code_fetch(at_code),
-        .cpu_cycle_class(at_class), .cpu_address(at_address),
+        .cpu_cycle_class(at_class), .cpu_address(mapped_at_address),
         .cpu_byte_enable(at_lanes), .cpu_data_out(at_out),
         .cpu_accept(at_accept), .cpu_ready(at_ready),
         .cpu_read_data(at_in), .cpu_read_data_valid(at_read_valid),
         .loader_valid(1'b0), .loader_write(1'b0), .loader_address(24'd0),
         .loader_byte_enable(2'b00), .loader_data_out(16'd0),
         .loader_accept(), .loader_ready(), .loader_read_data(),
-        .dma_valid(1'b0), .dma_write(1'b0), .dma_address(24'd0),
+        .dma_valid(1'b0), .dma_write(1'b0), .dma_address(25'd0),
         .dma_byte_enable(2'b00), .dma_data_out(16'd0),
         .dma_accept(), .dma_ready(), .dma_read_data(),
         .refresh_valid(1'b0), .refresh_address(24'd0),
@@ -125,7 +135,11 @@ module spk286_checkit_workload_tb;
         .protocol_error(port_error)
     );
 
-    spk286_at_sdram_read_buffer #(.ENABLE(1'b1)) p03_buffer (
+`ifdef PCAT_CODE_BUFFER_EXPERIMENT
+    spk286_at_multiline_code_buffer_model #(.ENABLE(1'b1)) p03_buffer (
+`else
+    spk286_at_sdram_read_buffer #(.ENABLE(1'b1), .LINE_COUNT(CODE_BUFFER_LINES)) p03_buffer (
+`endif
         .clk(clk), .reset(reset), .cancel_cpu(cpu_reset),
         .enable(p03_enable != 0),
         .in_valid(backend_valid), .in_command_valid(backend_command),
@@ -150,15 +164,15 @@ module spk286_checkit_workload_tb;
     );
 
     spk286_at_mister_sdram_owner #(.SDRAM_INIT_WAIT(16'd8)) owner (
-        .clk(clk), .reset(reset), .request_valid(p03_out_valid),
-        .request_command_valid(p03_out_command),
+        .clk(clk), .reset(reset), .request_valid(p03_out_valid && !ideal_selected),
+        .request_command_valid(p03_out_command && !ideal_selected),
         .request_owner_refresh(p03_out_refresh), .request_write(p03_out_write),
         .request_code_fetch(p03_out_code), .request_burst(p03_out_burst),
         .request_cycle_class(p03_out_class), .request_address(p03_out_address),
         .request_byte_enable(p03_out_lanes), .request_data_out(p03_out_data),
-        .request_accept(p03_out_accept), .request_ready(p03_out_ready),
-        .request_read_data(p03_out_read_data),
-        .request_read_data_valid(p03_out_read_valid),
+        .request_accept(physical_accept), .request_ready(physical_ready),
+        .request_read_data(physical_read_data),
+        .request_read_data_valid(physical_read_valid),
         .physical_idle(physical_idle), .protocol_error(owner_error),
         .sdram_address(dram_address), .sdram_cke(dram_cke),
         .sdram_cs(dram_cs), .sdram_ras(dram_ras), .sdram_cas(dram_cas),
@@ -191,6 +205,9 @@ module spk286_checkit_workload_tb;
     integer stage_code_fetches = 0;
     integer stage_external_wait = 0;
 
+    `include "sim/spk286_integration/spk286_checkit_profile.svh"
+    `include "sim/spk286_integration/spk286_checkit_ideal_owner.svh"
+
     task automatic report_stage;
         $display("CHECKIT_STAGE workload=%s p03=%0d stage=%0d cycles=%0d retired=%0d reads=%0d writes=%0d code_fetches=%0d external_wait=%0d queue_empty=%0d",
             workload_name, p03_enable, stage, cycles-stage_cycles,
@@ -202,6 +219,7 @@ module spk286_checkit_workload_tb;
     always @(posedge clk) begin
         if (!cpu_reset) begin
             cycles = cycles + 1;
+            if (profile_enable != 0) profile_tick();
             if (prefetch_count == 0)
                 queue_empty = queue_empty + 1;
             if (bus_valid && !ready)
@@ -251,6 +269,7 @@ module spk286_checkit_workload_tb;
                         $fatal(1, "CHECKIT string mismatch workload=%s index=%0d",
                             workload_name, i);
                 report_stage();
+                if (profile_enable != 0) profile_report();
                 $display("CHECKIT_DIRECTED_PASS workload=%s p03=%0d cycles=%0d retired=%0d reads=%0d writes=%0d code_fetches=%0d external_wait=%0d queue_empty=%0d sdram_reads=%0d sdram_writes=%0d hits=%0d misses=%0d fills=%0d physical_reads=%0d invalidations=%0d",
                     workload_name, p03_enable, cycles, instructions, reads,
                     writes, code_fetches, external_wait, queue_empty,
@@ -273,6 +292,10 @@ module spk286_checkit_workload_tb;
         if ($value$plusargs("NATIVE=%d", native_width)) begin end
         if ($value$plusargs("P03=%d", p03_enable)) begin end
         if ($value$plusargs("NAME=%s", workload_name)) begin end
+        if ($value$plusargs("PROFILE=%d", profile_enable)) begin end
+        if ($value$plusargs("IDEAL_OWNER=%d", ideal_owner_mode)) begin end
+        if (ideal_owner_mode < 0 || ideal_owner_mode > 6)
+            $fatal(1, "IDEAL_OWNER must be 0=physical, 1=all, 2=code, 3=data, 4=data reads, 5=writes, 6=data cache");
         fd = $fopen(rom_path, "rb");
         if (!fd)
             $fatal(1, "Cannot open ROM %s", rom_path);

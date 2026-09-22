@@ -29,7 +29,7 @@ for wiring in 1 0; do
     echo "Clock sensitivity control unexpectedly passed" >&2
     exit 1
   fi
-  grep -q 'CAPTURE_TEST read fffff0 expected=5bea actual=zzzz' "skew-$wiring.log"
+  grep -q 'CAPTURE_TEST read 0ffff0 expected=5bea actual=zzzz' "skew-$wiring.log"
   echo "AT_SDRAM_CLOCK_SKEW_CONTROL_PASS dqm_from_address=$wiring"
 done
 echo AT_SDRAM_CAPTURE_TEST_PASS

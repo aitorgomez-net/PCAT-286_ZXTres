@@ -55,8 +55,6 @@ if ! grep -q '"P1O7,Boot Splash Screen,Yes,No;"' \
    ! grep -q '"P1FC3,ROM,EGA BIOS:;"' \
      "$ROOT_DIR/PCAT-286.sv" || \
    ! grep -q '"P1O\[71\],SPK286 Debug,Off,On;"' \
-     "$ROOT_DIR/PCAT-286.sv" || \
-   ! grep -q '"P1O\[73:72\],Debug Page,CPU,Registers,Bus,Trace;"' \
      "$ROOT_DIR/PCAT-286.sv"; then
   echo "AT_PROFILE OSD bits/file slots must match PCAT-286.sv" >&2
   exit 1
@@ -113,7 +111,7 @@ SOURCE_FILES=(
   "$ROOT_DIR/sim/spk286_integration/pll_system_elab_stub.sv"
   "$ROOT_DIR/rtl/common/jtframe_ram.v"
   "$ROOT_DIR/rtl/common/tandy_pcjr_joy.sv"
-  "$ROOT_DIR/rtl/common/spk286_debug_overlay.sv"
+  "$ROOT_DIR/rtl/common/spk286_debug_min_overlay.sv"
   "$ROOT_DIR/sys/mt32pi.sv"
   "$ROOT_DIR/rtl/KFPC-XT/HDL/ega_vram_bram_frontend.sv"
   "$ROOT_DIR/rtl/KFPC-XT/HDL/KFSDRAM/HDL/KFSDRAM.sv"

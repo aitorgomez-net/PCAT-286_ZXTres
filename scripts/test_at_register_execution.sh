@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+set -euo pipefail
+ulimit -c 0
+
+root=$(cd "$(dirname "$0")/.." && pwd)
+build="${PCAT_BUILD_DIR:-$root/build/at-register-execution}"
+mkdir -p "$build"
+cd "$root/vendor/spk286"
+export SPK286_BUILD_DIR="$build/units"
+export SPK286_BUILD_JOBS="${SPK286_BUILD_JOBS:-4}"
+python3 -m tools.microcode.compile_microcode --check
+python3 -m unittest discover -s tests -p 'test_microcode*.py' > "$build/compiler.log" 2>&1
+python3 -m tools.microcode.audit_microcode --output "$build/microcode-audit"
+bash scripts/lint.sh > "$build/lint.log" 2>&1
+for unit in spk286_microsequencer spk286_microcode_rom spk286_register_execution \
+            spk286_register_throughput spk286_mov_operands spk286_operand_lifecycle \
+            spk286_alu_instructions spk286_loadall_protected; do
+    bash scripts/test_units.sh both "$unit" > "$build/$unit.log" 2>&1
+    echo "AT_REGISTER_EXECUTION_PASS $unit (Icarus and Verilator)"
+done
+echo AT_REGISTER_EXECUTION_TEST_PASS

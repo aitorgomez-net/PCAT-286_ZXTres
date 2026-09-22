@@ -11,7 +11,7 @@ module spk286_at_mister_sdram_owner_tb;
     logic        request_write;
     logic        request_code_fetch;
     logic [3:0]  request_cycle_class;
-    logic [23:0] request_address;
+    logic [24:0] request_address;
     logic [1:0]  request_byte_enable;
     logic [15:0] request_data_out;
     wire         request_accept;
@@ -34,7 +34,7 @@ module spk286_at_mister_sdram_owner_tb;
     wire        sdram_ldqm;
     wire        sdram_udqm;
 
-    localparam integer MEM_WORDS = 16384;
+    localparam integer MEM_WORDS = 16777216;
     logic [15:0] mem [0:MEM_WORDS-1];
     logic [12:0] active_row = 13'd0;
     logic [1:0]  active_bank = 2'd0;
@@ -48,7 +48,7 @@ module spk286_at_mister_sdram_owner_tb;
     wire command_read   = !sdram_cs && sdram_ras && !sdram_cas && sdram_we;
     wire command_write  = !sdram_cs && sdram_ras && !sdram_cas && !sdram_we;
     wire [23:0] command_address = {active_bank, active_row, sdram_address[8:0]};
-    wire [13:0] memory_index = command_address[13:0];
+    wire [23:0] memory_index = command_address;
 
     always_ff @(posedge clk) begin
         if (reset) begin
@@ -90,6 +90,7 @@ module spk286_at_mister_sdram_owner_tb;
         .request_owner_refresh(request_owner_refresh),
         .request_write(request_write),
         .request_code_fetch(request_code_fetch),
+        .request_burst(1'b0),
         .request_cycle_class(request_cycle_class),
         .request_address(request_address),
         .request_byte_enable(request_byte_enable),
@@ -98,7 +99,7 @@ module spk286_at_mister_sdram_owner_tb;
         .request_ready(request_ready),
         .request_read_data(request_read_data),
         .request_read_data_valid(request_read_data_valid),
-        .physical_idle(physical_idle),
+        .physical_idle(physical_idle), .debug_state(),
         .protocol_error(protocol_error),
         .sdram_address(sdram_address), .sdram_cke(sdram_cke),
         .sdram_cs(sdram_cs), .sdram_ras(sdram_ras),
@@ -129,7 +130,7 @@ module spk286_at_mister_sdram_owner_tb;
         end
     endtask
 
-    task automatic write_word(input logic [23:0] address,
+    task automatic write_word(input logic [24:0] address,
                               input logic [1:0] lanes,
                               input logic [15:0] data);
         integer guard;
@@ -163,7 +164,7 @@ module spk286_at_mister_sdram_owner_tb;
         end
     endtask
 
-    task automatic read_word(input logic [23:0] address,
+    task automatic read_word(input logic [24:0] address,
                              input logic [1:0] lanes,
                              input logic [15:0] expected);
         integer guard;
@@ -193,7 +194,9 @@ module spk286_at_mister_sdram_owner_tb;
             end
             check(request_ready && request_read_data_valid &&
                   request_read_data == expected,
-                  "read data or completion was incorrect");
+                  $sformatf("read address=%h expected=%h actual=%h ready=%b valid=%b",
+                            address, expected, request_read_data,
+                            request_ready, request_read_data_valid));
             @(posedge clk);
             #1;
         end
@@ -260,23 +263,23 @@ module spk286_at_mister_sdram_owner_tb;
         check(sdram_reads >= 3, "physical read command was not issued");
         check(!protocol_error, "unexpected SDRAM owner protocol error");
 
-        // The reset-vector alias must hit the same physical BIOS window as
-        // F0000h.  Inspect the translated address at the command boundary;
-        // the SDRAM model uses the same byte-to-word translation as hardware.
-        @(negedge clk);
-        request_valid = 1'b1;
-        request_command_valid = 1'b1;
-        request_owner_refresh = 1'b0;
-        request_write = 1'b0;
-        request_address = 24'hFFFFF0;
-        request_byte_enable = 2'b11;
-        request_data_out = 16'h0000;
-        while (!request_accept)
-            @(negedge clk);
-        check(dut.kf_address == 24'h07FFF8,
-              "reset-vector alias was not translated to the physical BIOS word");
-        request_valid = 1'b0;
-        request_command_valid = 1'b0;
+        // These are backend byte addresses: CPU DF0000h-DFFFFFh is
+        // shifted by 2 MiB for EMS and must never overwrite the BIOS.
+        write_word(25'h00F0000, 2'b11, 16'hB105);
+        write_word(25'h00FFFFE, 2'b11, 16'hB10E);
+        write_word(25'h0FEFFFE, 2'b11, 16'h1001);
+        write_word(25'h0FF0000, 2'b11, 16'h2002);
+        write_word(25'h0FFFFFF, 2'b10, 16'h3300);
+        write_word(25'h0FFFFFE, 2'b01, 16'h0044);
+        write_word(25'h1000000, 2'b11, 16'h5005);
+        write_word(25'h11DFFFE, 2'b11, 16'h6006);
+        read_word(25'h00F0000, 2'b11, 16'hB105);
+        read_word(25'h00FFFFE, 2'b11, 16'hB10E);
+        read_word(25'h0FEFFFE, 2'b11, 16'h1001);
+        read_word(25'h0FF0000, 2'b11, 16'h2002);
+        read_word(25'h0FFFFFE, 2'b11, 16'h3344);
+        read_word(25'h1000000, 2'b11, 16'h5005);
+        read_word(25'h11DFFFE, 2'b11, 16'h6006);
         $display("AT_MISTER_SDRAM_OWNER_PASS writes=%0d reads=%0d", sdram_writes, sdram_reads);
         $finish;
     end

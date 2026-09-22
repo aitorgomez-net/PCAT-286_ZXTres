@@ -1,9 +1,9 @@
 # PCAT-286 for MiSTer
 
-Implement A20 and DMA addressing, EMS and UMB mapping, deferred keyboard-controller responses, option-ROM decode and BIOS warm-reset behavior.
+Add selectable installed RAM, CMOS readback, LOADALL support and high-memory map corrections; reduce memory latency and expand instruction buffering.
 
 This development snapshot is part of the consolidated chronological
-history. Its source state comes from 2026-09-20.
+history. Its source state comes from 2026-09-22.
 The latest revision contains the common technical reference and current
 validation instructions. Historical reports and compiled candidates are
 kept in the original development archive, outside this branch.

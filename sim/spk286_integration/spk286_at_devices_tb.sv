@@ -607,7 +607,16 @@ module spk286_at_devices_tb;
         router_write(16'h0064, 8'hE0);
         router_wait_8042_output(value);
         router_read(16'h0060, value);
-        check(value == 8'h03, "8042 idle test-input image was incorrect");
+        check(value == 8'h00, "8042 no-fault test-input image was incorrect");
+
+        // Phoenix POST resets the keyboard with FFh and expects ACK then BAT.
+        router_write(16'h0060, 8'hFF);
+        router_wait_8042_output(value);
+        router_read(16'h0060, value);
+        check(value == 8'hFA, "virtual keyboard reset did not return ACK");
+        router_wait_8042_output(value);
+        router_read(16'h0060, value);
+        check(value == 8'hAA, "virtual keyboard reset did not complete BAT");
 
         // Restore translated keyboard input with IRQ1 enabled, then exercise
         // the host-byte output buffer and output-port A20 control.

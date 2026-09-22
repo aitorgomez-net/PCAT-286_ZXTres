@@ -20,12 +20,16 @@ module spk286_at_memory_perf_tb;
     wire at_valid, at_command, at_write, at_code, at_accept, at_ready;
     wire at_read_valid, bridge_error;
     wire [23:0] at_address;
+    // This reduced bench omits spk286_at_machine, which canonicalizes the
+    // reset-vector BIOS alias before the 25-bit physical memory interface.
+    wire [24:0] mapped_at_address = at_address[23:16] == 8'hFF
+        ? {9'h00F, at_address[15:0]} : {1'b0, at_address};
     wire [1:0] at_lanes;
     wire [15:0] at_out, at_in;
     wire [3:0] at_class;
     wire backend_valid, backend_command, backend_write, backend_refresh;
     wire backend_code, backend_accept, backend_ready, backend_read_valid;
-    wire [23:0] backend_address;
+    wire [24:0] backend_address;
     wire [1:0] backend_lanes;
     wire [15:0] backend_out, backend_in;
     wire [3:0] backend_class;
@@ -34,7 +38,7 @@ module spk286_at_memory_perf_tb;
     wire [1:0]  p03_out_owner;
     wire        p03_out_write, p03_out_refresh, p03_out_code, p03_out_burst;
     wire [3:0]  p03_out_class;
-    wire [23:0] p03_out_address;
+    wire [24:0] p03_out_address;
     wire [1:0]  p03_out_lanes;
     wire [15:0] p03_out_data;
     wire        p03_in_accept, p03_in_ready, p03_in_read_valid;
@@ -61,10 +65,12 @@ module spk286_at_memory_perf_tb;
     );
     spk286_at_memory_decode width_decode (
         .request_valid(bus_valid), .request_write(bus_write),
-        .cycle_class(bus_status), .address(address), .word_capable(width_capable)
+        .cycle_class(bus_status), .address(address),
+        .installed_ram_size(3'd0), .word_capable(width_capable)
     );
     spk286_at_bus_bridge bridge (
-        .clk(clk), .reset(cpu_reset), .cpu_bus_valid(bus_valid),
+        .clk(clk), .reset(cpu_reset), .cpu_sample_edge(1'b1),
+        .cpu_bus_valid(bus_valid),
         .cpu_address(address), .cpu_data_out(data_out), .cpu_data_oe(data_oe),
         .cpu_bus_write(bus_write), .cpu_bus_bhe_n(bus_bhe_n),
         .cpu_bus_status(bus_status), .cpu_bus_lock(bus_lock),
@@ -82,13 +88,13 @@ module spk286_at_memory_perf_tb;
         .clk(clk), .reset(reset), .cancel_cpu(cpu_reset),
         .cpu_valid(at_valid), .cpu_command_valid(at_command),
         .cpu_write(at_write), .cpu_code_fetch(at_code),
-        .cpu_cycle_class(at_class), .cpu_address(at_address),
+        .cpu_cycle_class(at_class), .cpu_address(mapped_at_address),
         .cpu_byte_enable(at_lanes), .cpu_data_out(at_out),
         .cpu_accept(at_accept), .cpu_ready(at_ready),
         .cpu_read_data(at_in), .cpu_read_data_valid(at_read_valid),
         .loader_valid(1'b0), .loader_write(1'b0), .loader_address(24'd0),
         .loader_byte_enable(2'b00), .loader_data_out(16'd0),
-        .dma_valid(1'b0), .dma_write(1'b0), .dma_address(24'd0),
+        .dma_valid(1'b0), .dma_write(1'b0), .dma_address(25'd0),
         .dma_byte_enable(2'b00), .dma_data_out(16'd0),
         .refresh_valid(1'b0), .refresh_address(24'd0),
         .backend_valid(backend_valid), .backend_command_valid(backend_command),

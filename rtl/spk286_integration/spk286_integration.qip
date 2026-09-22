@@ -16,6 +16,7 @@ set_global_assignment -name SYSTEMVERILOG_FILE "vendor/spk286/rtl/spk286_events.
 set_global_assignment -name SYSTEMVERILOG_FILE "vendor/spk286/rtl/spk286_fetch.sv"
 set_global_assignment -name SYSTEMVERILOG_FILE "vendor/spk286/rtl/spk286_flags_decode.sv"
 set_global_assignment -name SYSTEMVERILOG_FILE "vendor/spk286/rtl/spk286_instruction_context.sv"
+set_global_assignment -name SYSTEMVERILOG_FILE "vendor/spk286/rtl/spk286_loadall_service.sv"
 set_global_assignment -name SYSTEMVERILOG_FILE "vendor/spk286/rtl/spk286_micro_executor.sv"
 set_global_assignment -name SYSTEMVERILOG_FILE "vendor/spk286/rtl/spk286_microsequencer.sv"
 set_global_assignment -name SYSTEMVERILOG_FILE "vendor/spk286/rtl/spk286_modrm.sv"

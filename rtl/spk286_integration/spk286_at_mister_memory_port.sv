@@ -20,7 +20,7 @@ module spk286_at_mister_memory_port (
     input  logic        cpu_write,
     input  logic        cpu_code_fetch,
     input  logic [3:0]  cpu_cycle_class,
-    input  logic [23:0] cpu_address,
+    input  logic [24:0] cpu_address,
     input  logic [1:0]  cpu_byte_enable,
     input  logic [15:0] cpu_data_out,
     output logic        cpu_accept,
@@ -39,7 +39,7 @@ module spk286_at_mister_memory_port (
 
     input  logic        dma_valid,
     input  logic        dma_write,
-    input  logic [23:0] dma_address,
+    input  logic [24:0] dma_address,
     input  logic [1:0]  dma_byte_enable,
     input  logic [15:0] dma_data_out,
     output logic        dma_accept,
@@ -58,7 +58,7 @@ module spk286_at_mister_memory_port (
     output logic        backend_refresh,
     output logic        backend_code_fetch,
     output logic [3:0]  backend_cycle_class,
-    output logic [23:0] backend_address,
+    output logic [24:0] backend_address,
     output logic [1:0]  backend_byte_enable,
     output logic [15:0] backend_data_out,
     input  logic        backend_accept,
@@ -66,6 +66,7 @@ module spk286_at_mister_memory_port (
     input  logic [15:0] backend_read_data,
     input  logic        backend_read_data_valid,
 
+    output logic [4:0]  debug_state,
     output logic        protocol_error
 );
 
@@ -80,7 +81,7 @@ module spk286_at_mister_memory_port (
     logic       write_q;
     logic       code_fetch_q;
     logic [3:0] cycle_class_q;
-    logic [23:0] address_q;
+    logic [24:0] address_q;
     logic [1:0] byte_enable_q;
     logic [15:0] data_out_q;
     logic       cpu_cancelled_q;
@@ -88,6 +89,8 @@ module spk286_at_mister_memory_port (
     logic response_complete;
     logic selected_accept;
     wire cpu_candidate = cpu_valid && !cancel_cpu;
+
+    assign debug_state = {active_q, accepted_q, owner_q, cpu_cancelled_q};
 
     assign selected_accept = active_q && !accepted_q && backend_accept &&
                              backend_command_valid;
@@ -164,7 +167,7 @@ module spk286_at_mister_memory_port (
             write_q       <= 1'b0;
             code_fetch_q  <= 1'b0;
             cycle_class_q <= 4'b0000;
-            address_q     <= 24'h000000;
+            address_q     <= 25'h0000000;
             byte_enable_q <= 2'b00;
             data_out_q    <= 16'h0000;
             cpu_cancelled_q <= 1'b0;
@@ -182,7 +185,7 @@ module spk286_at_mister_memory_port (
                     write_q       <= loader_write;
                     code_fetch_q  <= 1'b0;
                     cycle_class_q <= 4'b0000;
-                    address_q     <= loader_address;
+                    address_q     <= {1'b0, loader_address};
                     byte_enable_q <= loader_byte_enable;
                     data_out_q    <= loader_data_out;
                 end else if (cpu_candidate) begin
@@ -200,7 +203,7 @@ module spk286_at_mister_memory_port (
                     write_q       <= 1'b0;
                     code_fetch_q  <= 1'b0;
                     cycle_class_q <= 4'b0000;
-                    address_q     <= refresh_address;
+                    address_q     <= {1'b0, refresh_address};
                     byte_enable_q <= 2'b11;
                     data_out_q    <= 16'h0000;
                 end else if (dma_valid) begin

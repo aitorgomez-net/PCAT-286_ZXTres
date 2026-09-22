@@ -11,6 +11,7 @@ fi
 rom_path=$(realpath "$rom_path")
 mkdir -p "$build_dir"
 cd "$root"
+source "$root/scripts/at_performance_flags.sh"
 
 # Use the current production CPU/package order (including PM5), rather than
 # the pre-PM operand replacement and alphabetical package discovery.
@@ -67,9 +68,14 @@ done
 sources+=(rtl/spk286_integration/spk286_at_hps_rom_loader.sv
   sim/spk286_integration/spk286_sdram_pin_model.sv
   sim/spk286_integration/spk286_at_bios_first_fetch_tb.sv)
+cpu_div2_parameter=()
+if [[ "${AT_CPU_DIV2_TEST:-0}" == 1 ]]; then
+  cpu_div2_parameter=(-GCPU_DIV2_TEST=1)
+fi
 verilator -Irtl/KFPC-XT/HDL/KF8253/HDL --binary --timing --trace-fst --trace-depth 3 \
-  -DSPK286_P05_PARALLEL_LIMIT_CHECK -DSPK286_AT_SIM_MODEL \
+  "${performance_flags[@]}" -DSPK286_AT_SIM_MODEL \
   --top-module spk286_at_bios_first_fetch_tb -Wno-fatal -j 4 \
+  "${cpu_div2_parameter[@]}" \
   -Irtl/KFPC-XT/HDL/KF8259/HDL --Mdir "$build_dir/verilator-obj" -o first_fetch_vlt \
   "${sources[@]}" "${pic_sources[@]}" \
   >"$build_dir/verilator-build.log" 2>&1
@@ -87,4 +93,12 @@ for rom in "$rom_path" \
   timeout 120s "$build_dir/verilator-obj/first_fetch_vlt" "+ROM=$rom" \
     "+WAVE=$build_dir/$name.fst" | tee "$build_dir/$name.log"
 done
+
+# Keep the selectable 16 MiB map in the integrated regression. This checks
+# the decoder/CMOS profile and RAM/BIOS isolation through the physical SDRAM
+# pins before executing the reset fetch.
+timeout 120s "$build_dir/verilator-obj/first_fetch_vlt" "+ROM=$rom_path" \
+  +RAM16 | tee "$build_dir/ram16-profile.log"
+grep -q AT_RAM16_PROFILE_PASS "$build_dir/ram16-profile.log"
+grep -q AT_RAM16_BACKEND_ISOLATION_PASS "$build_dir/ram16-profile.log"
 echo AT_BIOS_FIRST_FETCH_TEST_PASS

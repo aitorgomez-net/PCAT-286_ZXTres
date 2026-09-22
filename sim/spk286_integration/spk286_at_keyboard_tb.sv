@@ -15,6 +15,7 @@ module spk286_at_keyboard_tb;
     integer reads = 0;
     integer trace_file;
     string trace_path;
+    localparam integer EXPECT_BYTE_TIMEOUT_CYCLES = 4096;
 
     spk286_at_keyboard adapter (
         .clk(clk), .reset(reset), .ps2_key(ps2_key),
@@ -65,7 +66,9 @@ module spk286_at_keyboard_tb;
     task automatic expect_byte(input [7:0] expected, input bit log_key = 0);
         integer cycles;
         cycles = 0;
-        while (!obf && cycles < 100) begin
+        // 8042 self-test/device replies are intentionally delayed by 1023
+        // controller clocks; leave enough time for those alongside key bytes.
+        while (!obf && cycles < EXPECT_BYTE_TIMEOUT_CYCLES) begin
             @(negedge clk);
             cycles = cycles + 1;
         end

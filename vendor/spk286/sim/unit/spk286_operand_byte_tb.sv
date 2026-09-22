@@ -10,6 +10,7 @@ module spk286_operand_byte_tb;
     logic register_direct=1;
     logic[23:0]physical_address=24'h10FFFF;
     logic[15:0]offset=16'hFFFF,segment_limit=16'hFFFF;
+    logic segment_expand_down=1'b0;
     wire blocked,gpr_write_en,gpr_write_byte;
     wire[2:0]gpr_write_index;
     wire[15:0]gpr_write_data;
@@ -19,6 +20,7 @@ module spk286_operand_byte_tb;
     wire[15:0]memory_write_data;
     logic memory_response_valid=0;
     wire memory_response_ready;
+    wire timing_wait;
     logic[15:0]memory_read_data=0;
     logic setup=0;
     logic[2:0]setup_index=0;
@@ -29,11 +31,12 @@ module spk286_operand_byte_tb;
     spk286_operand dut(.*);
     spk286_registers storage(
         .clk(clk),.reset(reset),.read_a_index(3'd0),.read_b_index(3'd0),
+        .loadall_commit_en(1'b0),.loadall_gpr(128'd0),.loadall_ip(16'd0),.loadall_flags(16'd0),
         .read_a_byte(1'b0),.read_b_byte(1'b0),.read_a_data(read_a),.read_b_data(read_b),
         .write_en(setup || gpr_write_en),.write_byte(!setup && gpr_write_byte),
         .write_index(setup ? setup_index : gpr_write_index),.write_data(setup ? setup_data : gpr_write_data),
         .ip_write_en(1'b0),.ip_write_data(16'd0),.flags_write_en(1'b0),.flags_write_data(16'd0),
-        .flags_write_mask(16'd0),.gpr_state(register_state),.ip(ip),.flags(flags));
+        .flags_write_mask(16'd0),.flags_write_protected_task(1'b0),.gpr_state(register_state),.ip(ip),.flags(flags));
     task automatic check(input logic condition,input string message);
         checks++;if(condition!==1'b1)$fatal(1,"%s case=%0d",message,cases);
     endtask
@@ -71,10 +74,10 @@ module spk286_operand_byte_tb;
             request_check=0;memory_request_ready=1;#1;
             check(memory_request && memory_byte && memory_address==24'h10FFFF && memory_write==1'(wr),"byte memory metadata and A20");
             tick();memory_request_ready=0;
-            repeat(4)begin tick();check(!memory_request && !done && !blocked,"pending byte request not resubmitted");end
+            repeat(4)begin tick();check(!memory_request && timing_wait && !done && !blocked,"pending byte request not resubmitted");end
             request_valid=0;memory_response_valid=1;memory_read_data=16'h00A7;
             repeat(3)begin tick();check(!memory_response_ready && !done,"paused consumer holds completion");end
-            request_valid=1;#1;check(done && memory_response_ready && read_data==16'h00A7,"completed byte consumed normally");
+            request_valid=1;#1;check(done && !timing_wait && memory_response_ready && read_data==16'h00A7,"completed byte consumed normally");
             tick();request_valid=0;memory_response_valid=0;
             check(requests==1 && !blocked,"one byte logical acceptance");
             clear();select_rm=1;register_direct=0;request_byte=0;request_write=1'(wr);request_valid=1;memory_request_ready=1;#1;

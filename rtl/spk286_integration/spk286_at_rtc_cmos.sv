@@ -8,9 +8,9 @@
 // battery-backed state: initialize it at FPGA configuration, retain it across
 // machine resets, and accept host writes even while CPU I/O is held in reset.
 //
-// The first AT memory profile contains exactly 1 MiB of RAM: 640 KiB at
-// 000000h-09FFFFh plus 384 KiB at 100000h-15FFFFh. The corresponding CMOS
-// fields are fixed here and included in the standard 10h-2Dh checksum.
+// The baseline AT memory profile contains 1 MiB of RAM: 640 KiB at
+// 000000h-09FFFFh plus 384 KiB at 100000h-15FFFFh. The Hardware OSD can select
+// larger profiles; their extended-memory CMOS fields follow the applied map.
 `timescale 1ns/1ps
 
 module spk286_at_rtc_cmos (
@@ -22,6 +22,7 @@ module spk286_at_rtc_cmos (
     input  logic        request_write,
     input  logic        request_io,
     input  logic [23:0] request_address,
+    input  logic [2:0]  installed_ram_size,
     input  logic [1:0]  request_byte_enable,
     input  logic [15:0] request_data_out,
     output logic        request_accept,
@@ -32,6 +33,7 @@ module spk286_at_rtc_cmos (
     input  logic [15:0] mgmt_address,
     input  logic [15:0] mgmt_writedata,
     input  logic        mgmt_write,
+    output logic [15:0] mgmt_readdata,
 
     input  logic        periodic_tick,
     input  logic        second_tick,
@@ -61,6 +63,7 @@ module spk286_at_rtc_cmos (
     logic       status_c_alarm_q;
     logic       status_c_update_q;
     logic [15:0] checksum_q;
+    logic [2:0]  memory_size_applied_q = 3'd0;
     logic [7:0] cmos_q [0:127];
     logic [7:0] request_byte;
     logic [7:0] current_read_data;
@@ -69,6 +72,40 @@ module spk286_at_rtc_cmos (
     logic       cpu_data_write;
     logic       mgmt_rtc_write;
     integer i;
+
+    function automatic logic [2:0] normalize_ram_size(input logic [2:0] size);
+        begin
+            case (size)
+                3'd0, 3'd1, 3'd2, 3'd3, 3'd4: normalize_ram_size = size;
+                default: normalize_ram_size = 3'd0;
+            endcase
+        end
+    endfunction
+
+    function automatic logic [15:0] extended_memory_kib(
+        input logic [2:0] size
+    );
+        begin
+            // Total installed-RAM selections subtract the fixed 640 KiB
+            // conventional base. The 16 MiB class follows the 16-bit-bus AT
+            // map and reserves the top 128 KiB at FE0000h-FFFFFFh.
+            case (size)
+                3'd1:    extended_memory_kib = 16'd1408;
+                3'd2:    extended_memory_kib = 16'd3456;
+                3'd3:    extended_memory_kib = 16'd7552;
+                3'd4:    extended_memory_kib = 16'd15232;
+                default: extended_memory_kib = 16'd384;
+            endcase
+        end
+    endfunction
+
+    wire [2:0] normalized_ram_size = normalize_ram_size(installed_ram_size);
+    wire [15:0] selected_extended_memory_kib =
+        extended_memory_kib(normalized_ram_size);
+    wire [7:0] selected_extended_memory_low =
+        selected_extended_memory_kib[7:0];
+    wire [7:0] selected_extended_memory_high =
+        selected_extended_memory_kib[15:8];
 
     initial begin
         checksum_q = CMOS_INITIAL_SUM;
@@ -253,6 +290,24 @@ module spk286_at_rtc_cmos (
         alarm_field_matches(cmos_q[7'h03], next_minute_clock) &&
         alarm_field_matches(cmos_q[7'h05], next_hour_clock);
 
+    function automatic logic [7:0] read_cmos_byte(input logic [6:0] address);
+        begin
+            case (address)
+                7'h0A: read_cmos_byte = {1'b0, cmos_q[7'h0A][6:0]};
+                7'h0C: read_cmos_byte = {irq8_q,
+                                         status_c_periodic_q,
+                                         status_c_alarm_q,
+                                         status_c_update_q,
+                                         4'b0000};
+                7'h0D: read_cmos_byte = 8'h80;
+                7'h2E: read_cmos_byte = checksum_q[15:8];
+                7'h2F: read_cmos_byte = checksum_q[7:0];
+                7'h37: read_cmos_byte = cmos_q[7'h32];
+                default: read_cmos_byte = cmos_q[address];
+            endcase
+        end
+    endfunction
+
     always_comb begin
         port_selected = request_valid && request_command_valid && request_io &&
                         ((request_address[15:0] == 16'h0070) ||
@@ -270,26 +325,18 @@ module spk286_at_rtc_cmos (
                          (mgmt_address[15:8] == 8'hF4) &&
                          !mgmt_address[7];
 
+        // hps_ext samples ext_din before asserting its read pulse, so expose
+        // management data directly from the address. This snapshot path is
+        // deliberately side-effect free: reading register C here must not
+        // acknowledge RTC interrupts as a CPU read from port 71h would.
+        mgmt_readdata = 16'h0000;
+        if ((mgmt_address[15:8] == 8'hF4) && !mgmt_address[7])
+            mgmt_readdata = {8'h00, read_cmos_byte(mgmt_address[6:0])};
+
         if (request_address[15:0] == 16'h0070)
             current_read_data = {nmi_mask_q, index_q};
-        else begin
-            case (index_q)
-                7'h0A: current_read_data = {1'b0, cmos_q[7'h0A][6:0]};
-                7'h0C: current_read_data = {irq8_q,
-                                            status_c_periodic_q,
-                                            status_c_alarm_q,
-                                            status_c_update_q,
-                                            4'b0000};
-                7'h0D: current_read_data = 8'h80;
-                7'h15, 7'h16, 7'h17, 7'h18,
-                7'h30, 7'h31, 7'h34, 7'h35:
-                    current_read_data = cmos_q[index_q];
-                7'h2E: current_read_data = checksum_q[15:8];
-                7'h2F: current_read_data = checksum_q[7:0];
-                7'h37: current_read_data = cmos_q[7'h32];
-                default: current_read_data = cmos_q[index_q];
-            endcase
-        end
+        else
+            current_read_data = read_cmos_byte(index_q);
     end
 
     assign request_accept = !reset && (io_state_q == IO_IDLE) && port_selected &&
@@ -306,8 +353,21 @@ module spk286_at_rtc_cmos (
         // The host initializes CMOS before releasing reset. Keep these writes
         // outside the CPU-interface reset branch; a later reset must not erase
         // date/time, drive configuration, shutdown codes or the BIOS checksum.
-        // Management takes priority over a simultaneous CPU data write.
-        if (mgmt_rtc_write) begin
+        // Apply the memory-size fields on Reset & apply settings. Preserve
+        // CPU-writable CMOS semantics between profile changes, and adjust the
+        // standard checksum for the changed 17h/18h bytes.
+        if ((normalized_ram_size != memory_size_applied_q) &&
+            !mgmt_rtc_write && !cpu_data_write) begin
+            cmos_q[7'h17] <= selected_extended_memory_low;
+            cmos_q[7'h18] <= selected_extended_memory_high;
+            cmos_q[7'h30] <= selected_extended_memory_low;
+            cmos_q[7'h31] <= selected_extended_memory_high;
+            checksum_q <= checksum_q - {8'h00, cmos_q[7'h17]} -
+                          {8'h00, cmos_q[7'h18]} +
+                          {8'h00, selected_extended_memory_low} +
+                          {8'h00, selected_extended_memory_high};
+            memory_size_applied_q <= normalized_ram_size;
+        end else if (mgmt_rtc_write) begin
             if ((mgmt_address[6:0] != 7'h0C) &&
                 (mgmt_address[6:0] != 7'h0D) &&
                 (mgmt_address[6:0] != 7'h2E) &&

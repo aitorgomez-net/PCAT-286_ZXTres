@@ -93,6 +93,8 @@ module spk286_decoder_tb;
             opcode = 8'(i); #1;
             if (invalid_opcode !== !(i == 0 || i == 1 || i == 2 || i == 3 || i == 5 || i == 6))
                 $fatal(1, "extended opcode classification %h", opcode);
+            if (i == 5 && (supported !== 1'b1 || entry !== spk286_microcode_pkg::MC_ENTRY_LOADALL))
+                $fatal(1, "0F 05 LOADALL classification/entry");
         end
         $display("DECODER PASS: %0d opcode checks; MOV and word ALU forms", checks);
         $finish;

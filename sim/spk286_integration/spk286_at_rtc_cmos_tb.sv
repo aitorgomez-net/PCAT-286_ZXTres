@@ -22,6 +22,7 @@ module spk286_at_rtc_cmos_tb;
     logic mgmt_write = 1'b0;
     logic periodic_tick = 1'b0;
     logic second_tick = 1'b0;
+    logic [2:0] installed_ram_size = 3'd0;
     wire irq8;
     wire nmi_mask;
     wire [15:0] side_effect_count;
@@ -36,6 +37,7 @@ module spk286_at_rtc_cmos_tb;
         .request_command_valid(request_command_valid),
         .request_write(request_write), .request_io(request_io),
         .request_address(request_address),
+        .installed_ram_size(installed_ram_size),
         .request_byte_enable(request_byte_enable),
         .request_data_out(request_data_out),
         .request_accept(request_accept), .request_ready(request_ready),
@@ -150,6 +152,27 @@ module spk286_at_rtc_cmos_tb;
         end
     endtask
 
+    task automatic check_ram_profile(input logic [2:0] profile,
+                                     input logic [15:0] extended_kib,
+                                     input logic [15:0] expected_checksum);
+        begin
+            installed_ram_size = profile;
+            repeat (2) @(negedge clk);
+            check_cmos(7'h17, extended_kib[7:0],
+                       "profile extended-memory low byte was wrong");
+            check_cmos(7'h18, extended_kib[15:8],
+                       "profile extended-memory high byte was wrong");
+            check_cmos(7'h30, extended_kib[7:0],
+                       "profile duplicate extended-memory low byte was wrong");
+            check_cmos(7'h31, extended_kib[15:8],
+                       "profile duplicate extended-memory high byte was wrong");
+            check_cmos(7'h2E, expected_checksum[15:8],
+                       "profile checksum high byte was wrong");
+            check_cmos(7'h2F, expected_checksum[7:0],
+                       "profile checksum low byte was wrong");
+        end
+    endtask
+
     initial begin
         logic [7:0] value;
 
@@ -237,6 +260,14 @@ module spk286_at_rtc_cmos_tb;
         check_cmos(7'h35, 8'h00, "memory above 16 MiB was advertised");
         check_cmos(7'h2E, 8'h01, "initial CMOS checksum high byte was wrong");
         check_cmos(7'h2F, 8'h03, "initial CMOS checksum low byte was wrong");
+
+        // Exercise every OSD profile explicitly. The 16 MiB selection must
+        // advertise 15232 KiB (3B80h), an integral 238 blocks of 64 KiB.
+        check_ram_profile(3'd1, 16'd1408, 16'h0107);
+        check_ram_profile(3'd2, 16'd3456, 16'h010F);
+        check_ram_profile(3'd3, 16'd7552, 16'h011F);
+        check_ram_profile(3'd4, 16'd15232, 16'h013D);
+        check_ram_profile(3'd0, 16'd384, 16'h0103);
 
         // Exact Landmark CMOS RAM algorithm (F000:A26C): save 10h-3Fh,
         // write/read 55h, write/read AAh, then restore all 48 bytes. This

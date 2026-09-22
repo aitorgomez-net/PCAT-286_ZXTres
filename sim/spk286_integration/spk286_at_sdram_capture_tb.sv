@@ -112,8 +112,8 @@ module spk286_at_sdram_capture_tb #(
         transaction(1, 24'h0FFFF4, 2'b11, 16'h30F0);
         if (memory.mem[24'h07FFF8] !== 16'h5BEA)
             $fatal(1, "CAPTURE_TEST loader address does not match exact physical word");
-        transaction(0, 24'hFFFFF0, 2'b11, 16'h5BEA);
-        transaction(0, 24'hFFFFF2, 2'b11, 16'h00E0);
+        transaction(0, 24'h0FFFF0, 2'b11, 16'h5BEA);
+        transaction(0, 24'h0FFFF2, 2'b11, 16'h00E0);
         transaction(0, 24'h0FFFF4, 2'b11, 16'h30F0);
         // Exact first failing Landmark RAM word seen in hardware. Both
         // single-byte writes must preserve the other lane despite zero fill.

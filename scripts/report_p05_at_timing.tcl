@@ -30,6 +30,9 @@ set owner [require_collection sdram_owner [get_registers -nowarn {*u_at_sdram_ow
 set no_debug 0
 foreach_in_collection a [get_all_global_assignments -name VERILOG_MACRO] {
     if {[lindex $a 2] eq "SPK286_AT_NO_DEBUG"} { set no_debug 1 }
+    if {[string match "SPK286_P??_*" [lindex $a 2]]} {
+        puts $inventory "performance_macro=[lindex $a 2]"
+    }
 }
 set debug [get_registers -nowarn {*u_at_debug_overlay|*source_snapshot*}]
 set observers [get_registers -nowarn {

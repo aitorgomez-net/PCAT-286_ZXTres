@@ -170,7 +170,7 @@ module spk286 (
     logic [spk286_microcode_pkg::MC_ADDR_WIDTH:0] counter_branch_target;
     assign counter_branch_target = spk286_microcode_pkg::micro_branch_target(micro_pc);
     logic [spk286_microcode_pkg::MC_ADDR_WIDTH-1:0] dispatch_entry;
-    logic micro_active, micro_valid, micro_end, operation_valid, operation_done;
+    logic micro_active, micro_valid, micro_end, operation_valid, operation_done, operation_retire;
     logic executor_done, executor_byte_ready;
     logic internal_gpr_write_en, internal_gpr_write_byte, internal_ip_write_en;
     logic [2:0] internal_gpr_write_index;
@@ -206,6 +206,31 @@ module spk286 (
     logic task_memory_done;
     logic task_service_busy, task_service_complete, task_service_commit_ready, task_service_fault;
     logic task_memory_lock;
+    logic loadall_memory_request, loadall_memory_done;
+    logic loadall_memory_write, loadall_memory_byte;
+    logic [23:0] loadall_memory_address;
+    logic [15:0] loadall_memory_write_data;
+    logic loadall_complete, loadall_fault, loadall_commit_valid;
+    logic [7:0] loadall_fault_vector;
+    logic [15:0] loadall_fault_error_code;
+    logic [15:0] loadall_msw, loadall_ip, loadall_flags;
+    logic [127:0] loadall_gpr;
+    logic [15:0] loadall_gdtr_limit, loadall_idtr_limit;
+    logic [23:0] loadall_gdtr_base, loadall_idtr_base;
+    logic [15:0] loadall_ldtr_selector, loadall_tr_selector;
+    logic [23:0] loadall_ldtr_base, loadall_tr_base;
+    logic [15:0] loadall_ldtr_limit, loadall_tr_limit;
+    logic [7:0] loadall_ldtr_access, loadall_tr_access;
+    logic [3:0] loadall_ldtr_class, loadall_tr_class;
+    logic loadall_ldtr_valid, loadall_ldtr_present, loadall_tr_valid, loadall_tr_present;
+    logic [63:0] loadall_segment_selectors, loadall_segment_limits;
+    logic [95:0] loadall_segment_bases;
+    logic [31:0] loadall_segment_access;
+    logic [15:0] loadall_segment_classes;
+    logic [3:0] loadall_segment_valid, loadall_segment_present;
+    logic [3:0] loadall_segment_protected, loadall_segment_tables;
+    logic [7:0] loadall_segment_dpl, loadall_segment_rpl;
+    logic loadall_start;
     logic [7:0] task_service_fault_vector;
     logic [15:0] task_service_fault_error_code;
     logic task_switch_start;
@@ -345,8 +370,10 @@ module spk286 (
     assign restart = redirect && commit_allowed;
     assign semantic_cancel = restart || event_cancel;
     assign task_fault_external = event_active && !event_software;
-    assign stream_restart = restart || internal_redirect || event_cancel;
-    assign stream_ip = restart ? ip_write_data : (internal_redirect ? internal_target : debug_ip);
+    assign stream_restart = restart || internal_redirect || event_cancel || loadall_commit_valid;
+    assign stream_ip = restart ? ip_write_data :
+                       (internal_redirect ? internal_target :
+                        (loadall_commit_valid ? loadall_ip : debug_ip));
     assign queue_flush = stream_restart;
     assign service_segment = string_request ? (string_destination ? 2'd0 : (segment_override ? override_segment : 2'd3)) : stack_request ? 2'd2 : (segment_override ? override_segment : operand_segment);
     assign implicit_lock = micro_active && !event_active && operand_context_valid && !operand_register_direct && (opcode_q == 8'h86 || opcode_q == 8'h87);
@@ -448,7 +475,7 @@ module spk286 (
                                       (protected_segment_is_expand_down ?
                                        ({1'b0, service_offset} <= {1'b0, selected_segment_limit} ||
                                         ({1'b0, service_offset} + (operand_byte ? 17'd0 : 17'd1) > 17'h0FFFF)) :
-                                        ({1'b0, service_offset} + (operand_byte ? 17'd0 : 17'd1) > {1'b0, selected_segment_limit})))));
+                                       ({1'b0, service_offset} + (operand_byte ? 17'd0 : 17'd1) > {1'b0, selected_segment_limit})))));
 `endif
     assign protected_access_ss_fault = protected_access_fault && service_segment == 2'd2;
     assign protected_fetch_fault = protected_msw[0] && protected_segment_protected[2'd1] &&
@@ -487,6 +514,8 @@ module spk286 (
         .flags_write_data(execute_enable ? internal_flags_write_data : flags_write_data),
         .flags_write_mask(execute_enable ? internal_flags_write_mask : flags_write_mask),
         .flags_write_protected_task(execute_enable && internal_task_flags_write),
+        .loadall_commit_en(loadall_commit_valid), .loadall_gpr(loadall_gpr),
+        .loadall_ip(loadall_ip), .loadall_flags(loadall_flags),
         .gpr_state(register_state), .ip(debug_ip), .flags(debug_flags)
     );
 
@@ -521,6 +550,22 @@ module spk286 (
         .segment_commit_class2(protected_segment_commit_class2), .segment_commit_present2(protected_segment_commit_present2),
         .segment_commit_protected2(protected_segment_commit_protected2), .segment_commit_dpl2(protected_segment_commit_dpl2),
         .segment_commit_table_indicator2(protected_segment_commit_table_indicator2), .segment_commit_rpl2(protected_segment_commit_rpl2),
+        .loadall_commit_en(loadall_commit_valid), .loadall_msw(loadall_msw),
+        .loadall_gdtr_limit(loadall_gdtr_limit), .loadall_gdtr_base(loadall_gdtr_base),
+        .loadall_idtr_limit(loadall_idtr_limit), .loadall_idtr_base(loadall_idtr_base),
+        .loadall_ldtr_selector(loadall_ldtr_selector), .loadall_ldtr_base(loadall_ldtr_base),
+        .loadall_ldtr_limit(loadall_ldtr_limit), .loadall_ldtr_access(loadall_ldtr_access),
+        .loadall_ldtr_class(loadall_ldtr_class), .loadall_ldtr_valid(loadall_ldtr_valid),
+        .loadall_ldtr_present(loadall_ldtr_present), .loadall_tr_selector(loadall_tr_selector),
+        .loadall_tr_base(loadall_tr_base), .loadall_tr_limit(loadall_tr_limit),
+        .loadall_tr_access(loadall_tr_access), .loadall_tr_class(loadall_tr_class),
+        .loadall_tr_valid(loadall_tr_valid), .loadall_tr_present(loadall_tr_present),
+        .loadall_segment_selectors(loadall_segment_selectors), .loadall_segment_bases(loadall_segment_bases),
+        .loadall_segment_limits(loadall_segment_limits), .loadall_segment_access(loadall_segment_access),
+        .loadall_segment_classes(loadall_segment_classes), .loadall_segment_valid(loadall_segment_valid),
+        .loadall_segment_present(loadall_segment_present), .loadall_segment_protected(loadall_segment_protected),
+        .loadall_segment_tables(loadall_segment_tables), .loadall_segment_dpl(loadall_segment_dpl),
+        .loadall_segment_rpl(loadall_segment_rpl),
         .segment_selector_state(protected_segment_selectors), .segment_base_state(protected_segment_bases), .segment_limit_state(protected_segment_limits),
         .segment_access_state(protected_segment_access), .segment_class_state(protected_segment_classes), .segment_valid_state(protected_segment_valid),
         .segment_present_state(protected_segment_present), .segment_protected_state(protected_segment_protected), .segment_dpl_state(protected_segment_dpl),
@@ -570,10 +615,46 @@ module spk286 (
     );
     /* verilator lint_on PINCONNECTEMPTY */
 
+    // LOADALL owns a complete staged image.  It does not reuse the task
+    // switch service because the 80286 instruction reads a fixed physical
+    // image and commits every architectural/cache field atomically.
+    /* verilator lint_off PINMISSING */
+    spk286_loadall_service loadall_service (
+        .clk(clk), .reset(reset), .cancel(semantic_cancel), .start(loadall_start),
+        .current_protected(protected_msw[0]), .current_cpl(debug_cs[1:0]),
+        .memory_done(loadall_memory_done), .memory_read_data(memory_read_data),
+        .memory_request(loadall_memory_request), .memory_write(loadall_memory_write),
+        .memory_byte(loadall_memory_byte), .memory_address(loadall_memory_address),
+        .memory_write_data(loadall_memory_write_data),
+        .complete(loadall_complete), .fault(loadall_fault),
+        .fault_vector(loadall_fault_vector), .fault_error_code(loadall_fault_error_code),
+        .commit_valid(loadall_commit_valid), .loaded_msw(loadall_msw),
+        .loaded_ip(loadall_ip), .loaded_flags(loadall_flags), .loaded_gpr(loadall_gpr),
+        .loaded_gdtr_limit(loadall_gdtr_limit), .loaded_gdtr_base(loadall_gdtr_base),
+        .loaded_idtr_limit(loadall_idtr_limit), .loaded_idtr_base(loadall_idtr_base),
+        .loaded_ldtr_selector(loadall_ldtr_selector), .loaded_ldtr_base(loadall_ldtr_base),
+        .loaded_ldtr_limit(loadall_ldtr_limit), .loaded_ldtr_access(loadall_ldtr_access),
+        .loaded_ldtr_class(loadall_ldtr_class), .loaded_ldtr_valid(loadall_ldtr_valid),
+        .loaded_ldtr_present(loadall_ldtr_present), .loaded_tr_selector(loadall_tr_selector),
+        .loaded_tr_base(loadall_tr_base), .loaded_tr_limit(loadall_tr_limit),
+        .loaded_tr_access(loadall_tr_access), .loaded_tr_class(loadall_tr_class),
+        .loaded_tr_valid(loadall_tr_valid), .loaded_tr_present(loadall_tr_present),
+        .cache_selectors(loadall_segment_selectors), .cache_bases(loadall_segment_bases),
+        .cache_limits(loadall_segment_limits), .cache_access(loadall_segment_access),
+        .cache_classes(loadall_segment_classes), .cache_valid(loadall_segment_valid),
+        .cache_present(loadall_segment_present), .cache_protected(loadall_segment_protected),
+        .cache_dpl(loadall_segment_dpl), .cache_tables(loadall_segment_tables),
+        .cache_rpl(loadall_segment_rpl)
+    );
+    /* verilator lint_on PINMISSING */
+
     spk286_segments segments (
         .clk(clk), .reset(reset),
         .load_en((segment_load_en || context_commit || internal_segment_write) && commit_allowed && !protected_msw[0]),
         .load_index(context_commit ? 2'd1 : internal_segment_write ? decoded_segment_index : segment_load_index), .load_selector(context_commit ? context_cs : internal_segment_write ? internal_segment_data : segment_load_selector),
+        .loadall_commit_en(loadall_commit_valid), .loadall_selectors(loadall_segment_selectors),
+        .loadall_bases(loadall_segment_bases), .loadall_limits(loadall_segment_limits),
+        .loadall_access(loadall_segment_access),
         .read_index(execute_enable ? service_segment : segment_read_index),
         .offset(execute_enable ? service_offset : segment_offset),
         .selector(real_segment_selector), .base(real_segment_base), .limit(real_segment_limit),
@@ -689,7 +770,8 @@ module spk286 (
     );
 
     assign micro_end = micro_word == spk286_microcode_pkg::MC_END;
-    assign operation_done = micro_end || executor_done;
+    assign loadall_start = operation_valid && micro_word == spk286_microcode_pkg::MC_LOADALL;
+    assign operation_done = micro_end || executor_done || loadall_complete;
     assign opcode_start = decode_ready && !event_active && !event_request && !event_completed && !raw_retired &&
                           !unsupported_q && queue_consume_valid && decode_supported && !is_prefix && !length_fault;
     assign prefix_accept = decode_ready && !event_active && !event_request && !event_completed && !raw_retired &&
@@ -718,7 +800,7 @@ module spk286 (
                                           (protected_msw[0] ? spk286_microcode_pkg::MC_ENTRY_EVENT_ENTRY_PROTECTED :
                                                                spk286_microcode_pkg::MC_ENTRY_EVENT_ENTRY) :
                                           decode_entry), .start_ready(decode_ready),
-        .rom_valid(micro_valid), .rom_end(micro_end), .operation_done(operation_done),
+        .rom_valid(micro_valid), .rom_end(micro_end), .operation_done(operation_done), .operation_retire(operation_retire),
         .branch_request(dispatch_request || counter_branch_request),
         .branch_target(counter_branch_request ? counter_branch_target[spk286_microcode_pkg::MC_ADDR_WIDTH-1:0] : dispatch_entry),
         .branch_target_valid(counter_branch_request ? counter_branch_target[spk286_microcode_pkg::MC_ADDR_WIDTH] : dispatch_valid),
@@ -729,9 +811,9 @@ module spk286 (
 
     spk286_micro_executor micro_executor (
         .clk(clk), .reset(reset), .cancel(semantic_cancel), .start(service_start),
-        .operation_valid(operation_valid), .operation(micro_word), .operation_done(executor_done), .dispatch_request(dispatch_request),
+        .operation_valid(operation_valid), .operation(micro_word), .operation_done(executor_done), .operation_retire(operation_retire), .dispatch_request(dispatch_request),
         .byte_valid(queue_consume_valid && !length_fault), .byte_data(queue_consume_data), .byte_ready(executor_byte_ready),
-        .decode_operand(operand_decode_enable), .decode_done(operand_decode_done),
+        .decode_operand(operand_decode_enable), .decode_done(operand_decode_done), .decode_modrm_valid(operand_context_valid),
         .decode_byte_ready(operand_byte_ready), .operand_request(operand_request),
         .operand_write(operand_write), .operand_byte(operand_byte), .operand_select_rm(operand_select_rm), .operand_check(operand_check),
         .stack_request(stack_request), .stack_offset(stack_offset),
@@ -745,7 +827,7 @@ module spk286 (
         .gpr_write_index(internal_gpr_write_index), .gpr_write_data(internal_gpr_write_data),
         .destination_read_data(register_state[source_index_q * 16 +: 16]),
         .source_index(source_index_q), .lock_prefix(lock_prefix), .target_read_data(register_state[destination_q * 16 +: 16]),
-        .effective_offset(operand_offset), .address_base(register_state[48 +: 16]), .segment_limit(segment_limit), .stack_segment_limit(debug_segment_limits[32 +: 16]), .stack_segment_access(debug_segment_access[23:16]), .operand_register_direct(operand_register_direct),
+        .effective_offset(operand_offset), .address_base(register_state[48 +: 16]), .segment_limit(segment_limit), .stack_segment_limit(debug_segment_limits[32 +: 16]), .stack_segment_access(debug_segment_access[23:16]), .operand_register_direct(operand_register_direct), .operand_rm_index(operand_rm),
         .address_override(address_override), .address_offset(address_offset),
         .direct_flags_data(direct_flags_data), .direct_flags_mask(direct_flags_mask),
         .destination_byte_data(register_state[destination_q[1:0] * 16 + (destination_q[2] ? 8 : 0) +: 8]),
@@ -871,12 +953,18 @@ module spk286 (
     // Task-switch memory is a direct BIU transaction. The ordinary operand
     // service remains isolated so a TSS word can never be mistaken for an
     // instruction temporary or an effective-address access.
-    assign memory_request = task_memory_request || operand_memory_request;
-    assign memory_write = task_memory_request ? task_memory_write : operand_memory_write;
-    assign memory_byte = task_memory_request ? task_memory_byte : operand_memory_byte;
-    assign memory_address = task_memory_request ? task_memory_address : operand_memory_address;
-    assign memory_write_data = task_memory_request ? task_memory_write_data : operand_memory_write_data;
-    assign memory_response_ready = task_memory_request ? 1'b1 : operand_memory_response_ready;
+    assign memory_request = loadall_memory_request || task_memory_request || operand_memory_request;
+    assign memory_write = loadall_memory_request ? loadall_memory_write :
+                          task_memory_request ? task_memory_write : operand_memory_write;
+    assign memory_byte = loadall_memory_request ? loadall_memory_byte :
+                         task_memory_request ? task_memory_byte : operand_memory_byte;
+    assign memory_address = loadall_memory_request ? loadall_memory_address :
+                            task_memory_request ? task_memory_address : operand_memory_address;
+    assign memory_write_data = loadall_memory_request ? loadall_memory_write_data :
+                               task_memory_request ? task_memory_write_data : operand_memory_write_data;
+    assign memory_response_ready = loadall_memory_request ? 1'b1 :
+                                   task_memory_request ? 1'b1 : operand_memory_response_ready;
+    assign loadall_memory_done = loadall_memory_request && memory_response_valid;
     assign task_memory_done = task_memory_request && memory_response_valid;
 
     spk286_operand operand (
@@ -973,9 +1061,8 @@ module spk286 (
                                  (micro_active ? executor_byte_ready : decode_ready);
     assign fault_request = range_fault || bounds_fault || arithmetic_fault || operand_blocked || invalid_form ||
                            invalid_opcode_fault || system_limit_fault || system_fault ||
-                           protected_access_fault || protected_fetch_fault || demanded_code_fault || length_fault;
-    assign fault_vector = (invalid_form || invalid_opcode_fault) ? 8'd6 :
-                          system_fault ? system_fault_vector :
+                           protected_access_fault || protected_fetch_fault || demanded_code_fault || length_fault || loadall_fault;
+    assign fault_vector = (invalid_form || invalid_opcode_fault) ? 8'd6 : loadall_fault ? loadall_fault_vector : system_fault ? system_fault_vector :
                           protected_access_ss_fault ? 8'd12 : protected_access_fault ? 8'd13 :
                           protected_fetch_fault ? 8'd13 : bounds_fault ? 8'd5 : arithmetic_fault ? 8'd0 : 8'd13;
     // PM3c frame contract: protected selector faults in the #TS/#NP/#SS/#GP
@@ -985,7 +1072,8 @@ module spk286 (
     assign fault_error_valid = protected_msw[0] &&
                                 (fault_vector == 8'd10 || fault_vector == 8'd11 ||
                                  fault_vector == 8'd12 || fault_vector == 8'd13);
-    assign fault_error_code = system_fault ? system_fault_error_code : 16'd0;
+    assign fault_error_code = system_fault ? system_fault_error_code :
+                              loadall_fault ? loadall_fault_error_code : 16'd0;
     assign software_taken = software_request && (opcode_q != 8'hCE || debug_flags[11]);
     assign selected_software_vector = opcode_q == 8'hCD ? software_vector : (opcode_q == 8'hCC ? 8'd3 : 8'd4);
     assign instruction_retired = (raw_retired && !event_active) || (event_completed && event_software);

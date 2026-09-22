@@ -37,13 +37,13 @@ module spk286_invalid_opcode_tb;
         tick();
     endtask
 
-    task automatic putword(input integer address_value, input integer word_value);
+    task automatic putword(input integer address_value, input logic [15:0] word_value);
         memory[address_value]=8'(word_value);
         memory[address_value+1]=8'(word_value>>8);
     endtask
 
     function automatic logic [15:0] stackword(input integer offset);
-        stackword={memory[24'h080000+offset+1],memory[24'h080000+offset]};
+        stackword={memory[32'h080000+offset+1],memory[32'h080000+offset]};
     endfunction
 
     task automatic setup(input logic [7:0] first_byte, input logic [7:0] second_byte);
@@ -66,9 +66,9 @@ module spk286_invalid_opcode_tb;
         segment_load_en=0; redirect=0; ip_write_en=0;
         // Vector 6 -> 1000:0430, with a minimal IRET handler at that entry.
         putword(6*4,16'h0430); putword(6*4+2,16'h1000);
-        memory[24'h010430]=8'hCF;
-        memory[24'h010100]=first_byte;
-        memory[24'h010101]=second_byte;
+        memory[21'h010430]=8'hCF;
+        memory[21'h010100]=first_byte;
+        memory[21'h010101]=second_byte;
         execute_enable=1;
     endtask
 
@@ -86,14 +86,19 @@ module spk286_invalid_opcode_tb;
         cases=cases+1;
     endtask
 
-    task automatic expect_unsupported(input logic [7:0] first_byte, input logic [7:0] second_byte);
-        setup(first_byte,second_byte);
-        while (!unsupported_opcode && timeout_count<900) begin
+    task automatic expect_loadall_dispatch;
+        setup(8'h0F,8'h05);
+        while (!debug_micro_active && timeout_count<900) begin
             service(); timeout_count=timeout_count+1;
         end
-        check(unsupported_opcode,"legal but unimplemented opcode remains unsupported");
+        check(timeout_count<900 && !unsupported_opcode &&
+              debug_micro_entry==12'(spk286_microcode_pkg::MC_ENTRY_LOADALL),
+              "0F05 dispatches the implemented LOADALL microprogram");
         check(deliveries==0 && retires==0 && !halted && !shutdown,
-              "unsupported opcode neither faults nor retires");
+              "LOADALL dispatch neither faults nor retires before image consumption");
+        // This bank checks classification. The LOADALL integration/protected
+        // banks provide valid images and verify architectural completion.
+        execute_enable=0;
         cases=cases+1;
     endtask
 
@@ -105,8 +110,8 @@ module spk286_invalid_opcode_tb;
         expect_ud(8'h66,8'h90);
         // 0Fh is a two-byte opcode introducer; an invalid second byte faults.
         expect_ud(8'h0F,8'hFF);
-        // 0F05 is the undocumented 286 LOADALL opcode. It is deferred, not #UD.
-        expect_unsupported(8'h0F,8'h05);
+        // 0F05 remains distinct from #UD now that LOADALL is implemented.
+        expect_loadall_dispatch();
         $display("INVALID_OPCODE PASS: %0d classification cases; %0d checks",cases,checks);
         $finish;
     end

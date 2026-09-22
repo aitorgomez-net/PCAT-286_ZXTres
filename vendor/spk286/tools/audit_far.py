@@ -76,8 +76,8 @@ PROBES = (('lds-cache-index',
  ('far-context-offset',
   'spk286_micro_executor',
   'spk286_far_instructions',
-  'assign redirect_target = context_commit ? tmp0_q : target_q',
-  'assign redirect_target = context_commit ? tmp1_q : target_q',
+  'assign redirect_target = task_commit_redirect ? task_loaded_ip : (context_commit ? tmp0_q : target_q);',
+  'assign redirect_target = task_commit_redirect ? task_loaded_ip : (context_commit ? tmp1_q : target_q);',
   'exact pointer/return target address'))
 
 

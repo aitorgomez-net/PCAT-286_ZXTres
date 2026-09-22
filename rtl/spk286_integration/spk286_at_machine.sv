@@ -26,8 +26,12 @@
 `define ENABLE_UMB 0
 `endif
 
-module spk286_at_machine (
+module spk286_at_machine #(
+    parameter logic CPU_USES_SAMPLE_EDGE = 1'b0
+) (
     input  logic         clk,
+    input  logic         clk_cpu,
+    input  logic         cpu_sample_edge,
     input  logic         reset,
     // CPU-local reset.  The AT splash holds the 286/BIU in reset while the
     // device router and EGA raster remain alive to render the splash itself.
@@ -42,6 +46,7 @@ module spk286_at_machine (
     input  logic         at286ctl_eff_mpu401,
     input  logic         at286ctl_eff_ems,
     input  logic         at286ctl_eff_umb,
+    input  logic [2:0]   installed_ram_size_osd,
     input  logic         midi_baudce,
     input  logic         uart_baudce,
     input  logic         midi_rx,
@@ -94,7 +99,7 @@ module spk286_at_machine (
     output logic         memory_write,
     output logic         memory_code_fetch,
     output logic [3:0]   memory_cycle_class,
-    output logic [23:0]  memory_address,
+    output logic [24:0]  memory_address,
     output logic [1:0]   memory_byte_enable,
     output logic [15:0]  memory_data_out,
     input  logic         memory_accept,
@@ -107,7 +112,7 @@ module spk286_at_machine (
     output logic         dma_memory_valid,
     output logic         dma_memory_write,
     output logic         dma_memory_read,
-    output logic [23:0]  dma_memory_address,
+    output logic [24:0]  dma_memory_address,
     output logic [1:0]   dma_memory_byte_enable,
     output logic [15:0]  dma_memory_data_out,
     input  logic         dma_memory_accept,
@@ -208,6 +213,7 @@ module spk286_at_machine (
     output logic [23:0]  debug_cs_base,
     output logic [15:0]  debug_flags,
     output logic [127:0] debug_gpr,
+    output logic         debug_instruction_retired,
     output logic [63:0]  debug_segment_selectors,
     output logic         debug_fetch_blocked,
     output logic [16:0]  debug_fetch_cursor,
@@ -243,6 +249,10 @@ module spk286_at_machine (
     output logic         debug_at_memory_projection,
     output logic         debug_at_cycle_active,
     output logic         debug_at_ready,
+    output logic         debug_at_read_data_valid,
+    output logic         debug_dma_bus_request,
+    output logic         debug_refresh_request,
+    output logic [3:0]   debug_bridge_state,
     output logic [15:0]  refresh_count,
     output logic [15:0]  dma_side_effect_count,
     output logic [15:0]  device_side_effect_count,
@@ -304,14 +314,31 @@ module spk286_at_machine (
     // must clear only address bit 20 while the gate is closed.  Keep the
     // raw bridge address for diagnostics and apply this view to memory
     // decode/transactions (I/O ports are unaffected).  The reset-vector
-    // alias is deliberately exempt: this profile maps FFF000h-FFFFFFh to
+    // alias is deliberately exempt: this profile maps FF0000h-FFFFFFh to
     // the F0000h BIOS window before the memory owner, even while A20 is off.
     logic [23:0] at_memory_address;
-    logic [23:0] memory_backend_address;
+    logic [24:0] memory_backend_address;
     logic        ems_aperture_select;
     logic        ems_runtime_enabled;
     logic        umb_region_select;
     logic        umb_runtime_enabled;
+    logic [2:0]  installed_ram_size_q = 3'd0;
+
+    function automatic logic [2:0] normalize_ram_size(input logic [2:0] size);
+        begin
+            case (size)
+                3'd0, 3'd1, 3'd2, 3'd3, 3'd4: normalize_ram_size = size;
+                default: normalize_ram_size = 3'd0;
+            endcase
+        end
+    endfunction
+
+    // Memory geometry changes only when the user applies Hardware settings
+    // with Reset. This keeps the CPU decode and CMOS report in agreement.
+    always_ff @(posedge clk) begin
+        if (reset)
+            installed_ram_size_q <= normalize_ram_size(installed_ram_size_osd);
+    end
 
     assign ems_runtime_enabled = (`ENABLE_EMS) && at286ctl_eff_ems;
     assign umb_runtime_enabled = (`ENABLE_UMB) && at286ctl_eff_umb;
@@ -343,7 +370,7 @@ module spk286_at_machine (
         end
     endfunction
 
-    function automatic logic [23:0] ems_backend_address(
+    function automatic logic [24:0] map_memory_backend_address(
         input logic [23:0] address
     );
         logic [6:0] selected_page;
@@ -356,13 +383,25 @@ module spk286_at_machine (
                 2'b11: selected_page = ems_map[3];
                 default: selected_page = 7'h00;
             endcase
+            // Resolve the CPU BIOS alias before entering backend address
+            // space. Backend FF0000h-FFFFFFh also backs shifted RAM at
+            // CPU DF0000h-DFFFFFh and must not be translated again.
+            if (address >= 24'hFF0000)
+                map_memory_backend_address = {9'h00F, address[15:0]};
             // Preserve the source core's physical EMS layout:
             // {1'b1, page[6:0], offset[13:0]} = 0x200000..0x3FFFFF.
-            if (ems_page_selected(address))
-                ems_backend_address = {2'b00, 1'b1, selected_page,
-                                        address[13:0]};
+            else if (ems_page_selected(address))
+                map_memory_backend_address = {1'b0, 2'b00, 1'b1,
+                                               selected_page, address[13:0]};
+            // Keep the EMS card's private 2-4 MiB page store separate from
+            // CPU-visible extended RAM. The physical SDRAM backend has room
+            // beyond the 286's 16 MiB address space, so shift high RAM by
+            // 2 MiB while preserving the CPU-visible address map.
+            else if ((address >= 24'h200000) &&
+                     (address < 24'hFE0000))
+                map_memory_backend_address = {1'b0, address} + 25'h0200000;
             else
-                ems_backend_address = address;
+                map_memory_backend_address = {1'b0, address};
         end
     endfunction
 
@@ -487,6 +526,30 @@ module spk286_at_machine (
     wire       cpu_core_reset = reset | cpu_reset |
                                 devices_cpu_reset_request | spk_shutdown;
 
+    // When the optional divided CPU clock is selected, warm-reset pulses
+    // originate in the 50 MHz chipset domain. Assert asynchronously and
+    // release on the slower CPU clock after two complete edges. The ordinary
+    // 50 MHz build preserves the direct reset path.
+    logic cpu_clock_reset;
+    generate
+        if (CPU_USES_SAMPLE_EDGE) begin : g_cpu_reset_sync
+            logic cpu_reset_sync1_q;
+            logic cpu_reset_sync2_q;
+            always_ff @(posedge clk_cpu or posedge cpu_core_reset) begin
+                if (cpu_core_reset) begin
+                    cpu_reset_sync1_q <= 1'b1;
+                    cpu_reset_sync2_q <= 1'b1;
+                end else begin
+                    cpu_reset_sync1_q <= 1'b0;
+                    cpu_reset_sync2_q <= cpu_reset_sync1_q;
+                end
+            end
+            assign cpu_clock_reset = cpu_reset_sync2_q;
+        end else begin : g_cpu_reset_direct
+            assign cpu_clock_reset = cpu_core_reset;
+        end
+    endgenerate
+
     // IBM AT BIOSes announce a warm reboot by storing 1234h at physical
     // address 0040:0072. Keep this as a one-cycle event so AT286CTL can drop
     // only its VGA+ enable while preserving other per-program overrides.
@@ -545,7 +608,7 @@ module spk286_at_machine (
     always_comb begin
         at_memory_address = at_address;
         if (!at_io && !a20_enable &&
-            !((at_address >= 24'hFFF000) &&
+            !((at_address >= 24'hFF0000) &&
               (at_address <= 24'hFFFFFF)))
             at_memory_address[20] = 1'b0;
     end
@@ -594,8 +657,8 @@ module spk286_at_machine (
     end
 
     spk286_machine_cpu u_cpu (
-        .clk                    (clk),
-        .reset                  (cpu_core_reset),
+        .clk                    (clk_cpu),
+        .reset                  (cpu_clock_reset),
         .execute_enable         (execute_enable),
         .ready                  (cpu_ready_i),
         .data_in                (cpu_data_in_i),
@@ -624,9 +687,10 @@ module spk286_at_machine (
         .debug_cs               (debug_cs),
         .debug_cs_base          (spk_debug_cs_base),
         .debug_ip                (debug_ip),
-         .debug_flags             (spk_debug_flags),
-         .debug_gpr               (spk_debug_gpr),
-         .debug_segment_selectors (spk_debug_segment_selectors),
+        .debug_flags             (spk_debug_flags),
+        .debug_gpr               (spk_debug_gpr),
+        .debug_instruction_retired(debug_instruction_retired),
+        .debug_segment_selectors (spk_debug_segment_selectors),
          .fetch_blocked           (spk_fetch_blocked),
         .debug_fetch_cursor      (spk_debug_fetch_cursor),
         .debug_micro_pc          (spk_debug_micro_pc),
@@ -661,6 +725,7 @@ module spk286_at_machine (
         .ems_enabled            (ems_runtime_enabled),
         .ems_window_enabled     (ems_window_enabled),
         .umb_enabled            (umb_runtime_enabled),
+        .installed_ram_size     (installed_ram_size_q),
         .word_capable           (cpu_memory_word_capable),
         .memory_cycle           (),
         .conventional_ram_select(), .video_aperture_select(),
@@ -670,9 +735,12 @@ module spk286_at_machine (
         .rom_write_blocked      (), .unmapped_request()
     );
 
-    spk286_at_bus_bridge u_bridge (
+    spk286_at_bus_bridge #(
+        .COMPLETE_ON_CPU_SAMPLE(CPU_USES_SAMPLE_EDGE)
+    ) u_bridge (
         .clk                    (clk),
         .reset                  (cpu_core_reset),
+        .cpu_sample_edge        (cpu_sample_edge),
         .cpu_bus_valid          (cpu_bus_valid),
         .cpu_address            (cpu_address),
         .cpu_data_out           (cpu_data_out),
@@ -708,6 +776,7 @@ module spk286_at_machine (
         .at_read_data           (at_read_data),
         .at_read_data_valid     (at_read_data_valid),
         .bridge_idle            (bridge_idle),
+        .debug_state            (debug_bridge_state),
         .protocol_error         (bridge_protocol_error)
     );
 
@@ -719,6 +788,7 @@ module spk286_at_machine (
         .ems_enabled            (ems_runtime_enabled),
         .ems_window_enabled     (ems_window_enabled),
         .umb_enabled            (umb_runtime_enabled),
+        .installed_ram_size     (installed_ram_size_q),
         .memory_cycle           (memory_cycle),
         .conventional_ram_select(conventional_ram_select),
         .video_aperture_select  (video_aperture_select),
@@ -738,7 +808,7 @@ module spk286_at_machine (
     assign memory_write = at_write;
     assign memory_code_fetch = at_code_fetch;
     assign memory_cycle_class = at_cycle_class;
-    assign memory_backend_address = ems_backend_address(at_memory_address);
+    assign memory_backend_address = map_memory_backend_address(at_memory_address);
     assign memory_address = memory_backend_address;
     assign memory_byte_enable = at_byte_enable;
     assign memory_data_out = at_data_out;
@@ -772,6 +842,7 @@ module spk286_at_machine (
         .at286ctl_eff_tandy    (at286ctl_eff_tandy),
         .at286ctl_eff_mpu401   (at286ctl_eff_mpu401),
         .at286ctl_eff_ems      (ems_runtime_enabled),
+        .installed_ram_size    (installed_ram_size_q),
         .midi_baudce           (midi_baudce),
         .uart_baudce           (uart_baudce),
         .midi_rx               (midi_rx),
@@ -988,7 +1059,7 @@ module spk286_at_machine (
     // presents its programmed physical address directly on the bus; 86Box
     // models this with mem_read_phys()/mem_write_phys(), which bypass the
     // CPU rammask.  Keep DMA independent of the CPU A20 state.
-    assign dma_memory_address = ems_backend_address(dma_transfer_address);
+    assign dma_memory_address = map_memory_backend_address(dma_transfer_address);
     assign dma_memory_byte_enable = dma_transfer_byte_enable;
     assign dma_memory_data_out = dma_transfer_data_out;
 
@@ -1085,6 +1156,9 @@ module spk286_at_machine (
                                         umb_region_select;
     assign debug_at_cycle_active   = at_valid;
     assign debug_at_ready         = at_ready;
+    assign debug_at_read_data_valid = at_read_data_valid;
+    assign debug_dma_bus_request  = dma_bus_request;
+    assign debug_refresh_request  = refresh_request;
 
     always_ff @(posedge clk or posedge reset) begin
         if (reset) begin

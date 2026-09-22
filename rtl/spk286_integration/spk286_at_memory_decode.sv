@@ -14,6 +14,8 @@ module spk286_at_memory_decode (
     input  logic         ems_enabled,
     input  logic         ems_window_enabled[0:3],
     input  logic         umb_enabled,
+    // OSD code: 0=1 MiB, 1=2 MiB, 2=4 MiB, 3=8 MiB, 4=16 MiB.
+    input  logic [2:0]   installed_ram_size,
 
     output logic         memory_cycle,
     output logic         conventional_ram_select,
@@ -30,15 +32,15 @@ module spk286_at_memory_decode (
 );
     localparam logic [23:0] SYSTEM_BIOS_BASE       = 24'h0F0000;
     localparam logic [23:0] SYSTEM_BIOS_LIMIT      = 24'h0FFFFF;
-    localparam logic [23:0] SYSTEM_BIOS_ALIAS_BASE = 24'hFFF000;
+    localparam logic [23:0] SYSTEM_BIOS_ALIAS_BASE = 24'hFF0000;
     localparam logic [23:0] SYSTEM_BIOS_ALIAS_LIMIT = 24'hFFFFFF;
     localparam logic [23:0] EXTENDED_RAM_BASE      = 24'h100000;
-    localparam logic [23:0] EXTENDED_RAM_LIMIT     = 24'h15FFFF;
 
     logic valid_memory_class;
     logic system_bios_alias_select;
     logic ems_window_select;
     logic ems_page_frame_select;
+    logic [23:0] extended_ram_limit;
 
     always_comb begin
         case (cycle_class)
@@ -60,9 +62,20 @@ module spk286_at_memory_decode (
                                    (((address >= SYSTEM_BIOS_BASE) &&
                                      (address <= SYSTEM_BIOS_LIMIT)) ||
                                     system_bios_alias_select);
+        // The first profile has 640 KiB conventional + 384 KiB extended.
+        // Larger profiles retain that 384 KiB remap offset. Like the 86Box
+        // 16-bit-bus AT model, the 16 MiB profile reserves the top 128 KiB:
+        // FE0000h-FEFFFFh is unmapped and FF0000h-FFFFFFh is the BIOS alias.
+        case (installed_ram_size)
+            3'd1:    extended_ram_limit = 24'h25FFFF;
+            3'd2:    extended_ram_limit = 24'h45FFFF;
+            3'd3:    extended_ram_limit = 24'h85FFFF;
+            3'd4:    extended_ram_limit = 24'hFDFFFF;
+            default: extended_ram_limit = 24'h15FFFF;
+        endcase
         extended_ram_select      = valid_memory_class &&
                                    (address >= EXTENDED_RAM_BASE) &&
-                                   (address <= EXTENDED_RAM_LIMIT) &&
+                                   (address <= extended_ram_limit) &&
                                    !system_bios_alias_select;
 
         ems_window_select       = ((address[15:14] == 2'b00) &&
@@ -112,11 +125,10 @@ module spk286_at_memory_decode (
                          extended_ram_select || ems_aperture_select ||
                          umb_region_select);
 
-        // Addresses above the installed 1 MiB profile (640 KiB conventional
-        // plus 384 KiB extended) are explicitly unmapped, except for the
-        // separately-owned UMB and translated EMS apertures. The machine-
-        // level sink completes other reads with FFh instead of exposing
-        // spare SDRAM.
+        // Addresses above the selected RAM profile are explicitly unmapped,
+        // except for the separately-owned UMB and translated EMS apertures.
+        // The machine-level sink completes other reads with FFh instead of
+        // exposing spare SDRAM.
         unmapped_request = request_valid && !memory_cycle;
     end
 endmodule

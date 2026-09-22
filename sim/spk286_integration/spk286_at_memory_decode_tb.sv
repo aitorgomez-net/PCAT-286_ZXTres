@@ -8,6 +8,7 @@ module spk286_at_memory_decode_tb;
     logic ems_enabled = 1'b0;
     logic ems_window_enabled [0:3];
     logic umb_enabled = 1'b0;
+    logic [2:0] installed_ram_size = 3'd0;
     wire memory_cycle, conventional_ram_select, video_aperture_select;
     wire option_region_select, system_bios_select, extended_ram_select;
     wire ems_aperture_select;
@@ -20,6 +21,7 @@ module spk286_at_memory_decode_tb;
         .cycle_class(cycle_class), .address(address),
         .ems_enabled(ems_enabled), .ems_window_enabled(ems_window_enabled),
         .umb_enabled(umb_enabled),
+        .installed_ram_size(installed_ram_size),
         .memory_cycle(memory_cycle),
         .conventional_ram_select(conventional_ram_select),
         .video_aperture_select(video_aperture_select),
@@ -92,9 +94,50 @@ module spk286_at_memory_decode_tb;
         classify(24'h160000, 4'h5, 1'b0);
         check(!word_capable && !extended_ram_select && !memory_cycle && unmapped_request,
               "memory above the installed 1 MiB profile was decoded as RAM");
-        classify(24'hFFEFFF, 4'h6, 1'b1);
+        classify(24'hFEFFFF, 4'h6, 1'b1);
         check(!word_capable && !extended_ram_select && !write_allowed && unmapped_request,
               "high unmapped memory was exposed as SDRAM");
+
+        // Every selectable profile has an explicit, finite upper boundary.
+        installed_ram_size = 3'd1;
+        classify(24'h25FFFF, 4'h6, 1'b1);
+        check(extended_ram_select && write_allowed,
+              "2 MiB profile upper limit was not decoded");
+        classify(24'h260000, 4'h5, 1'b0);
+        check(!memory_cycle && unmapped_request,
+              "2 MiB profile exposed memory above its limit");
+
+        installed_ram_size = 3'd2;
+        classify(24'h45FFFF, 4'h6, 1'b1);
+        check(extended_ram_select && write_allowed,
+              "4 MiB profile upper limit was not decoded");
+        classify(24'h460000, 4'h5, 1'b0);
+        check(!memory_cycle && unmapped_request,
+              "4 MiB profile exposed memory above its limit");
+
+        installed_ram_size = 3'd3;
+        classify(24'h85FFFF, 4'h6, 1'b1);
+        check(extended_ram_select && write_allowed,
+              "8 MiB profile upper limit was not decoded");
+        classify(24'h860000, 4'h5, 1'b0);
+        check(!memory_cycle && unmapped_request,
+              "8 MiB profile exposed memory above its limit");
+
+        installed_ram_size = 3'd4;
+        classify(24'hFDFFFF, 4'h6, 1'b1);
+        check(extended_ram_select && write_allowed,
+              "16 MiB profile upper limit was not decoded");
+        classify(24'hFE0000, 4'h5, 1'b0);
+        check(!memory_cycle && !extended_ram_select && unmapped_request,
+              "16 MiB profile exposed the reserved FE0000h block");
+        classify(24'hFEFFFF, 4'h5, 1'b0);
+        check(!memory_cycle && !extended_ram_select && unmapped_request,
+              "16 MiB profile exposed the reserved FEFFFFh boundary");
+        classify(24'hFF0000, 4'hD, 1'b0);
+        check(memory_cycle && system_bios_select && !extended_ram_select &&
+              !unmapped_request,
+              "64 KiB high BIOS alias did not start at FF0000h");
+        installed_ram_size = 3'd0;
 
         ems_enabled = 1'b1;
         ems_window_enabled[0] = 1'b1;

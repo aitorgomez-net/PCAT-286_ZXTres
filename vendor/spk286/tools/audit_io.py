@@ -28,8 +28,8 @@ PROBES = (('captured-port',
  ('word-port-width',
   'spk286_micro_executor',
   'spk286_scalar_io',
-  'assign operand_byte = io_byte ||',
-  'assign operand_byte = io_transfer ||',
+  'io_byte ||',
+  'io_transfer ||',
   'exact I/O byte lane'),
  ('port-bus-type',
   'spk286',
@@ -40,20 +40,20 @@ PROBES = (('captured-port',
  ('output-direction',
   'spk286_micro_executor',
   'spk286_string_io',
-  'assign operand_write = io_write || string_store',
-  'assign operand_write = string_store',
+  'io_write || string_store',
+  'string_store',
   'exact data transaction order, direction and lanes'),
  ('output-payload',
   'spk286_micro_executor',
   'spk286_string_io',
-  'assign operand_write_data = push_transfer',
-  "assign operand_write_data = io_write ? 16'd0 : push_transfer",
+  ': tmp0_q)));',
+  ": 16'd0)));",
   'low write byte'),
  ('port-completion-dependency',
   'spk286_micro_executor',
   'spk286_string_io',
-  'assign operation_done = muldiv_complete || write_result_ax || write_result_dx || (fetch_port',
-  'assign operation_done = io_transfer || muldiv_complete || write_result_ax || write_result_dx || (fetch_port',
+  'assign operation_done =',
+  'assign operation_done = io_transfer ||',
   'exact fault producer or single retirement'),
  ('input-result-ownership',
   'spk286_micro_executor',
@@ -126,12 +126,19 @@ PROBES = (('captured-port',
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--build-dir', type=Path, default=Path(os.environ.get('SPK286_BUILD_DIR', 'build')))
+    parser.add_argument('--simulation-timeout', type=float, default=60,
+                        help='wall-clock seconds per simulation; functional cycle limits remain in the benches')
     args = parser.parse_args()
+    if args.simulation_timeout <= 0:
+        parser.error('--simulation-timeout must be positive')
     subprocess.run([sys.executable, '-m', 'tools.microcode.compile_microcode', '--check'], check=True)
     output = args.build_dir.resolve()/'io-audit'
     output.mkdir(parents=True, exist_ok=True)
+    rtl_sources = sorted((ROOT/'rtl').glob('*.sv'))
+    # Match scripts/rtl_sources.sh: packages must precede their users in Icarus.
+    packages = [ROOT/'rtl/spk286_protected_pkg.sv', ROOT/'rtl/spk286_tss_pkg.sv']
     sources = [ROOT/'microcode/generated/spk286_microcode_pkg.sv', ROOT/'microcode/generated/spk286_microcode_rom.sv',
-               *sorted((ROOT/'rtl').glob('*.sv'))]
+               *packages, *(p for p in rtl_sources if p not in packages)]
     originals = {p: p.read_bytes() for p in sources}
     (output/'source.sha256').write_text(''.join(f'{hashlib.sha256(data).hexdigest()}  {p.relative_to(ROOT).as_posix()}\n'
                                               for p,data in originals.items()), encoding='utf-8')
@@ -156,7 +163,7 @@ def main():
         (directory/'build.log').write_text(build.stdout+build.stderr, encoding='utf-8')
         if build.returncode:
             raise RuntimeError(f'{name}: compile failure is not functional mutation rejection')
-        run = subprocess.run(['vvp',str(binary),'+instruction_vectors='+str(path)],cwd=ROOT,capture_output=True,text=True,timeout=60)
+        run = subprocess.run(['vvp',str(binary),'+instruction_vectors='+str(path)],cwd=ROOT,capture_output=True,text=True,timeout=args.simulation_timeout)
         (directory/'run.log').write_text(run.stdout+run.stderr, encoding='utf-8')
         if reason:
             if run.returncode == 0 or reason not in run.stdout+run.stderr:

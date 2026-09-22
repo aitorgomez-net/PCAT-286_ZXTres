@@ -67,8 +67,9 @@
     "JMP_REL16": 73,
     "LEAVE_FRAME": 449,
     "LEA_R16_M": 266,
+    "LOADALL": 717,
     "LOAD_BASE_INDEX8": 307,
-    "LOAD_CARRY_BYTE": 717,
+    "LOAD_CARRY_BYTE": 719,
     "LOAD_DIRECT16": 292,
     "LOAD_DIRECT8": 287,
     "LOAD_FLAGS_BYTE": 207,
@@ -184,12 +185,10 @@
         "file": "data_move.mc",
         "line": 5
       },
-      "operands": [
-        "TMP0"
-      ],
-      "operation": "FETCH_IMM16",
-      "statement": "FETCH_IMM16 -> TMP0",
-      "word": 1
+      "operands": [],
+      "operation": "FETCH_MOV_DST16_IMM16",
+      "statement": "FETCH_MOV_DST16_IMM16",
+      "word": 186
     },
     {
       "address": 1,
@@ -226,9 +225,9 @@
         "line": 11
       },
       "operands": [],
-      "operation": "DECODE_MODRM",
-      "statement": "DECODE_MODRM",
-      "word": 4
+      "operation": "DECODE_MOV_RM16_REG16",
+      "statement": "DECODE_MOV_RM16_REG16",
+      "word": 177
     },
     {
       "address": 4,
@@ -278,9 +277,9 @@
         "line": 18
       },
       "operands": [],
-      "operation": "DECODE_MODRM",
-      "statement": "DECODE_MODRM",
-      "word": 4
+      "operation": "DECODE_MOV_REG16_RM16",
+      "statement": "DECODE_MOV_REG16_RM16",
+      "word": 178
     },
     {
       "address": 8,
@@ -330,9 +329,9 @@
         "line": 7
       },
       "operands": [],
-      "operation": "DECODE_MODRM",
-      "statement": "DECODE_MODRM",
-      "word": 4
+      "operation": "DECODE_ALU_RM16_REG16",
+      "statement": "DECODE_ALU_RM16_REG16",
+      "word": 173
     },
     {
       "address": 12,
@@ -426,9 +425,9 @@
         "line": 17
       },
       "operands": [],
-      "operation": "DECODE_MODRM",
-      "statement": "DECODE_MODRM",
-      "word": 4
+      "operation": "DECODE_ALU_REG16_RM16",
+      "statement": "DECODE_ALU_REG16_RM16",
+      "word": 174
     },
     {
       "address": 19,
@@ -521,12 +520,10 @@
         "file": "word_alu.mc",
         "line": 27
       },
-      "operands": [
-        "TMP0"
-      ],
-      "operation": "READ_DST16",
-      "statement": "READ_DST16 -> TMP0",
-      "word": 13
+      "operands": [],
+      "operation": "FETCH_ALU_DST16_IMM16",
+      "statement": "FETCH_ALU_DST16_IMM16",
+      "word": 181
     },
     {
       "address": 26,
@@ -617,12 +614,10 @@
         "file": "word_alu.mc",
         "line": 37
       },
-      "operands": [
-        "TMP1"
-      ],
-      "operation": "FETCH_IMM16_TMP1",
-      "statement": "FETCH_IMM16 -> TMP1",
-      "word": 11
+      "operands": [],
+      "operation": "FETCH_ALU_RM16_IMM16",
+      "statement": "FETCH_ALU_RM16_IMM16",
+      "word": 183
     },
     {
       "address": 33,
@@ -713,12 +708,10 @@
         "file": "word_alu.mc",
         "line": 47
       },
-      "operands": [
-        "TMP1"
-      ],
-      "operation": "FETCH_IMM8S_TMP1",
-      "statement": "FETCH_IMM8S -> TMP1",
-      "word": 12
+      "operands": [],
+      "operation": "FETCH_ALU_RM16_IMM8S",
+      "statement": "FETCH_ALU_RM16_IMM8S",
+      "word": 184
     },
     {
       "address": 40,
@@ -2287,9 +2280,9 @@
         "line": 4
       },
       "operands": [],
-      "operation": "FETCH_IMM8",
-      "statement": "FETCH_IMM8 -> TMP0",
-      "word": 29
+      "operation": "FETCH_MOV_DST8_IMM8",
+      "statement": "FETCH_MOV_DST8_IMM8",
+      "word": 187
     },
     {
       "address": 160,
@@ -2326,9 +2319,9 @@
         "line": 8
       },
       "operands": [],
-      "operation": "DECODE_MODRM",
-      "statement": "DECODE_MODRM",
-      "word": 4
+      "operation": "DECODE_MOV_RM8_REG8",
+      "statement": "DECODE_MOV_RM8_REG8",
+      "word": 179
     },
     {
       "address": 163,
@@ -2378,9 +2371,9 @@
         "line": 13
       },
       "operands": [],
-      "operation": "DECODE_MODRM",
-      "statement": "DECODE_MODRM",
-      "word": 4
+      "operation": "DECODE_MOV_REG8_RM8",
+      "statement": "DECODE_MOV_REG8_RM8",
+      "word": 180
     },
     {
       "address": 167,
@@ -2442,9 +2435,9 @@
         "line": 19
       },
       "operands": [],
-      "operation": "FETCH_IMM8",
-      "statement": "FETCH_IMM8 -> TMP0",
-      "word": 29
+      "operation": "FETCH_MOV_RM8_IMM8",
+      "statement": "FETCH_MOV_RM8_IMM8",
+      "word": 189
     },
     {
       "address": 172,
@@ -2491,12 +2484,10 @@
         "file": "zz_byte_scalar.mc",
         "line": 24
       },
-      "operands": [
-        "TMP0"
-      ],
-      "operation": "FETCH_IMM16",
-      "statement": "FETCH_IMM16 -> TMP0",
-      "word": 1
+      "operands": [],
+      "operation": "FETCH_MOV_RM16_IMM16",
+      "statement": "FETCH_MOV_RM16_IMM16",
+      "word": 188
     },
     {
       "address": 176,
@@ -2532,9 +2523,9 @@
         "line": 28
       },
       "operands": [],
-      "operation": "DECODE_MODRM",
-      "statement": "DECODE_MODRM",
-      "word": 4
+      "operation": "DECODE_ALU_RM8_REG8",
+      "statement": "DECODE_ALU_RM8_REG8",
+      "word": 175
     },
     {
       "address": 179,
@@ -2628,9 +2619,9 @@
         "line": 36
       },
       "operands": [],
-      "operation": "DECODE_MODRM",
-      "statement": "DECODE_MODRM",
-      "word": 4
+      "operation": "DECODE_ALU_REG8_RM8",
+      "statement": "DECODE_ALU_REG8_RM8",
+      "word": 176
     },
     {
       "address": 186,
@@ -2723,12 +2714,10 @@
         "file": "zz_byte_scalar.mc",
         "line": 44
       },
-      "operands": [
-        "TMP0"
-      ],
-      "operation": "READ_DST8",
-      "statement": "READ_DST8 -> TMP0",
-      "word": 53
+      "operands": [],
+      "operation": "FETCH_ALU_DST8_IMM8",
+      "statement": "FETCH_ALU_DST8_IMM8",
+      "word": 182
     },
     {
       "address": 193,
@@ -2819,12 +2808,10 @@
         "file": "zz_byte_scalar.mc",
         "line": 52
       },
-      "operands": [
-        "TMP1"
-      ],
-      "operation": "FETCH_IMM8_TMP1",
-      "statement": "FETCH_IMM8 -> TMP1",
-      "word": 50
+      "operands": [],
+      "operation": "FETCH_ALU_RM8_IMM8",
+      "statement": "FETCH_ALU_RM8_IMM8",
+      "word": 185
     },
     {
       "address": 200,
@@ -9567,6 +9554,30 @@
     {
       "address": 717,
       "location": {
+        "entry": "LOADALL",
+        "file": "zzzzzzzzzzzzzzzzzz_loadall.mc",
+        "line": 5
+      },
+      "operands": [],
+      "operation": "LOADALL",
+      "statement": "LOADALL",
+      "word": 172
+    },
+    {
+      "address": 718,
+      "location": {
+        "entry": "LOADALL",
+        "file": "zzzzzzzzzzzzzzzzzz_loadall.mc",
+        "line": 6
+      },
+      "operands": [],
+      "operation": "END",
+      "statement": "END",
+      "word": 3
+    },
+    {
+      "address": 719,
+      "location": {
         "entry": "LOAD_CARRY_BYTE",
         "file": "zzzzzzzzzzzzzzzzzz_salc.mc",
         "line": 5
@@ -9577,7 +9588,7 @@
       "word": 30
     },
     {
-      "address": 718,
+      "address": 720,
       "location": {
         "entry": "LOAD_CARRY_BYTE",
         "file": "zzzzzzzzzzzzzzzzzz_salc.mc",
@@ -9591,7 +9602,7 @@
       "word": 171
     },
     {
-      "address": 719,
+      "address": 721,
       "location": {
         "entry": "LOAD_CARRY_BYTE",
         "file": "zzzzzzzzzzzzzzzzzz_salc.mc",
@@ -9606,7 +9617,7 @@
       "word": 54
     },
     {
-      "address": 720,
+      "address": 722,
       "location": {
         "entry": "LOAD_CARRY_BYTE",
         "file": "zzzzzzzzzzzzzzzzzz_salc.mc",

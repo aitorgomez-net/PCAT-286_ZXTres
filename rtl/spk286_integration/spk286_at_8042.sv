@@ -50,6 +50,7 @@ module spk286_at_8042 (
     logic       response_pending_q;
     logic [7:0] response_pending_data_q;
     logic [11:0] response_delay_q;
+    logic       keyboard_reset_bat_pending_q;
     logic [7:0] command_byte_q;
     logic [7:0] output_port_q;
     logic       write_command_byte_q;
@@ -85,11 +86,11 @@ module spk286_at_8042 (
     assign keyboard_output_valid = output_buffer_valid_q;
     assign keyboard_output_byte = output_buffer_q;
     assign keyboard_translate_set1 = command_byte_q[6];
-    // Hold queued keyboard bytes while OBF is full or the interface is
-    // inhibited. Host writes have priority, including changes to the command
-    // byte and commands that generate their own output-buffer reply.
+    // Hold queued keyboard bytes while OBF is full, a controller/device reply
+    // is pending, or the interface is inhibited. Host writes have priority.
     assign keyboard_byte_ready = !reset && keyboard_enabled_q &&
                                  !output_buffer_valid_q &&
+                                 !response_pending_q &&
                                  !(request_accept && request_write);
     assign irq1 = output_buffer_valid_q && command_byte_q[0];
     assign a20_enable = output_port_q[1];
@@ -125,6 +126,7 @@ module spk286_at_8042 (
             response_pending_q <= 1'b0;
             response_pending_data_q <= 8'h00;
             response_delay_q <= 12'd0;
+            keyboard_reset_bat_pending_q <= 1'b0;
             command_byte_q <= 8'h01;
             // The IBM AT releases the CPU reset line with its A20 gate
             // closed. BIOS POST opens it explicitly through the 8042
@@ -154,7 +156,16 @@ module spk286_at_8042 (
                 else begin
                     output_buffer_q <= response_pending_data_q;
                     output_buffer_valid_q <= 1'b1;
-                    response_pending_q <= 1'b0;
+                    if (keyboard_reset_bat_pending_q) begin
+                        // A keyboard reset first acknowledges FFh, then runs
+                        // BAT and posts AAh after the host consumes the ACK.
+                        response_pending_data_q <= 8'hAA;
+                        response_pending_q <= 1'b1;
+                        response_delay_q <= RESPONSE_DELAY_CYCLES;
+                        keyboard_reset_bat_pending_q <= 1'b0;
+                    end else begin
+                        response_pending_q <= 1'b0;
+                    end
                 end
             end
 
@@ -216,9 +227,11 @@ module spk286_at_8042 (
                         end
                         8'hD1: write_output_port_q <= 1'b1;
                         8'hE0: begin
-                            // T0/T1 observe the idle-high decoded clock/data
-                            // interface represented by this boundary.
-                            response_pending_data_q <= 8'h03;
+                            // This profile receives decoded HPS key events and
+                            // does not model the 8042's electrical T0/T1 pins.
+                            // Return the no-fault value used by Phoenix BIOS
+                            // and 86Box for an operational keyboard interface.
+                            response_pending_data_q <= 8'h00;
                             response_pending_q <= 1'b1;
                             response_delay_q <= RESPONSE_DELAY_CYCLES;
                         end
@@ -235,6 +248,15 @@ module spk286_at_8042 (
                         output_port_q <= request_byte | 8'h01;
                         reset_pulse_q <= !request_byte[0];
                         write_output_port_q <= 1'b0;
+                    end else if (request_byte == 8'hFF) begin
+                        // The HPS supplies decoded key events, so there is no
+                        // serial keyboard to answer this AT keyboard command.
+                        // Emulate the standard reset ACK and BAT completion
+                        // bytes at the host-visible 8042 output buffer.
+                        response_pending_data_q <= 8'hFA;
+                        response_pending_q <= 1'b1;
+                        response_delay_q <= RESPONSE_DELAY_CYCLES;
+                        keyboard_reset_bat_pending_q <= 1'b1;
                     end
                 end
             end

@@ -34,7 +34,33 @@ proc at_mailbox {label source_clock patterns budget} {
     set_false_path -hold -from $source_clock -to $r
 }
 
-set AT_CPU [at_clock FPGA_CLK2_50]
+# The optional observer /2 mode uses a real divide-by-two CPU clock. This is deliberately
+# a generated clock rather than a multicycle exception on the complete SPK286
+# hierarchy: BIU and chipset handshake paths which still require one 50 MHz
+# cycle remain fully timed.
+set at_no_debug 0
+set at_debug_cpu_div2 0
+set at_boot_splash_enabled 0
+foreach_in_collection a [get_all_global_assignments -name VERILOG_MACRO] {
+    if {[lindex $a 2] eq "SPK286_AT_NO_DEBUG"} { set at_no_debug 1 }
+    if {[lindex $a 2] eq "SPK286_AT_DEBUG_CPU_DIV2"} { set at_debug_cpu_div2 1 }
+    if {[lindex $a 2] eq "SPK286_AT_BOOT_SPLASH"} { set at_boot_splash_enabled 1 }
+}
+if {$at_no_debug && $at_debug_cpu_div2} {
+    error "SPK286_AT_DEBUG_CPU_DIV2 requires the debug observer"
+}
+if {$at_debug_cpu_div2} {
+    set at_debug_cpu_clock_pin [get_pins -nowarn {*|at_debug_cpu_clock_q|q}]
+    if {[get_collection_size $at_debug_cpu_clock_pin] != 1} {
+        error "AT debug CPU clock divider missing/ambiguous"
+    }
+    create_generated_clock -name AT_DEBUG_CPU_CLK -source [get_ports FPGA_CLK2_50] \
+        -divide_by 2 $at_debug_cpu_clock_pin
+    set AT_CPU [at_clock AT_DEBUG_CPU_CLK]
+} else {
+    set AT_CPU [at_clock FPGA_CLK2_50]
+}
+
 set AT_VIDEO [at_clock {emu|u_at_video_pll|pll_system_inst|altera_pll_i|general[0].gpll~PLL_OUTPUT_COUNTER|divclk}]
 set AT_VIDEO_X2 [at_clock {emu|u_at_video_pll|pll_system_inst|altera_pll_i|general[1].gpll~PLL_OUTPUT_COUNTER|divclk}]
 set AT_VIDEO_OUT [at_clock {emu|u_at_video_pll|pll_system_inst|altera_pll_i|general[2].gpll~PLL_OUTPUT_COUNTER|divclk}]
@@ -80,10 +106,50 @@ at_mailbox ega_config_payload $AT_VIDEO {
     *u_video|u_vram|rotate_count_sync1[*]
 } 10.0
 
-# Only an explicitly labelled reanalysis may lack the newly added stages.
-# A normal candidate compile must fail if either synchronizer is absent.
+# Optional diagnostic overlay.  Its source snapshot is frozen until the
+# request/acknowledge toggle has crossed both clock domains, so the payload is
+# a mailbox rather than a synchronous multi-cycle bus.  Constraining only the
+# two first synchronizer stages and the held payload avoids artificial hold
+# delay insertion across the wide observer without hiding any machine path.
+set debug_snapshot_source [at_regs debug_snapshot_source {
+    *u_at_debug_overlay|source_snapshot* *u_at_debug_overlay|source_sequence*
+} 0]
+set debug_snapshot_capture [at_regs debug_snapshot_capture {
+    *u_at_debug_overlay|video_snapshot* *u_at_debug_overlay|video_sequence*
+} 0]
+set debug_snapshot_request [at_regs debug_snapshot_request {
+    *u_at_debug_overlay|snapshot_request
+} 0]
+set debug_snapshot_request_meta [at_regs debug_snapshot_request_meta {
+    *u_at_debug_overlay|snapshot_request_src1
+} 0]
+set debug_snapshot_ack [at_regs debug_snapshot_ack {
+    *u_at_debug_overlay|snapshot_acknowledge
+} 0]
+set debug_snapshot_ack_meta [at_regs debug_snapshot_ack_meta {
+    *u_at_debug_overlay|snapshot_ack_video1
+} 0]
+if {[get_collection_size $debug_snapshot_request] &&
+    [get_collection_size $debug_snapshot_request_meta]} {
+    set_false_path -from $debug_snapshot_request -to $debug_snapshot_request_meta
+}
+if {[get_collection_size $debug_snapshot_ack] &&
+    [get_collection_size $debug_snapshot_ack_meta]} {
+    set_false_path -from $debug_snapshot_ack -to $debug_snapshot_ack_meta
+}
+if {[get_collection_size $debug_snapshot_source] &&
+    [get_collection_size $debug_snapshot_capture]} {
+    set_max_delay -from $debug_snapshot_source \
+                  -to $debug_snapshot_capture 20.0
+    set_false_path -hold -from $debug_snapshot_source \
+                             -to $debug_snapshot_capture
+}
+
+# The boot splash is optional at build time. When compiled in, a normal
+# candidate build must still fail if its synchronizer is absent. An explicitly
+# labelled reanalysis may lack this newly added stage.
 set at_require_new [expr {![info exists ::env(P05_REFERENCE_FIT)] || $::env(P05_REFERENCE_FIT) ne "1"}]
-at_sync splash $AT_CPU {*u_video|splash_video_sync1_q} $at_require_new
+at_sync splash $AT_CPU {*u_video|splash_video_sync1_q} [expr {$at_boot_splash_enabled && $at_require_new}]
 
 # These registers asynchronously assert reset, then release on their local
 # clock. Cut only the async control pin, not their synchronous D paths.

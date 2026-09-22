@@ -6,6 +6,7 @@ build_dir="${PCAT_BUILD_DIR:-$root/build/at-machine-boundary}"
 rom_path="${AT_SYSTEM_ROM:-$root/tests/firmware/pcat286_event_diag.rom}"
 mkdir -p "$build_dir"
 cd "$root"
+source "$root/scripts/at_performance_flags.sh"
 
 sources=(
   vendor/spk286/microcode/generated/spk286_microcode_pkg.sv
@@ -66,14 +67,14 @@ for source in rtl/KFPC-XT/HDL/KF8259/HDL/*.sv; do
   pic_sources+=("$source")
 done
 
-iverilog -g2012 -DSPK286_P05_PARALLEL_LIMIT_CHECK -DSPK286_AT_NO_DEBUG \
+iverilog -g2012 "${performance_flags[@]}" -DSPK286_AT_NO_DEBUG \
   -DSPK286_AT_SIM_MODEL \
   -Irtl/KFPC-XT/HDL/KF8253/HDL -t null -Irtl/KFPC-XT/HDL/KF8259/HDL \
   -s spk286_at_machine "${sources[@]}" "${pic_sources[@]}" \
   >"$build_dir/iverilog-build.log" 2>&1
 echo AT_MACHINE_ICARUS_ELAB_PASS
 
-verilator -DSPK286_P05_PARALLEL_LIMIT_CHECK -DSPK286_AT_NO_DEBUG \
+verilator "${performance_flags[@]}" -DSPK286_AT_NO_DEBUG \
   -DSPK286_AT_SIM_MODEL \
   -Irtl/KFPC-XT/HDL/KF8253/HDL --lint-only --timing --top-module spk286_at_machine \
   -Wno-fatal -Irtl/KFPC-XT/HDL/KF8259/HDL \
@@ -83,7 +84,7 @@ echo AT_MACHINE_PRODUCTION_LINT_PASS
 
 if [[ "${AT_REAL_PIC_ONLY:-0}" != 1 ]]; then
   rm -rf "$build_dir/verilator-obj"
-  verilator -Irtl/KFPC-XT/HDL/KF8253/HDL --binary --timing -DAT_MACHINE_PIC_MODEL \
+  verilator "${performance_flags[@]}" -Irtl/KFPC-XT/HDL/KF8253/HDL --binary --timing -DAT_MACHINE_PIC_MODEL \
     -DSPK286_AT_SIM_MODEL \
     --top-module spk286_at_machine_tb \
     -Wno-fatal -Irtl/KFPC-XT/HDL/KF8259/HDL \
@@ -103,7 +104,7 @@ if [[ "${AT_REAL_PIC_TEST:-0}" == 1 ]]; then
   nasm -f bin -o "$real_build_dir/pcat286_mpu_irq_diag.rom" \
     "$root/tests/firmware/pcat286_mpu_irq_diag.asm"
   rm -rf "$real_build_dir/verilator-obj"
-  verilator -Irtl/KFPC-XT/HDL/KF8253/HDL --binary --timing \
+  verilator "${performance_flags[@]}" -Irtl/KFPC-XT/HDL/KF8253/HDL --binary --timing \
     -DENABLE_MIDI=1 -DSPK286_AT_SIM_MODEL --top-module spk286_at_machine_tb \
     -Wno-fatal -Irtl/KFPC-XT/HDL/KF8259/HDL \
     --Mdir "$real_build_dir/verilator-obj" -o at_mpu_irq_vlt \

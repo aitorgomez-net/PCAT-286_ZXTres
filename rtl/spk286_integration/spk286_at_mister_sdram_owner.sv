@@ -32,7 +32,7 @@ module spk286_at_mister_sdram_owner #(
     // Existing clients leave this optional input open, which means one word.
     input  logic        request_burst,
     input  logic [3:0]  request_cycle_class,
-    input  logic [23:0] request_address,
+    input  logic [24:0] request_address,
     input  logic [1:0]  request_byte_enable,
     input  logic [15:0] request_data_out,
     output logic        request_accept,
@@ -40,6 +40,7 @@ module spk286_at_mister_sdram_owner #(
     output logic [15:0] request_read_data,
     output logic        request_read_data_valid,
     output logic        physical_idle,
+    output logic [7:0]  debug_state,
     output logic        protocol_error,
 
     output logic [12:0] sdram_address,
@@ -59,7 +60,7 @@ module spk286_at_mister_sdram_owner #(
     logic        active_q;
     logic        owner_refresh_q;
     logic        write_q;
-    logic [23:0] address_q;
+    logic [24:0] address_q;
     logic [1:0]  byte_enable_q;
     logic [15:0] data_out_q;
     logic        response_pending_q;
@@ -80,22 +81,19 @@ module spk286_at_mister_sdram_owner #(
     logic        kf_dq_io;
     logic [15:0] kf_dq_out;
 
+    assign debug_state = {active_q, write_q, response_pending_q,
+                          response_data_valid_q, kf_idle, kf_write_flag,
+                          kf_read_flag, kf_refresh_mode};
+
     logic        launch_request;
     logic        physical_write;
     logic [1:0]  physical_byte_enable;
-    logic [23:0] mapped_address;
+    logic [24:0] mapped_address;
     logic [8:0]  kf_access_num;
 
-    // The 80286 reset vector is fetched from FFFFF0h, while the loaded
-    // system BIOS occupies the AT F0000h-Fffffh window.  Real AT chipsets
-    // expose the top 4 KiB as a reset-vector alias; translate it here so
-    // the physical SDRAM stores only one copy of the BIOS image.
-    always_comb begin
-        mapped_address = active_q ? address_q : request_address;
-        if ((mapped_address >= 24'hFFF000) &&
-            (mapped_address <= 24'hFFFFFF))
-            mapped_address = mapped_address - 24'hF00000;
-    end
+    // The machine has already resolved CPU aliases and the EMS RAM shift.
+    // Backend FF0000h-FFFFFFh is RAM, not the CPU's high BIOS alias.
+    assign mapped_address = active_q ? address_q : request_address;
 
     assign physical_idle = kf_idle && !active_q;
     assign launch_request = !active_q && request_valid &&
@@ -131,7 +129,7 @@ module spk286_at_mister_sdram_owner #(
     // packed word layout.  The old {mapped_address[23:1], 1'b0} expression
     // aligned a byte address down and produced a sparse word layout; it was
     // not a left shift.  Loader and CPU share this mapper in either layout.
-    assign kf_address = {1'b0, mapped_address[23:1]};
+    assign kf_address = mapped_address[24:1];
     assign kf_data_in = active_q ? data_out_q : request_data_out;
 
     always_comb begin
@@ -221,7 +219,7 @@ module spk286_at_mister_sdram_owner #(
             active_q       <= 1'b0;
             owner_refresh_q <= 1'b0;
             write_q        <= 1'b0;
-            address_q      <= 24'h000000;
+            address_q      <= 25'h0000000;
             byte_enable_q  <= 2'b00;
             data_out_q     <= 16'h0000;
             response_pending_q <= 1'b0;
