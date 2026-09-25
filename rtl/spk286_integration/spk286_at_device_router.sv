@@ -14,6 +14,9 @@
 `ifndef ENABLE_TANDY_AUDIO
 `define ENABLE_TANDY_AUDIO 0
 `endif
+`ifndef ENABLE_SB
+`define ENABLE_SB 0
+`endif
 `ifndef ENABLE_MIDI
 `define ENABLE_MIDI 0
 `endif
@@ -23,9 +26,11 @@
 
 module spk286_at_device_router (
     input  logic        clk,
+    input  logic        cpu_sample_edge,
     input  logic        reset,
     input  logic        clk_video,
     input  logic        splashscreen,
+    input  logic [1:0]  ega_monitor_profile,
     input  logic        clear_vga13,
     input  logic [39:0] at286ctl_status_effective,
     input  logic [17:0] at286ctl_status_osd_match,
@@ -43,6 +48,8 @@ module spk286_at_device_router (
     input  logic [15:0] joya1,
     input  logic [1:0]  at286ctl_eff_opl2,
     input  logic        at286ctl_eff_cms,
+    input  logic        at286ctl_eff_sb,
+    input  logic [2:0]  at286ctl_eff_sb_irq,
     input  logic        at286ctl_eff_tandy,
     input  logic        at286ctl_eff_mpu401,
     input  logic        at286ctl_eff_ems,
@@ -92,6 +99,8 @@ module spk286_at_device_router (
     input  logic        dma_transfer_complete,
     input  logic        dma_terminal_count,
     input  logic [2:0]  dma_active_channel,
+    input  logic        dma_transfer_read_from_memory,
+    input  logic        dma_memory_data_valid,
     input  logic [15:0] dma_transfer_data_in,
     output logic        dma_transfer_accept,
     output logic        dma_transfer_ready,
@@ -143,6 +152,8 @@ module spk286_at_device_router (
     output logic signed [15:0] cms_sound_l,
     output logic signed [15:0] cms_sound_r,
     output logic signed [10:0] tandy_sound,
+    output logic signed [15:0] sb_sound_l,
+    output logic signed [15:0] sb_sound_r,
     output logic [15:0] side_effect_count,
     output logic [15:0] irq_request,
     output logic        protocol_error
@@ -171,6 +182,7 @@ module spk286_at_device_router (
     logic        response_data_valid_q;
     logic        router_protocol_error_q;
     logic        ems_runtime_enabled;
+    logic        sound_dma_channel_selected;
 
     assign ems_runtime_enabled = (`ENABLE_EMS) && at286ctl_eff_ems;
 
@@ -208,6 +220,10 @@ module spk286_at_device_router (
     logic       storage_protocol_error;
     logic [15:0] storage_side_effect_count;
     logic [15:0] storage_mgmt_readdata;
+    logic        storage_dma_transfer_accept;
+    logic        storage_dma_transfer_ready;
+    logic [15:0] storage_dma_transfer_data_out;
+    logic [7:0]  storage_dma_request;
     logic        gameport_request_accept;
     logic        gameport_request_ready;
     logic [15:0] gameport_read_data;
@@ -218,6 +234,11 @@ module spk286_at_device_router (
     logic        sound_request_ready;
     logic [15:0] sound_read_data;
     logic        sound_read_data_valid;
+    logic        sound_dma_transfer_accept;
+    logic        sound_dma_transfer_ready;
+    logic [15:0] sound_dma_transfer_data_out;
+    logic [7:0]  sound_dma_request;
+    logic        sound_sb_irq;
     logic [15:0] sound_side_effect_count;
     logic        sound_protocol_error;
     logic        mpu_request_accept;
@@ -245,6 +266,19 @@ module spk286_at_device_router (
     logic [2:0]  storage_ide_request;
     logic [7:0]  at286ctl_data_out;
     logic        at286ctl_output_enable;
+
+    assign sound_dma_channel_selected = `ENABLE_SB &&
+                                        (dma_active_channel == 3'd1);
+    assign dma_request = storage_dma_request | sound_dma_request;
+    assign dma_transfer_accept = sound_dma_channel_selected ?
+                                 sound_dma_transfer_accept :
+                                 storage_dma_transfer_accept;
+    assign dma_transfer_ready = sound_dma_channel_selected ?
+                                sound_dma_transfer_ready :
+                                storage_dma_transfer_ready;
+    assign dma_transfer_data_out = sound_dma_channel_selected ?
+                                   sound_dma_transfer_data_out :
+                                   storage_dma_transfer_data_out;
 
     always_comb begin
         device_8042_candidate = request_valid && request_command_valid &&
@@ -306,7 +340,18 @@ module spk286_at_device_router (
                                       (request_address[3:0] == 4'hB))))) ||
                                   ((`ENABLE_TANDY_AUDIO) && at286ctl_eff_tandy &&
                                    request_write &&
-                                   (request_address[15:4] == 12'h00C)));
+                                   (request_address[15:4] == 12'h00C)) ||
+                                  ((`ENABLE_SB) && at286ctl_eff_sb &&
+                                   (request_address[15:4] == 12'h022) &&
+                                   ((request_address[3:0] == 4'h6) ||
+                                    (request_address[3:0] == 4'hA) ||
+                                    (request_address[3:0] == 4'hC) ||
+                                    (request_address[3:0] == 4'hE) ||
+                                    (request_write &&
+                                     ((request_address[3:0] == 4'h4) ||
+                                      (request_address[3:0] == 4'h5))) ||
+                                    (!request_write &&
+                                     (request_address[3:0] == 4'h5)))));
         device_candidate = device_8042_candidate || device_rtc_candidate ||
                            device_storage_candidate || device_at286ctl_candidate ||
                            device_gameport_candidate || device_sound_candidate ||
@@ -401,9 +446,22 @@ module spk286_at_device_router (
         .clk                    (clk),
         .reset                  (reset),
         .warm_reset             (cpu_reset_request),
+        .cpu_sample_edge        (cpu_sample_edge),
         .opl2_io                (at286ctl_eff_opl2),
         .cms_en                 (at286ctl_eff_cms),
         .tandy_en               (at286ctl_eff_tandy),
+        .sb_en                  (at286ctl_eff_sb),
+        .dma_transfer_valid     (dma_transfer_valid),
+        .dma_transfer_complete  (dma_transfer_complete),
+        .dma_transfer_read_from_memory(dma_transfer_read_from_memory),
+        .dma_memory_data_valid  (dma_memory_data_valid),
+        .dma_active_channel     (dma_active_channel),
+        .dma_transfer_data_in   (dma_transfer_data_in),
+        .dma_transfer_accept    (sound_dma_transfer_accept),
+        .dma_transfer_ready     (sound_dma_transfer_ready),
+        .dma_transfer_data_out  (sound_dma_transfer_data_out),
+        .dma_request            (sound_dma_request),
+        .sb_irq                 (sound_sb_irq),
         .request_valid          (device_sound_candidate),
         .request_command_valid  (request_command_valid),
         .request_write          (request_write),
@@ -419,6 +477,8 @@ module spk286_at_device_router (
         .cms_sound_l            (cms_sound_l),
         .cms_sound_r            (cms_sound_r),
         .tandy_sound            (tandy_sound),
+        .sb_sound_l             (sb_sound_l),
+        .sb_sound_r             (sb_sound_r),
         .side_effect_count      (sound_side_effect_count),
         .protocol_error         (sound_protocol_error)
     );
@@ -552,6 +612,7 @@ module spk286_at_device_router (
     spk286_at_storage_video u_storage_video (
         .clk(clk), .reset(reset),
         .clk_video(clk_video), .splashscreen(splashscreen),
+        .ega_monitor_profile(ega_monitor_profile),
         .vga_enabled(vga_enabled),
         .vga_mode13_native(vga_mode13_native),
         .crt_h_offset(crt_h_offset), .crt_v_offset(crt_v_offset),
@@ -572,10 +633,10 @@ module spk286_at_device_router (
         .dma_terminal_count(dma_terminal_count),
         .dma_active_channel(dma_active_channel),
         .dma_transfer_data_in(dma_transfer_data_in),
-        .dma_transfer_accept(dma_transfer_accept),
-        .dma_transfer_ready(dma_transfer_ready),
-        .dma_transfer_data_out(dma_transfer_data_out),
-        .dma_request(dma_request),
+        .dma_transfer_accept(storage_dma_transfer_accept),
+        .dma_transfer_ready(storage_dma_transfer_ready),
+        .dma_transfer_data_out(storage_dma_transfer_data_out),
+        .dma_request(storage_dma_request),
         .mgmt_address(mgmt_address), .mgmt_writedata(mgmt_writedata),
         .mgmt_write(mgmt_write), .mgmt_read(mgmt_read),
         .mgmt_readdata(storage_mgmt_readdata),
@@ -651,6 +712,12 @@ module spk286_at_device_router (
                              uart2_side_effect_count + ems_side_effect_count;
         irq_request = 16'h0000;
         irq_request[1] = irq1;
+        if (`ENABLE_SB && at286ctl_eff_sb) begin
+            if (at286ctl_eff_sb_irq == 3'd7)
+                irq_request[7] = sound_sb_irq;
+            else
+                irq_request[5] = sound_sb_irq;
+        end
         // The AT has a slave PIC: MPU-401 is IRQ9, while IRQ2 is reserved
         // for the slave cascade.  PCXT-EGA can use IRQ2 directly because it
         // has the XT interrupt topology; this AT router must not collapse

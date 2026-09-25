@@ -17,8 +17,9 @@ set_global_assignment -name VERILOG_MACRO "SPK286_AT_NO_DEBUG"
 # 25 MHz. Leave it disabled for the normal 50 MHz observer build.
 # set_global_assignment -name VERILOG_MACRO "SPK286_AT_DEBUG_CPU_DIV2"
 
-# Non-Sound-Blaster audio devices carried over from the source XT profile.
-# Sound Blaster remains intentionally absent from this AT build.
+# Sound Blaster Pro uses DMA channel 1 (8-bit), selectable IRQ 5/7, and shares
+# the 220h I/O block with C/MS. The OSD keeps those two cards exclusive.
+set_global_assignment -name VERILOG_MACRO "ENABLE_SB=1"
 set_global_assignment -name VERILOG_MACRO "ENABLE_OPL2=1"
 set_global_assignment -name VERILOG_MACRO "ENABLE_CMS=1"
 set_global_assignment -name VERILOG_MACRO "ENABLE_TANDY_AUDIO=1"

@@ -1,4 +1,4 @@
-"""Independent schedule contract for the eight register-direct early exits."""
+"""Independent schedule contract for register-direct early exits."""
 import json
 import unittest
 
@@ -8,10 +8,14 @@ from tools.microcode.audit_microcode import canonical_source, read_generated_wor
 
 # Literal mapping, independent of the compiler's opcode allocation.
 REPLACEMENTS = {
-    'ALU_RM16_R16': 173, 'ALU_R16_RM16': 174,
-    'ALU_RM8_R8': 175, 'ALU_R8_RM8': 176,
-    'MOV_RM16_R16': 177, 'MOV_R16_RM16': 178,
-    'MOV_RM8_R8': 179, 'MOV_R8_RM8': 180,
+    'ALU_RM16_R16': (173, 4), 'ALU_R16_RM16': (174, 4),
+    'ALU_RM8_R8': (175, 4), 'ALU_R8_RM8': (176, 4),
+    'MOV_RM16_R16': (177, 4), 'MOV_R16_RM16': (178, 4),
+    'MOV_RM8_R8': (179, 4), 'MOV_R8_RM8': (180, 4),
+    'NOT_RM16': (190, 4), 'NOT_RM8': (191, 4),
+    'NEG_RM16': (190, 4), 'NEG_RM8': (191, 4),
+    'INC_DEC_RM16': (190, 4), 'INC_DEC_RM8': (191, 4),
+    'INC_DEC_R16': (192, 13),
 }
 SOURCE = '''microcode_format 22
 instruction ADD_OR_MEMORY:
@@ -26,13 +30,13 @@ instruction ADD_OR_MEMORY:
 
 
 class RegisterExecutionMicrocodeTests(unittest.TestCase):
-    def test_only_eight_decode_controls_change(self):
+    def test_register_decode_controls_change(self):
         baseline = json.loads((ROOT / 'tests/fixtures/microcode_phase9_loadall.json').read_text())
         active = json.loads((ROOT / 'tests/fixtures/microcode_register_execution.json').read_text())
         expected = baseline['words'].copy()
-        for entry, code in REPLACEMENTS.items():
+        for entry, (code, old_code) in REPLACEMENTS.items():
             address = baseline['entries'][entry]
-            self.assertEqual(expected[address], 4)
+            self.assertEqual(expected[address], old_code)
             expected[address] = code
         sources = {'format22.mc': canonical_source(active['words'], active['entries'],
                                                   active['labels'], {int(k): v for k, v in active['branch_targets'].items()})}

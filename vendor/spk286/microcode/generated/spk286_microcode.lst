@@ -268,7 +268,7 @@ SPK286 microcode compiler 23.0; format 23; encoding 23
 00D8  2  TMP0 -> DST  # zzz_scalar.mc:18
 00D9  3  END  # zzz_scalar.mc:19
 00DA  INC_DEC_R16:
-00DA  D  READ_DST16 -> TMP0  # zzz_scalar.mc:21
+00DA  C0  EXEC_INC_DEC_DST16  # zzz_scalar.mc:21
 00DB  3D  CONST_ONE -> TMP1  # zzz_scalar.mc:22
 00DC  E  ALU DECODED TMP0, TMP1 -> TMP2 FLAGS_DECODED  # zzz_scalar.mc:23
 00DD  11  TMP2 -> DST IF_WRITE  # zzz_scalar.mc:24
@@ -385,7 +385,7 @@ SPK286 microcode compiler 23.0; format 23; encoding 23
 013B  4  DECODE_MODRM  # zzzzzz_unary.mc:7
 013C  47  DISPATCH DECODED  # zzzzzz_unary.mc:8
 013D  NOT_RM8:
-013D  4  DECODE_MODRM  # zzzzzz_unary.mc:10
+013D  BF  DECODE_UNARY_RM8  # zzzzzz_unary.mc:10
 013E  2F  READ_RM8 -> TMP0  # zzzzzz_unary.mc:11
 013F  49  CONST_ONES -> TMP1  # zzzzzz_unary.mc:12
 0140  E  ALU DECODED TMP0, TMP1 -> TMP2 FLAGS_DECODED  # zzzzzz_unary.mc:13
@@ -393,7 +393,7 @@ SPK286 microcode compiler 23.0; format 23; encoding 23
 0142  12  COMMIT_FLAGS  # zzzzzz_unary.mc:15
 0143  3  END  # zzzzzz_unary.mc:16
 0144  NOT_RM16:
-0144  4  DECODE_MODRM  # zzzzzz_unary.mc:18
+0144  BE  DECODE_UNARY_RM16  # zzzzzz_unary.mc:18
 0145  6  READ_RM16 -> TMP0  # zzzzzz_unary.mc:19
 0146  49  CONST_ONES -> TMP1  # zzzzzz_unary.mc:20
 0147  E  ALU DECODED TMP0, TMP1 -> TMP2 FLAGS_DECODED  # zzzzzz_unary.mc:21
@@ -401,7 +401,7 @@ SPK286 microcode compiler 23.0; format 23; encoding 23
 0149  12  COMMIT_FLAGS  # zzzzzz_unary.mc:23
 014A  3  END  # zzzzzz_unary.mc:24
 014B  NEG_RM8:
-014B  4  DECODE_MODRM  # zzzzzz_unary.mc:26
+014B  BF  DECODE_UNARY_RM8  # zzzzzz_unary.mc:26
 014C  2F  READ_RM8 -> TMP0  # zzzzzz_unary.mc:27
 014D  48  CONST_ZERO -> TMP1  # zzzzzz_unary.mc:28
 014E  E  ALU DECODED TMP0, TMP1 -> TMP2 FLAGS_DECODED  # zzzzzz_unary.mc:29
@@ -409,7 +409,7 @@ SPK286 microcode compiler 23.0; format 23; encoding 23
 0150  12  COMMIT_FLAGS  # zzzzzz_unary.mc:31
 0151  3  END  # zzzzzz_unary.mc:32
 0152  NEG_RM16:
-0152  4  DECODE_MODRM  # zzzzzz_unary.mc:34
+0152  BE  DECODE_UNARY_RM16  # zzzzzz_unary.mc:34
 0153  6  READ_RM16 -> TMP0  # zzzzzz_unary.mc:35
 0154  48  CONST_ZERO -> TMP1  # zzzzzz_unary.mc:36
 0155  E  ALU DECODED TMP0, TMP1 -> TMP2 FLAGS_DECODED  # zzzzzz_unary.mc:37
@@ -417,7 +417,7 @@ SPK286 microcode compiler 23.0; format 23; encoding 23
 0157  12  COMMIT_FLAGS  # zzzzzz_unary.mc:39
 0158  3  END  # zzzzzz_unary.mc:40
 0159  INC_DEC_RM8:
-0159  4  DECODE_MODRM  # zzzzzz_unary.mc:42
+0159  BF  DECODE_UNARY_RM8  # zzzzzz_unary.mc:42
 015A  2F  READ_RM8 -> TMP0  # zzzzzz_unary.mc:43
 015B  3D  CONST_ONE -> TMP1  # zzzzzz_unary.mc:44
 015C  E  ALU DECODED TMP0, TMP1 -> TMP2 FLAGS_DECODED  # zzzzzz_unary.mc:45
@@ -425,7 +425,7 @@ SPK286 microcode compiler 23.0; format 23; encoding 23
 015E  12  COMMIT_FLAGS  # zzzzzz_unary.mc:47
 015F  3  END  # zzzzzz_unary.mc:48
 0160  INC_DEC_RM16:
-0160  4  DECODE_MODRM  # zzzzzz_unary.mc:50
+0160  BE  DECODE_UNARY_RM16  # zzzzzz_unary.mc:50
 0161  6  READ_RM16 -> TMP0  # zzzzzz_unary.mc:51
 0162  3D  CONST_ONE -> TMP1  # zzzzzz_unary.mc:52
 0163  E  ALU DECODED TMP0, TMP1 -> TMP2 FLAGS_DECODED  # zzzzzz_unary.mc:53

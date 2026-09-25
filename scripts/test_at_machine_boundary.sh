@@ -46,6 +46,7 @@ sources+=(
   rtl/spk286_integration/spk286_at_fdc.sv
   rtl/spk286_integration/spk286_at_xtide.sv
   rtl/spk286_integration/spk286_at_storage_video.sv
+  sys/at_cdc_snapshot.sv
   rtl/spk286_integration/spk286_at_video_adapter.sv
   rtl/spk286_integration/at286ctl.sv
   rtl/KFPC-XT/HDL/ega_vram_bram_frontend.sv

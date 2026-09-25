@@ -1218,7 +1218,8 @@ module spk286_micro_executor (
     // Capture both register operands before the execution stage. Memory forms
     // still use the original operand service and explicit microcode fallback.
     logic register_decode, register_alu, register_byte, register_destination_rm;
-    logic register_capture, register_pending_q, register_complete, register_write;
+    logic unary_register, unary_direct;
+    logic register_capture, direct_register_capture, register_pending_q, register_complete, register_write;
     logic [2:0] register_destination_q, register_a_index, register_b_index;
     logic [15:0] register_a_value, register_b_value;
     logic sequential_gpr_write_en, sequential_gpr_write_byte;
@@ -1264,6 +1265,8 @@ module spk286_micro_executor (
         register_alu = 1'b0;
         register_byte = 1'b0;
         register_destination_rm = 1'b0;
+        unary_register = 1'b0;
+        unary_direct = 1'b0;
         case (operation)
             spk286_microcode_pkg::MC_DECODE_ALU_RM16_REG16: begin register_alu = 1'b1; register_destination_rm = 1'b1; end
             spk286_microcode_pkg::MC_DECODE_ALU_REG16_RM16: register_alu = 1'b1;
@@ -1273,6 +1276,16 @@ module spk286_micro_executor (
             spk286_microcode_pkg::MC_DECODE_MOV_REG16_RM16: begin end
             spk286_microcode_pkg::MC_DECODE_MOV_RM8_REG8: begin register_byte = 1'b1; register_destination_rm = 1'b1; end
             spk286_microcode_pkg::MC_DECODE_MOV_REG8_RM8: register_byte = 1'b1;
+            spk286_microcode_pkg::MC_DECODE_UNARY_RM16: begin
+                register_alu = 1'b1; unary_register = 1'b1; register_destination_rm = 1'b1;
+            end
+            spk286_microcode_pkg::MC_DECODE_UNARY_RM8: begin
+                register_alu = 1'b1; register_byte = 1'b1; unary_register = 1'b1;
+                register_destination_rm = 1'b1;
+            end
+            spk286_microcode_pkg::MC_EXEC_INC_DEC_DST16: begin
+                register_alu = 1'b1; unary_register = 1'b1; unary_direct = 1'b1;
+            end
             default: register_decode = 1'b0;
         endcase
         if (immediate_operation) begin
@@ -1281,20 +1294,25 @@ module spk286_micro_executor (
         end
     end
     assign register_a_index = immediate_operation ? (immediate_rm ? operand_rm_index : destination) :
+                             unary_direct ? destination :
                              register_destination_rm ? byte_data[2:0] : byte_data[5:3];
     assign register_b_index = register_destination_rm ? byte_data[5:3] : byte_data[2:0];
     assign register_a_value = register_byte ?
         {8'd0, register_state[register_a_index[1:0]*16 + (register_a_index[2] ? 8 : 0) +: 8]} :
         register_state[register_a_index*16 +: 16];
-    assign register_b_value = register_byte ?
+    assign register_b_value = unary_register ?
+        (alu_operation == 3'd6 ? (register_byte ? 16'h00FF : 16'hFFFF) :
+         reverse_operands ? 16'h0000 : 16'h0001) :
+        register_byte ?
         {8'd0, register_state[register_b_index[1:0]*16 + (register_b_index[2] ? 8 : 0) +: 8]} :
         register_state[register_b_index*16 +: 16];
     // Only the accepted ModR/M may capture operands, never displacement bytes.
     assign register_capture = allowed && register_decode && !decode_modrm_valid &&
                               decode_byte_ready && byte_valid && byte_data[7:6] == 2'b11;
+    assign direct_register_capture = allowed && unary_direct && !register_pending_q;
     assign register_complete = allowed && register_pending_q &&
                                ((register_decode && operand_register_direct && decode_done) ||
-                                (immediate_operation && immediate_register));
+                                (immediate_operation && immediate_register) || unary_direct);
     assign register_write = register_complete && (!register_alu || result_write_allowed);
     assign operation_retire = register_complete;
     assign gpr_write_en = sequential_gpr_write_en || register_write;
@@ -1315,7 +1333,8 @@ module spk286_micro_executor (
     assign fetch_signed_byte = allowed && (operation == spk286_microcode_pkg::MC_FETCH_IMM8S_TMP1 || operation == spk286_microcode_pkg::MC_FETCH_IMM8S_TMP0);
     assign move_word = allowed && (operation == spk286_microcode_pkg::MC_MOVE || operation == spk286_microcode_pkg::MC_MOVE8) && temporary_valid_q[0];
     assign read_destination = allowed && (operation == spk286_microcode_pkg::MC_READ_DST16 || operation == spk286_microcode_pkg::MC_READ_DST8);
-    assign decode_operand = allowed && (operation == spk286_microcode_pkg::MC_DECODE_MODRM || register_decode);
+    assign decode_operand = allowed && (operation == spk286_microcode_pkg::MC_DECODE_MODRM ||
+                                        (register_decode && !unary_direct));
     assign read_tmp1 = string_read1 || operation == spk286_microcode_pkg::MC_READ_REG16_TMP1 || operation == spk286_microcode_pkg::MC_READ_RM16_TMP1 || operation == spk286_microcode_pkg::MC_READ_REG8_TMP1 || operation == spk286_microcode_pkg::MC_READ_RM8_TMP1;
     assign result_operation = operation == spk286_microcode_pkg::MC_WRITE_RESULT_REG8 || operation == spk286_microcode_pkg::MC_WRITE_RESULT_RM8 || operation == spk286_microcode_pkg::MC_WRITE_RESULT_REG16 || operation == spk286_microcode_pkg::MC_WRITE_RESULT_RM16 ||
                               (operation == spk286_microcode_pkg::MC_WRITE_RESULT_DST || operation == spk286_microcode_pkg::MC_WRITE_RESULT_DST8);
@@ -1830,7 +1849,7 @@ module spk286_micro_executor (
                     temporary_valid_q[0] <= immediate_last;
                 end
             end
-            if (register_capture || immediate_capture) begin
+            if (register_capture || direct_register_capture || immediate_capture) begin
                 tmp0_q <= register_a_value;
                 tmp1_q <= immediate_capture ? immediate_value : register_b_value;
                 temporary_valid_q[1:0] <= 2'b11;

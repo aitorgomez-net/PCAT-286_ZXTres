@@ -114,6 +114,8 @@ USE ieee.numeric_std.ALL;
 ENTITY ascal IS
 	GENERIC (
 		AT_CDC       : boolean := false;
+		-- AT wrapper supplies one frame-coherent packet in o_clk and mode in i_clk.
+		AT_LOCAL_CONFIG : boolean := false;
 		MASK         : unsigned(7 DOWNTO 0) :=x"FF";
 		RAMBASE      : unsigned(31 DOWNTO 0);
 		RAMSIZE      : unsigned(31 DOWNTO 0) := x"0080_0000"; -- =8MB
@@ -205,6 +207,9 @@ ENTITY ascal IS
 		run       : IN std_logic :='1'; -- 1=Enable output image. 0=No image
 		freeze    : IN std_logic :='0'; -- 1=Disable framebuffer writes
 		mode      : IN unsigned(4 DOWNTO 0);
+		at_input_mode : IN unsigned(4 DOWNTO 0) := (OTHERS => '0');
+		at_config_update : IN std_logic := '0';
+		at_config_retime : IN std_logic := '0';
  		bob_deint : IN std_logic := '0';
 		-- SYNC  |_________________________/"""""""""\_______|
 		-- DE    |""""""""""""""""""\________________________|
@@ -239,6 +244,8 @@ ENTITY ascal IS
 		poly_dw  : IN unsigned(9 DOWNTO 0);
 		poly_a   : IN unsigned(FRAC+3 DOWNTO 0);
 		poly_wr  : IN std_logic;
+		-- AT transaction envelope, aligned with poly_wr in poly_clk.
+		at_poly_active : IN std_logic := '0';
 
 		------------------------------------
 		-- Avalon
@@ -425,7 +432,16 @@ ARCHITECTURE rtl OF ascal IS
 	SIGNAL avl_i_offset1,avl_o_offset1 : unsigned(31 DOWNTO 0);
 	SIGNAL avl_reset_na : std_logic;
 	SIGNAL avl_o_vs_sync,avl_o_vs : std_logic;
+	SIGNAL avl_o_vs_seen, avl_frame_fall : std_logic;
 	SIGNAL avl_fb_ena : std_logic;
+	-- AT commands carry their bank/base along with their relative address.
+	-- Never reselect a framebuffer while Avalon is holding waitrequest high.
+	SIGNAL i_wbase, avl_wbase, o_read_address_q, o_read_base_q, avl_rbase : unsigned(31 DOWNTO 0);
+	SIGNAL o_frame_base_q : unsigned(31 DOWNTO 0) := (OTHERS => '0');
+	SIGNAL o_read_pending : std_logic := '0';
+	SIGNAL avl_write_seen, avl_read_seen, o_readack_seen, o_readdataack_seen : std_logic;
+	SIGNAL cdc_bank_data, cdc_bank_meta, cdc_history_data, cdc_history_meta : std_logic_vector(3 DOWNTO 0);
+	SIGNAL cdc_i_ibuf0, cdc_i_ibuf1 : natural RANGE 0 TO 2;
 
 	FUNCTION buf_next(a,b : natural RANGE 0 TO 2; freeze : std_logic := '0') RETURN natural IS
 	BEGIN
@@ -517,6 +533,19 @@ ARCHITECTURE rtl OF ascal IS
 	SIGNAL cdc_output_meta : std_logic_vector(23 DOWNTO 0);
 	SIGNAL cdc_input_data : std_logic_vector(25 DOWNTO 0);
 	SIGNAL cdc_output_data : std_logic_vector(23 DOWNTO 0);
+	SIGNAL cdc_fb_out_data,cdc_fb_out_meta : std_logic_vector(76 DOWNTO 0);
+	SIGNAL cdc_o_fb_ena,cdc_avl_fb_ena : std_logic;
+	SIGNAL cdc_o_fb_hsize,cdc_o_fb_vsize : natural RANGE 0 TO 4095;
+	SIGNAL cdc_o_fb_format : unsigned(5 DOWNTO 0);
+	SIGNAL cdc_o_fb_base,cdc_avl_fb_base : unsigned(31 DOWNTO 0);
+	SIGNAL cdc_o_fb_stride : unsigned(13 DOWNTO 0);
+	ATTRIBUTE altera_attribute : string;
+	ATTRIBUTE altera_attribute OF avl_write_sync, avl_write_sync2,
+		avl_read_sync, avl_read_sync2, o_readack_sync, o_readack_sync2,
+		o_readdataack_sync, o_readdataack_sync2, o_iendframe0, o_iendframe02,
+		o_iendframe1, o_iendframe12, avl_o_vs_sync, avl_o_vs : SIGNAL IS
+		"-name SYNCHRONIZER_IDENTIFICATION FORCED_IF_ASYNCHRONOUS; -name DONT_MERGE_REGISTER ON";
+	SIGNAL o_iendframe0_seen, o_iendframe1_seen : std_logic;
 	SIGNAL cdc_hrsize,cdc_vrsize,cdc_ohsize,cdc_ovsize : uint12;
 	SIGNAL cdc_hdown,cdc_vdown : std_logic;
 	SIGNAL o_ihsize_temp, o_ihsize_temp2 : natural RANGE 0 TO 32767;
@@ -1037,11 +1066,13 @@ ARCHITECTURE rtl OF ascal IS
 	SIGNAL o_poly_phase_b,o_poly_phase_b2,o_poly_phase_b3 : poly_phase_t;
 	SIGNAL o_v_poly_phase, o_v_poly_phase2, o_h_poly_phase, o_poly_phase, o_poly_phase1 : poly_phase_interp_t;
 	SIGNAL o_v_poly_pix, o_h_poly_pix, o_h_lum_pix, o_v_lum_pix : type_pix;
-	SIGNAL o_poly_lum, o_poly_lum1 : unsigned(7 DOWNTO 0);
+	SIGNAL o_poly_lum_rg, o_poly_lum_b, o_poly_lum1 : unsigned(7 DOWNTO 0);
 	SIGNAL o_poly_lerp_ta, o_poly_lerp_tb : signed(9 DOWNTO 0);
 	SIGNAL o_h_poly_t,o_h_poly_t2,o_v_poly_t   : type_poly_t;
 
-	SIGNAL o_v_poly_adaptive, o_h_poly_adaptive, o_v_poly_use_adaptive, o_h_poly_use_adaptive : std_logic;
+	SIGNAL o_v_poly_adaptive, o_h_poly_adaptive : std_logic := '0';
+	SIGNAL o_v_poly_use_adaptive, o_h_poly_use_adaptive : std_logic;
+	SIGNAL poly_adaptive_local : std_logic_vector(1 DOWNTO 0) := "00";
 	SIGNAL poly_wr_mode : std_logic_vector(2 DOWNTO 0);
 	SIGNAL poly_tdw : unsigned(39 DOWNTO 0);
 	SIGNAL poly_a2 : unsigned(FRAC-1 DOWNTO 0);
@@ -1132,35 +1163,17 @@ ARCHITECTURE rtl OF ascal IS
 	END FUNCTION;
 
 
-	FUNCTION poly_lum(p : type_pix) RETURN unsigned IS
-		VARIABLE v : UNSIGNED(7 DOWNTO 0);
+	FUNCTION poly_max(a,b : unsigned(7 DOWNTO 0)) RETURN unsigned IS
 	BEGIN
-		-- 0.375 R + 0.5 G + 0.125 B
-		--v := ("00" & p.r(7 DOWNTO 2)) + ("000" & p.r(7 DOWNTO 3)) + ("0" & p.g(7 DOWNTO 1)) + ("000" & p.b(7 DOWNTO 3));
-
-		-- 0.25 R + 0.5 G + 0.25 B
-		-- v := ( ("00" & p.r(7 DOWNTO 2)) + ("0" & p.g(7 DOWNTO 1)) + ("00" & p.b(7 DOWNTO 2)) );
-
-		-- Just OR them all together
-		--v := (p.r OR p.g OR p.b);
-
-		-- Maximum
-		IF p.r > p.g THEN
-			v := p.r;
+		IF a > b THEN
+			RETURN a;
 		ELSE
-			v := p.g;
+			RETURN b;
 		END IF;
-
-		IF p.b > v THEN
-			v := p.b;
-		END IF;
-
-		-- 100%
-		-- v := "1111111";
-
-		RETURN v;
 	END FUNCTION;
 BEGIN
+	avl_frame_fall <= avl_o_vs_seen AND NOT avl_o_vs WHEN AT_CDC ELSE
+	                  avl_o_vs AND NOT avl_o_vs_sync;
 
 	-- Transfer the effective geometry as a single acknowledged bundle.
 	-- Existing frame/bank allocation is unchanged; this is NOT a replacement
@@ -1182,6 +1195,52 @@ BEGIN
 				src_data => cdc_output_data,
 				src_ready => OPEN, dst_clk => i_clk,
 				dst_data => cdc_output_meta, dst_update => OPEN);
+		-- Framebuffer controls originate on poly_clk. The output domain holds
+		-- the frame base and includes it in each acknowledged read command.
+		cdc_fb_out_data <= o_fb_ena &
+		                   std_logic_vector(to_unsigned(o_fb_hsize,12)) &
+		                   std_logic_vector(to_unsigned(o_fb_vsize,12)) &
+		                   std_logic_vector(o_fb_format) &
+		                   std_logic_vector(o_fb_base) &
+		                   std_logic_vector(o_fb_stride);
+		g_fb_async : IF NOT AT_LOCAL_CONFIG GENERATE
+		framebuffer_out_config : ENTITY work.at_cdc_snapshot_vhd
+			GENERIC MAP (WIDTH => 77)
+			PORT MAP (src_clk => poly_clk, src_send => '1',
+				src_data => cdc_fb_out_data,
+				src_ready => OPEN, dst_clk => o_clk,
+				dst_data => cdc_fb_out_meta, dst_update => OPEN);
+		END GENERATE;
+		g_fb_local : IF AT_LOCAL_CONFIG GENERATE
+			-- Already captured with geometry/mode at output VS in the AT wrapper.
+			cdc_fb_out_meta <= cdc_fb_out_data;
+		END GENERATE;
+		-- Bank allocation changes at input VS, well before the next frame's
+		-- first write. Transfer the pair coherently back to the capture clock;
+		-- each write then freezes its selected base until the next burst.
+		cdc_bank_data <= std_logic_vector(to_unsigned(o_ibuf0,2)) &
+		                 std_logic_vector(to_unsigned(o_ibuf1,2));
+		capture_bank_config : ENTITY work.at_cdc_snapshot_vhd
+			GENERIC MAP (WIDTH => 4)
+			PORT MAP (src_clk => o_clk, src_send => '1', src_data => cdc_bank_data,
+				src_ready => OPEN, dst_clk => i_clk,
+				dst_data => cdc_bank_meta, dst_update => OPEN);
+		cdc_i_ibuf0 <= to_integer(unsigned(cdc_bank_meta(3 DOWNTO 2)));
+		cdc_i_ibuf1 <= to_integer(unsigned(cdc_bank_meta(1 DOWNTO 0)));
+		cdc_history_data <= i_inter & i_wfl;
+		capture_field_history : ENTITY work.at_cdc_snapshot_vhd
+			GENERIC MAP (WIDTH => 4)
+			PORT MAP (src_clk => i_clk, src_send => '1', src_data => cdc_history_data,
+				src_ready => OPEN, dst_clk => o_clk,
+				dst_data => cdc_history_meta, dst_update => OPEN);
+		cdc_o_fb_ena <= cdc_fb_out_meta(76);
+		cdc_o_fb_hsize <= to_integer(unsigned(cdc_fb_out_meta(75 DOWNTO 64)));
+		cdc_o_fb_vsize <= to_integer(unsigned(cdc_fb_out_meta(63 DOWNTO 52)));
+		cdc_o_fb_format <= unsigned(cdc_fb_out_meta(51 DOWNTO 46));
+		cdc_o_fb_base <= unsigned(cdc_fb_out_meta(45 DOWNTO 14));
+		cdc_o_fb_stride <= unsigned(cdc_fb_out_meta(13 DOWNTO 0));
+		cdc_avl_fb_ena <= '0'; -- Legacy continuously sampled offsets are unused.
+		cdc_avl_fb_base <= (OTHERS => '0');
 		cdc_hrsize <= to_integer(unsigned(cdc_input_meta(25 DOWNTO 14)));
 		cdc_vrsize <= to_integer(unsigned(cdc_input_meta(13 DOWNTO 2)));
 		cdc_hdown <= cdc_input_meta(1);
@@ -1190,6 +1249,17 @@ BEGIN
 		cdc_ovsize <= to_integer(unsigned(cdc_output_meta(11 DOWNTO 0)));
 	END GENERATE;
 	g_legacy_cdc : IF NOT AT_CDC GENERATE
+		cdc_i_ibuf0 <= o_ibuf0;
+		cdc_i_ibuf1 <= o_ibuf1;
+		cdc_history_meta <= i_inter & i_wfl;
+		cdc_o_fb_ena <= o_fb_ena;
+		cdc_o_fb_hsize <= o_fb_hsize;
+		cdc_o_fb_vsize <= o_fb_vsize;
+		cdc_o_fb_format <= o_fb_format;
+		cdc_o_fb_base <= o_fb_base;
+		cdc_o_fb_stride <= o_fb_stride;
+		cdc_avl_fb_ena <= o_fb_ena;
+		cdc_avl_fb_base <= o_fb_base;
 		cdc_hrsize <= i_hrsize;
 		cdc_vrsize <= i_vrsize;
 		cdc_hdown <= i_hdown;
@@ -1281,13 +1351,13 @@ BEGIN
 					i_vcpt<=0;
 					IF i_inter='1' AND i_flm='0' AND i_half='0' AND INTER THEN
 						i_line<='1';
-						i_wfl(o_ibuf1) <= '0';
+						i_wfl(cdc_i_ibuf1) <= '0';
 						i_adrsi<=to_unsigned(N_BURST * i_hburst,32) +
 									to_unsigned(N_BURST * to_integer(
 									unsigned'("00") & to_std_logic(HEADER)),32);
 					ELSE
 						i_line<='0';
-						i_wfl(o_ibuf0) <= '1';
+						i_wfl(cdc_i_ibuf0) <= '1';
 						i_adrsi<=to_unsigned(N_BURST * to_integer(
 									 unsigned'("00") & to_std_logic(HEADER)),32);
 					END IF;
@@ -1345,7 +1415,8 @@ BEGIN
 					i_hburst<=(i_hrsize*4 + N_BURST - 1) / N_BURST;
 				END IF;
 				----------------------------------------------------
-				i_mode<=mode; -- <ASYNC>
+				IF AT_LOCAL_CONFIG THEN i_mode<=at_input_mode;
+				ELSE i_mode<=mode; END IF;
 				i_format<=format; -- <ASYNC>
 
 				-- Downscaling : Nearest or bilinear
@@ -1630,6 +1701,13 @@ BEGIN
 				i_wadrs<=i_wadrs_mem;
 				i_walt <=i_walt_mem;
 				i_wline<=i_wline_mem;
+				IF AT_CDC THEN
+					IF i_wline_mem='0' THEN
+						i_wbase<=buf_offset(cdc_i_ibuf0,RAMBASE,RAMSIZE);
+					ELSE
+						i_wbase<=buf_offset(cdc_i_ibuf1,RAMBASE,RAMSIZE);
+					END IF;
+				END IF;
 				i_wdelay<=0;
 				i_wreq_mem<='0';
 			ELSIF i_wdelay<5 THEN
@@ -1722,30 +1800,54 @@ BEGIN
 			avl_read_sr<='0';
 			avl_readdataack<='0';
 			avl_readack<='0';
+			avl_write_sync<='0'; avl_write_sync2<='0'; avl_write_seen<='0';
+			avl_read_sync<='0'; avl_read_sync2<='0'; avl_read_seen<='0';
+			avl_write_pulse<='0'; avl_read_pulse<='0';
+			avl_write_clr<='0'; avl_read_clr<='0';
+			avl_o_vs_sync<='0'; avl_o_vs<='0'; avl_o_vs_seen<='0';
 
 		ELSIF rising_edge(avl_clk) THEN
 			----------------------------------
 			avl_write_sync<=i_write; -- <ASYNC>
 			avl_write_sync2<=avl_write_sync;
-			avl_write_pulse<=avl_write_sync XOR avl_write_sync2;
+			avl_write_seen<=avl_write_sync2;
+			IF AT_CDC THEN
+				avl_write_pulse<=avl_write_sync2 XOR avl_write_seen;
+			ELSE
+				avl_write_pulse<=avl_write_sync XOR avl_write_sync2;
+			END IF;
 			IF avl_write_pulse='1' THEN
 				avl_wadrs <=i_wadrs AND (RAMSIZE - 1); -- <ASYNC>
 				avl_wline <=i_wline; -- <ASYNC>
 				avl_walt  <=i_walt; -- <ASYNC>
+				IF AT_CDC THEN avl_wbase<=i_wbase; END IF;
 			END IF;
 
 			----------------------------------
 			avl_read_sync<=o_read; -- <ASYNC>
 			avl_read_sync2<=avl_read_sync;
-			avl_read_pulse<=avl_read_sync XOR avl_read_sync2;
-			avl_radrs <=o_adrs; -- <ASYNC>
-			avl_rline <=o_rline; -- <ASYNC>
+			avl_read_seen<=avl_read_sync2;
+			IF AT_CDC THEN
+				avl_read_pulse<=avl_read_sync2 XOR avl_read_seen;
+				-- The source holds both words through the returned read ack.
+				-- Capture once, after two synchronizer stages and pulse detection.
+				IF avl_read_pulse='1' THEN
+					avl_radrs<=o_read_address_q;
+					avl_rbase<=o_read_base_q;
+				END IF;
+			ELSE
+				avl_read_pulse<=avl_read_sync XOR avl_read_sync2;
+				avl_radrs <=o_adrs; -- <ASYNC>
+				avl_rline <=o_rline; -- <ASYNC>
+			END IF;
 
 			--------------------------------------------
 			avl_o_vs_sync<=o_vsv(0); -- <ASYNC>
 			avl_o_vs<=avl_o_vs_sync;
+			avl_o_vs_seen<=avl_o_vs;
 
-			avl_fb_ena<=o_fb_ena; -- <ASYNC>
+			avl_fb_ena<=cdc_avl_fb_ena;
+			IF NOT AT_CDC THEN
 			IF avl_fb_ena='0' THEN
 				IF HEADER THEN
 					avl_o_offset0<=buf_offset(o_obuf0,RAMBASE,RAMSIZE) + N_BURST;  -- <ASYNC>
@@ -1754,14 +1856,15 @@ BEGIN
 					avl_o_offset0<=buf_offset(o_obuf0,RAMBASE,RAMSIZE);  -- <ASYNC>
 					avl_o_offset1<=buf_offset(o_obuf1,RAMBASE,RAMSIZE);  -- <ASYNC>
 				END IF;
-			ELSIF avl_o_vs_sync='0' AND avl_o_vs='1' THEN
+			ELSIF avl_frame_fall='1' THEN
 				-- Copy framebuffer base address at VS falling edge
-				avl_o_offset0<=o_fb_base; -- <ASYNC>
-				avl_o_offset1<=o_fb_base; -- <ASYNC>
+				avl_o_offset0<=cdc_avl_fb_base;
+				avl_o_offset1<=cdc_avl_fb_base;
 			END IF;
 
 			avl_i_offset0<=buf_offset(o_ibuf0,RAMBASE,RAMSIZE);  -- <ASYNC>
 			avl_i_offset1<=buf_offset(o_ibuf1,RAMBASE,RAMSIZE);  -- <ASYNC>
+			END IF;
 
 			--------------------------------------------
 			avl_dw<=swap(unsigned(avl_readdata));
@@ -1786,7 +1889,11 @@ BEGIN
 						ELSE
 							avl_rad<=BLEN;
 						END IF;
-						IF avl_wline='0' THEN
+						IF AT_CDC THEN
+							avl_address<=std_logic_vector(
+								avl_wadrs(N_AW+NB_LA-1 DOWNTO NB_LA) +
+								avl_wbase(N_AW+NB_LA-1 DOWNTO NB_LA));
+						ELSIF avl_wline='0' THEN
 							avl_address<=std_logic_vector(
 								avl_wadrs(N_AW+NB_LA-1 DOWNTO NB_LA) +
 								avl_i_offset0(N_AW+NB_LA-1 DOWNTO NB_LA));
@@ -1810,7 +1917,9 @@ BEGIN
 					END IF;
 
 				WHEN sREAD =>
-					IF avl_rline='0' THEN
+					IF AT_CDC THEN
+						adr_v:=avl_radrs + avl_rbase;
+					ELSIF avl_rline='0' THEN
 						adr_v:=avl_radrs + avl_o_offset0;
 					ELSE
 						adr_v:=avl_radrs + avl_o_offset1;
@@ -1836,7 +1945,7 @@ BEGIN
 				END IF;
 			END IF;
 
-			IF avl_o_vs_sync='0' AND avl_o_vs='1' THEN
+			IF avl_frame_fall='1' THEN
 				avl_wad<=2*BLEN-1;
 			END IF;
 
@@ -1917,6 +2026,11 @@ BEGIN
 			o_copy<=sWAIT;
 			o_state<=sDISP;
 			o_read_pre<='0';
+			o_read<='0';
+			o_read_pending<='0';
+			o_readack_seen<='0'; o_readdataack_seen<='0';
+			o_iendframe0<='0'; o_iendframe02<='0'; o_iendframe0_seen<='0';
+			o_iendframe1<='0'; o_iendframe12<='0'; o_iendframe1_seen<='0';
 			o_readlev<=0;
 			o_copylev<=0;
 			o_hsp<='0';
@@ -1962,18 +2076,22 @@ BEGIN
 			o_isync2 <= o_isync;
 			o_freeze <= freeze;
 			o_bob_deint <= bob_deint;
-			o_iwfl <= i_wfl;
-			o_inter  <=i_inter; -- <ASYNC>
+			o_iwfl <= cdc_history_meta(2 DOWNTO 0);
+			o_inter <= cdc_history_meta(3);
 			o_iendframe0<=i_endframe0; -- <ASYNC>
 			o_iendframe02<=o_iendframe0;
-			IF o_iendframe0='1' AND o_iendframe02='0' THEN
+			o_iendframe0_seen<=o_iendframe02;
+			IF (AT_CDC AND o_iendframe02='1' AND o_iendframe0_seen='0') OR
+			   (NOT AT_CDC AND o_iendframe0='1' AND o_iendframe02='0') THEN
 				o_ibuf0<=buf_next(o_ibuf0,o_obuf0,o_freeze);
 				o_bufup0<='1';
 				o_isync <= '1';
 			END IF;
 			o_iendframe1<=i_endframe1; -- <ASYNC>
 			o_iendframe12<=o_iendframe1;
-			IF o_iendframe1='1' AND o_iendframe12='0' THEN
+			o_iendframe1_seen<=o_iendframe12;
+			IF (AT_CDC AND o_iendframe12='1' AND o_iendframe1_seen='0') OR
+			   (NOT AT_CDC AND o_iendframe1='1' AND o_iendframe12='0') THEN
 				o_ibuf1<=buf_next(o_ibuf1,o_obuf1,o_freeze);
 				o_bufup1<='1';
 				o_isync <= '1';
@@ -1997,18 +2115,20 @@ BEGIN
 				END IF;
 			END IF;
 
-			IF (swblack = '1' and o_fb_ena = '0' and (o_ihsize /= cdc_hrsize or o_ivsize /= cdc_vrsize)) then
+			IF (swblack = '1' and cdc_o_fb_ena = '0' and (o_ihsize /= cdc_hrsize or o_ivsize /= cdc_vrsize)) then
 				o_newres <= 3;
 			END IF;
 
 			-- Simultaneous change of input and output framebuffers
 			IF o_vsv(1)='1' AND o_vsv(0)='0' AND
-				o_iendframe0='1' AND o_iendframe02='0' THEN
+				((AT_CDC AND o_iendframe02='1' AND o_iendframe0_seen='0') OR
+				 (NOT AT_CDC AND o_iendframe0='1' AND o_iendframe02='0')) THEN
 				o_bufup0<='0';
 				o_obuf0<=o_ibuf0;
 			END IF;
 			IF o_vsv(1)='1' AND o_vsv(0)='0' AND
-				o_iendframe1='1' AND o_iendframe12='0' THEN
+				((AT_CDC AND o_iendframe12='1' AND o_iendframe1_seen='0') OR
+				 (NOT AT_CDC AND o_iendframe1='1' AND o_iendframe12='0')) THEN
 				o_bufup1<='0';
 				o_obuf1<=o_ibuf1;
 			END IF;
@@ -2028,10 +2148,10 @@ BEGIN
 			END IF;
 
 			-- Framebuffer mode.
-			IF o_fb_ena='1' THEN
-				o_ihsize<=o_fb_hsize;
-				o_ivsize<=o_fb_vsize;
-				o_format<=o_fb_format;
+			IF cdc_o_fb_ena='1' THEN
+				o_ihsize<=cdc_o_fb_hsize;
+				o_ivsize<=cdc_o_fb_vsize;
+				o_format<=cdc_o_fb_format;
 				o_hdown<='0';
 				o_vdown<='0';
 			END IF;
@@ -2047,8 +2167,8 @@ BEGIN
 			o_ihsize_temp2 <= (o_ihsize_temp + N_BURST - 1);
 			o_hburst <= o_ihsize_temp2 / N_BURST;
 
-			IF o_fb_ena='1' AND o_fb_stride /= 0 THEN
-				o_stride<=o_fb_stride;
+			IF cdc_o_fb_ena='1' AND cdc_o_fb_stride /= 0 THEN
+				o_stride<=cdc_o_fb_stride;
 			ELSE
 				o_stride<=to_unsigned(o_ihsize_temp2,14);
 				o_stride(NB_BURST-1 DOWNTO 0)<=(OTHERS =>'0');
@@ -2070,11 +2190,26 @@ BEGIN
 			-- End DRAM READ
 			o_readack_sync<=avl_readack; -- <ASYNC>
 			o_readack_sync2<=o_readack_sync;
-			o_readack<=o_readack_sync XOR o_readack_sync2;
+			o_readack_seen<=o_readack_sync2;
+			IF AT_CDC THEN
+				o_readack<=o_readack_sync2 XOR o_readack_seen;
+			ELSE
+				o_readack<=o_readack_sync XOR o_readack_sync2;
+			END IF;
 
 			o_readdataack_sync<=avl_readdataack; -- <ASYNC>
 			o_readdataack_sync2<=o_readdataack_sync;
-			o_readdataack<=o_readdataack_sync XOR o_readdataack_sync2;
+			o_readdataack_seen<=o_readdataack_sync2;
+			IF AT_CDC THEN
+				o_readdataack<=o_readdataack_sync2 XOR o_readdataack_seen;
+				IF o_readack='1' THEN o_read_pending<='0'; END IF;
+				IF (o_vsv(1)='1' AND o_vsv(0)='0') OR
+				   (AT_LOCAL_CONFIG AND at_config_update='1') THEN
+					o_frame_base_q<=cdc_o_fb_base;
+				END IF;
+			ELSE
+				o_readdataack<=o_readdataack_sync XOR o_readdataack_sync2;
+			END IF;
 
 			------------------------------------------------------
 			lev_inc_v:='0';
@@ -2160,7 +2295,21 @@ BEGIN
 
 				WHEN sREAD =>
 					-- Read a block
-					IF o_readlev<2 AND o_adrsb='1' THEN
+					IF o_readlev<2 AND o_adrsb='1' AND
+					   (NOT AT_CDC OR (o_read_pending='0' AND o_run='1')) THEN
+						IF AT_CDC THEN
+							o_read_pending<='1';
+							o_read_address_q<=o_adrs;
+							IF cdc_o_fb_ena='1' THEN
+								o_read_base_q<=o_frame_base_q;
+							ELSIF o_rline='0' THEN
+								o_read_base_q<=buf_offset(o_obuf0,RAMBASE,RAMSIZE) +
+								                N_BURST * boolean'pos(HEADER);
+							ELSE
+								o_read_base_q<=buf_offset(o_obuf1,RAMBASE,RAMSIZE) +
+								                N_BURST * boolean'pos(HEADER);
+							END IF;
+						END IF;
 						lev_inc_v:='1';
 						o_read_pre<=NOT o_read_pre;
 						o_state <=sWAITREAD;
@@ -2169,8 +2318,8 @@ BEGIN
 					prim_v:=to_std_logic(o_hbcpt=0);
 					last_v:=to_std_logic(o_hbcpt=o_hburst-1);
 					bib_v :=o_bibu;
-					off_v :=pixoffset(o_adrs + o_fb_base(NB_LA-1 DOWNTO 0),o_fb_format);
-					IF o_fb_ena='0' THEN
+						off_v :=pixoffset(o_adrs + cdc_o_fb_base(NB_LA-1 DOWNTO 0),cdc_o_fb_format);
+						IF cdc_o_fb_ena='0' THEN
 						off_v:=0;
 					END IF;
 					o_adrsa<='1';
@@ -2192,7 +2341,11 @@ BEGIN
 					--------------------------------------------------
 			END CASE;
 
-			o_read<=o_read_pre AND o_run;
+			IF AT_CDC THEN
+				o_read<=o_read_pre; -- A run/stop change must not create a request toggle.
+			ELSE
+				o_read<=o_read_pre AND o_run;
+			END IF;
 			o_rline<=o_vacpt(0); -- Even/Odd line for interlaced video
 
 			----
@@ -2245,7 +2398,10 @@ BEGIN
 						o_altx<=o_alt;
 					END IF;
 					o_adturn<='0';
-					o_pshift<=o_off(0) -1;
+					-- No shift is performed at offset zero; avoid an unused
+					-- negative natural value during reset/empty-buffer cycles.
+					IF o_off(0)=0 THEN o_pshift<=0;
+					ELSE o_pshift<=o_off(0)-1; END IF;
 					IF o_primv(0)='1' THEN
 						-- First memcopy of a horizontal line, carriage return !
 						o_ihsizem<=o_ihsize + o_off(0) - 2;
@@ -2436,8 +2592,8 @@ BEGIN
 			hfrac3_v:=o_hfrac(3)(11 DOWNTO 12-FRAC);
 			vfrac_v:=o_vfrac(11 DOWNTO 12-FRAC);
 
-			o_v_poly_use_adaptive <= to_std_logic((o_vmode(2 DOWNTO 0)/="000") AND (o_v_poly_adaptive = '1'));
-			o_h_poly_use_adaptive <= to_std_logic((o_hmode(2 DOWNTO 0)/="000") AND (o_h_poly_adaptive = '1'));
+			o_v_poly_use_adaptive <= to_std_logic((o_vmode(2 DOWNTO 0)/="000") AND (poly_adaptive_local(1) = '1'));
+			o_h_poly_use_adaptive <= to_std_logic((o_hmode(2 DOWNTO 0)/="000") AND (poly_adaptive_local(0) = '1'));
 			o_v_poly_addr<=to_integer(o_vfrac(11 DOWNTO 12-FRAC));
 
 			-- C3 / HC3 / VC4
@@ -2453,11 +2609,16 @@ BEGIN
 				o_h_poly_phase_a<=poly_nn(hfrac3_v);
 			END IF;
 
+			-- Split max(R,G,B) across the existing C3/C4 registers. Keep B
+			-- aligned with max(R,G), including when neither adaptive axis is
+			-- active: both registers retain the last selected pixel together.
 			IF o_v_poly_use_adaptive='1' THEN
-				o_poly_lum<=poly_lum(o_v_lum_pix);
+				o_poly_lum_rg<=poly_max(o_v_lum_pix.r,o_v_lum_pix.g);
+				o_poly_lum_b<=o_v_lum_pix.b;
 				o_a_poly_addr<=o_v_poly_addr;
 			ELSIF o_h_poly_use_adaptive='1' THEN
-				o_poly_lum<=poly_lum(o_h_lum_pix);
+				o_poly_lum_rg<=poly_max(o_h_lum_pix.r,o_h_lum_pix.g);
+				o_poly_lum_b<=o_h_lum_pix.b;
 				o_a_poly_addr<=to_integer(hfrac3_v);
 			END IF;
 
@@ -2472,7 +2633,8 @@ BEGIN
 
 			o_h_poly_phase_a2<=o_h_poly_phase_a;
 			o_v_poly_phase_a2<=o_v_poly_phase_a;
-			o_poly_lum1<=o_poly_lum;
+			-- Same C4 latency as before; C5 weights and coefficients stay aligned.
+			o_poly_lum1<=poly_max(o_poly_lum_rg,o_poly_lum_b);
 
 			-- C5 / HC5 / VC6
 			o_poly_lerp_ta<=signed(to_unsigned(256,10) - resize(o_poly_lum1,10));
@@ -2550,6 +2712,35 @@ BEGIN
 
 	-----------------------------------------------------------------------------
 	-- Polyphase ROMs
+	-- RAM writes remain a lossless stream in poly_clk. Publish only the two
+	-- metadata bits after the UIO envelope and both coefficient write stages
+	-- have drained. The mailbox holds a coherent pair until acknowledged.
+	g_at_poly_control : IF AT_CDC AND ADAPTIVE GENERATE
+		SIGNAL publish : std_logic;
+		SIGNAL source_data : std_logic_vector(1 DOWNTO 0);
+		SIGNAL pending : std_logic_vector(1 DOWNTO 0);
+	BEGIN
+		source_data <= o_v_poly_adaptive & o_h_poly_adaptive;
+		publish <= '1' WHEN at_poly_active='0' AND poly_wr='0' AND poly_wr_mode="000" ELSE '0';
+		poly_adaptive_config : ENTITY work.at_cdc_snapshot_vhd
+			GENERIC MAP (WIDTH => 2)
+			PORT MAP (src_clk => poly_clk, src_send => publish,
+				src_data => source_data,
+				src_ready => OPEN, dst_clk => o_clk,
+				dst_data => pending, dst_update => OPEN);
+		PROCESS(o_clk) BEGIN
+			IF rising_edge(o_clk) THEN
+				-- Commit at vertical blank, or before output has been enabled.
+				IF o_run='0' OR (o_vsv(1)='1' AND o_vsv(0)='0') THEN
+					poly_adaptive_local <= pending;
+				END IF;
+			END IF;
+		END PROCESS;
+	END GENERATE;
+	g_legacy_poly_control : IF NOT AT_CDC OR NOT ADAPTIVE GENERATE
+		poly_adaptive_local <= o_v_poly_adaptive & o_h_poly_adaptive;
+	END GENERATE;
+
 	Polikarpov:PROCESS(poly_clk) IS
 	BEGIN
 		IF rising_edge(poly_clk) THEN
@@ -2884,6 +3075,23 @@ BEGIN
 			o_vcpt2<=o_vcpt_pre3;
 			o_vrr_sync<=(o_vrr='1' AND (o_sync OR o_sync_max) AND o_vcpt2>=o_vdisp AND o_vcpt2<o_vsstart);
 			o_vrr_sync2<=o_vrr_sync;
+
+			-- A new raster can be taller than the old VS position. Restart in
+			-- its final blank line so the change cannot expose a partial active
+			-- frame. Ordinary aspect/framebuffer changes keep the cadence intact.
+			IF AT_LOCAL_CONFIG AND at_config_retime='1' THEN
+				o_hcpt<=0;
+				IF vtotal>0 THEN
+					o_vcpt_pre3<=vtotal-1; o_vcpt_pre2<=vtotal-1;
+					o_vcpt_pre<=vtotal-1; o_vcpt<=vtotal-1; o_vcpt2<=vtotal-1;
+				ELSE
+					o_vcpt_pre3<=0; o_vcpt_pre2<=0; o_vcpt_pre<=0; o_vcpt<=0; o_vcpt2<=0;
+				END IF;
+				o_dev<=(OTHERS=>'0'); o_pev<=(OTHERS=>'0');
+				o_hsv<=(OTHERS=>'0'); o_vsv<=(OTHERS=>'0'); o_end<=(OTHERS=>'1');
+				o_vcpt_sync<=0; o_sync<=false; o_sync_max<=false;
+				o_vrr_sync<=false; o_vrr_sync2<=false;
+			END IF;
 
 	 END IF;
 	END PROCESS OSWEEP;

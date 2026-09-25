@@ -2,9 +2,8 @@ LIBRARY ieee;
 USE ieee.std_logic_1164.ALL;
 USE ieee.numeric_std.ALL;
 USE std.env.ALL;
--- Whole-scaler diagnostic, separate from the bounded CDC protocol suite.
--- The inherited o_pshift <= o_off(0)-1 underflows at startup in strict GHDL
--- with both AT_CDC=false and true; do not suppress its range checks.
+-- Legacy elaboration diagnostic without a memory slave. Functional checks
+-- with Avalon responses are in at_scaler_avalon_tb.vhd.
 ENTITY at_scaler_cdc_tb IS GENERIC (ENABLE_CDC : boolean := true); END;
 ARCHITECTURE test OF at_scaler_cdc_tb IS
   SIGNAL ic,oc,ac,pc : std_logic := '0';

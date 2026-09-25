@@ -89,6 +89,11 @@ REGISTER_DECODE_OPERATIONS = {
     'DECODE_ALU_RM8_REG8': 175, 'DECODE_ALU_REG8_RM8': 176,
     'DECODE_MOV_RM16_REG16': 177, 'DECODE_MOV_REG16_RM16': 178,
     'DECODE_MOV_RM8_REG8': 179, 'DECODE_MOV_REG8_RM8': 180,
+    # Unary/INC-DEC controls retire register forms after the captured
+    # operand and constant have passed through the existing ALU. Memory
+    # forms retain their explicit sequential fallback below the control.
+    'DECODE_UNARY_RM16': 190, 'DECODE_UNARY_RM8': 191,
+    'EXEC_INC_DEC_DST16': 192,
 }
 OPERATIONS.update(REGISTER_DECODE_OPERATIONS)
 
@@ -509,13 +514,29 @@ def validate_register_decode(block: Block) -> None:
     first = block.statements[0]
     if block.format_version < 22 or first.operation not in REGISTER_DECODE_OPERATIONS:
         raise CompileError(block.location, 'register execution must begin the entry')
-    _, kind, destination, source = first.operation.split('_')
-    if kind == 'ALU':
-        expected = (f'READ_{destination} -> TMP0', f'READ_{source} -> TMP1',
+    if first.operation in ('DECODE_UNARY_RM8', 'DECODE_UNARY_RM16'):
+        width = '8' if first.operation.endswith('RM8') else '16'
+        expected = (f'READ_RM{width} -> TMP0',
+                    'CONST_ZERO -> TMP1',
                     'ALU DECODED TMP0, TMP1 -> TMP2 FLAGS_DECODED',
-                    f'TMP2 -> {destination} IF_WRITE', 'COMMIT_FLAGS', 'END')
+                    f'TMP2 -> RM{width} IF_WRITE', 'COMMIT_FLAGS', 'END')
+        actual_constant = next((s.operation for s in block.statements
+                                if s.operation in ('CONST_ZERO_TMP1', 'CONST_ONES_TMP1', 'CONST_ONE_TMP1')), None)
+        if actual_constant is None:
+            raise CompileError(block.location, 'unary register execution requires a constant source')
+        expected = (expected[0], actual_constant.replace('_TMP1', ' -> TMP1')) + expected[2:]
+    elif first.operation == 'EXEC_INC_DEC_DST16':
+        expected = ('CONST_ONE -> TMP1',
+                    'ALU DECODED TMP0, TMP1 -> TMP2 FLAGS_DECODED',
+                    'TMP2 -> DST IF_WRITE', 'COMMIT_FLAGS', 'END')
     else:
-        expected = (f'READ_{source} -> TMP0', f'TMP0 -> {destination}', 'END')
+        _, kind, destination, source = first.operation.split('_')
+        if kind == 'ALU':
+            expected = (f'READ_{destination} -> TMP0', f'READ_{source} -> TMP1',
+                        'ALU DECODED TMP0, TMP1 -> TMP2 FLAGS_DECODED',
+                        f'TMP2 -> {destination} IF_WRITE', 'COMMIT_FLAGS', 'END')
+        else:
+            expected = (f'READ_{source} -> TMP0', f'TMP0 -> {destination}', 'END')
     parsed = [parse_statement(text, first.location, 22) for text in expected]
     if [(s.operation, s.operands) for s in block.statements[1:]] != [
             (s.operation, s.operands) for s in parsed]:
@@ -1008,7 +1029,7 @@ def generate(program: Program) -> dict[str, str]:
     width = program.address_width
     word_width = program.word_width
     operations = {name: value for name, value in OPERATIONS.items()
-                  if value < {1: 4, 2: 9, 3: 19, 4: 29, 5: 46, 6: 58, 7: 62, 8: 64, 9: 71, 10: 74, 11: 76, 12: 78, 13: 113, 14: 116, 15: 121, 16: 131, 17: 151, 18: 161, 19: 165, 20: 171, 21: 173, 22: 181, 23: 190}[program.format_version]}
+                  if value < {1: 4, 2: 9, 3: 19, 4: 29, 5: 46, 6: 58, 7: 62, 8: 64, 9: 71, 10: 74, 11: 76, 12: 78, 13: 113, 14: 116, 15: 121, 16: 131, 17: 151, 18: 161, 19: 165, 20: 171, 21: 173, 22: 193, 23: 193}[program.format_version]}
     package = banner + ("`timescale 1ns/1ps\n"
                         "// Public constants: standalone consumers use only a subset.\n"
                         "/* verilator lint_off UNUSEDPARAM */\n"

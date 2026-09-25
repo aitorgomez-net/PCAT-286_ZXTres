@@ -126,6 +126,7 @@ module spk286_at_devices_tb;
     spk286_at_device_router devices (
         .clk(clk), .reset(reset),
         .clk_video(clk_video), .splashscreen(splashscreen),
+        .ega_monitor_profile(2'b00),
         .clear_vga13(clear_vga13),
         .at286ctl_status_effective(at286ctl_status_effective),
         .at286ctl_status_osd_match(at286ctl_status_osd_match),

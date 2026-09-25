@@ -1,10 +1,9 @@
 // Normalized AT sound devices.
 //
-// This boundary carries the non-Sound-Blaster audio devices from the XT
-// profile into the SPK286 AT bus: AdLib/OPL2, Creative Music System (C/MS)
-// and the Tandy SN76489.  Each CPU byte transaction is accepted once and is
-// held until the corresponding chip has absorbed it, so a slow Tandy write
-// cannot be lost at the AT device router.
+// This boundary adapts AdLib/OPL2, C/MS, Tandy SN76489 and Sound Blaster Pro
+// to the normalized SPK286 AT bus. Each CPU byte transaction is accepted
+// once and held until the selected device has absorbed it. The SB Pro uses
+// the AT's byte-wide DMA channel 1 and retains its stereo FM/DSP mix.
 `timescale 1ns/1ps
 
 `ifndef ENABLE_OPL2
@@ -16,14 +15,31 @@
 `ifndef ENABLE_TANDY_AUDIO
 `define ENABLE_TANDY_AUDIO 0
 `endif
+`ifndef ENABLE_SB
+`define ENABLE_SB 0
+`endif
 
 module spk286_at_sound (
     input  logic         clk,
     input  logic         reset,
     input  logic         warm_reset,
+    input  logic         cpu_sample_edge,
     input  logic [1:0]   opl2_io,
     input  logic         cms_en,
     input  logic         tandy_en,
+    input  logic         sb_en,
+
+    input  logic         dma_transfer_valid,
+    input  logic         dma_transfer_complete,
+    input  logic         dma_transfer_read_from_memory,
+    input  logic         dma_memory_data_valid,
+    input  logic [2:0]   dma_active_channel,
+    input  logic [15:0]  dma_transfer_data_in,
+    output logic         dma_transfer_accept,
+    output logic         dma_transfer_ready,
+    output logic [15:0]  dma_transfer_data_out,
+    output logic [7:0]   dma_request,
+    output logic         sb_irq,
 
     input  logic         request_valid,
     input  logic         request_command_valid,
@@ -41,18 +57,21 @@ module spk286_at_sound (
     output logic signed [15:0] cms_sound_l,
     output logic signed [15:0] cms_sound_r,
     output logic signed [10:0] tandy_sound,
+    output logic signed [15:0] sb_sound_l,
+    output logic signed [15:0] sb_sound_r,
     output logic [15:0] side_effect_count,
     output logic        protocol_error
 );
-    localparam logic [1:0] TARGET_NONE  = 2'd0;
-    localparam logic [1:0] TARGET_OPL2  = 2'd1;
-    localparam logic [1:0] TARGET_CMS   = 2'd2;
-    localparam logic [1:0] TARGET_TANDY = 2'd3;
+    localparam logic [2:0] TARGET_NONE  = 3'd0;
+    localparam logic [2:0] TARGET_OPL2  = 3'd1;
+    localparam logic [2:0] TARGET_CMS   = 3'd2;
+    localparam logic [2:0] TARGET_TANDY = 3'd3;
+    localparam logic [2:0] TARGET_SB    = 3'd4;
 
     logic       active_q;
     logic       write_q;
     logic       read_q;
-    logic [1:0] target_q;
+    logic [2:0] target_q;
     logic [1:0] byte_enable_q;
     logic       address_a0_q;
     logic [7:0] data_out_q;
@@ -60,12 +79,17 @@ module spk286_at_sound (
     logic       tandy_started_q;
     logic       cms_started_q;
     logic [7:0] cms_det_q;
+    logic [7:0] sb_data_bus_out;
+    logic [15:0] sb_address_q;
+    logic [1:0] sb_io_phase_q;
+    logic sb_dma_endpoint_seen_q;
 
     logic       opl2_candidate;
     logic       cms_candidate;
     logic       tandy_candidate;
+    logic       sb_candidate;
     logic       lane_valid;
-    logic [1:0] request_target;
+    logic [2:0] request_target;
     logic [7:0] request_byte;
 
     wire opl2_388 = (request_address[15:0] == 16'h0388) ||
@@ -75,8 +99,7 @@ module spk286_at_sound (
 
     always_comb begin
         // The OPL2 menu's first entry is AdLib at 388h. Its second entry is
-        // the same chip at both 388h and the Sound-Blaster FM alias 228h;
-        // no Sound-Blaster DSP, DMA or IRQ logic is present here.
+        // the same chip at both 388h and the Sound-Blaster FM alias 228h.
         opl2_candidate = `ENABLE_OPL2 && request_valid &&
                          request_command_valid && request_io &&
                          (((opl2_io == 2'd0) && opl2_388) ||
@@ -95,6 +118,20 @@ module spk286_at_sound (
                           request_command_valid && request_io &&
                           request_write &&
                           (request_address[15:4] == 12'h00C);
+        // The SB Pro occupies DSP ports 226h/22Ah/22Ch/22Eh and mixer ports
+        // 224h/225h. C/MS is excluded by the effective audio selector.
+        sb_candidate = `ENABLE_SB && sb_en && request_valid &&
+                       request_command_valid && request_io &&
+                       (request_address[15:4] == 12'h022) &&
+                       ((request_address[3:0] == 4'h6) ||
+                        (request_address[3:0] == 4'hA) ||
+                        (request_address[3:0] == 4'hC) ||
+                        (request_address[3:0] == 4'hE) ||
+                        (request_write &&
+                         ((request_address[3:0] == 4'h4) ||
+                          (request_address[3:0] == 4'h5))) ||
+                        (!request_write &&
+                         (request_address[3:0] == 4'h5)));
 
         request_target = TARGET_NONE;
         if (opl2_candidate)
@@ -103,6 +140,8 @@ module spk286_at_sound (
             request_target = TARGET_CMS;
         else if (tandy_candidate)
             request_target = TARGET_TANDY;
+        else if (sb_candidate)
+            request_target = TARGET_SB;
 
         lane_valid = ((request_address[0] == 1'b0) &&
                       (request_byte_enable == 2'b01)) ||
@@ -125,7 +164,9 @@ module spk286_at_sound (
                             ((target_q == TARGET_CMS) &&
                              (!write_q || cms_started_q)) ||
                             ((target_q == TARGET_TANDY) &&
-                             (tandy_started_q && tandy_ready_i)));
+                             (tandy_started_q && tandy_ready_i)) ||
+                            ((target_q == TARGET_SB) &&
+                             (sb_io_phase_q == 2'd3)));
 
     wire [7:0] opl2_dout_i;
     wire signed [15:0] opl2_sound_i;
@@ -153,12 +194,94 @@ module spk286_at_sound (
     wire [7:0] cms_read_byte = (address_low_q == 4'hB) ? cms_det_q : 8'h7F;
     wire [7:0] read_byte = (target_q == TARGET_OPL2) ? opl2_dout_i :
                            (target_q == TARGET_CMS)  ? cms_read_byte :
+                           (target_q == TARGET_SB)   ? sb_data_bus_out :
                            8'hFF;
 
     assign request_read_data = byte_enable_q[1] ?
                                {read_byte, 8'h00} :
                                {8'h00, read_byte};
     assign request_read_data_valid = request_ready && read_q;
+
+    logic sb_read_select;
+    logic sb_dma_request;
+    logic [7:0] sb_dma_data_out;
+    logic signed [15:0] sb_sample_l;
+    logic signed [15:0] sb_sample_r;
+    logic sb_endpoint_accept;
+    logic sb_endpoint_ready;
+    logic [15:0] sb_dma_transfer_data_out;
+
+    wire sb_cpu_active = active_q && (target_q == TARGET_SB);
+    wire sb_cpu_strobe = sb_cpu_active && (sb_io_phase_q < 2'd2);
+    wire sb_dma_channel = dma_transfer_valid &&
+                          (dma_active_channel == 3'd1);
+    wire sb_dma_can_start = `ENABLE_SB && sb_en && sb_dma_channel &&
+                            sb_dma_request &&
+                            (!dma_transfer_read_from_memory ||
+                             dma_memory_data_valid);
+    wire sb_dma_dack = sb_dma_channel &&
+                       (sb_dma_endpoint_seen_q || sb_dma_can_start);
+    wire sb_dma_io_read_n = !(sb_dma_dack &&
+                              !dma_transfer_read_from_memory);
+    wire sb_dma_io_write_n = !(sb_dma_dack &&
+                               dma_transfer_read_from_memory);
+
+    assign sb_endpoint_accept = sb_dma_can_start &&
+                                !sb_dma_endpoint_seen_q;
+    assign sb_endpoint_ready = sb_dma_channel &&
+                               sb_dma_endpoint_seen_q;
+    assign dma_transfer_accept = sb_endpoint_accept;
+    assign dma_transfer_ready = sb_endpoint_ready;
+    assign dma_transfer_data_out = sb_dma_transfer_data_out;
+    assign dma_request = (`ENABLE_SB && sb_en && sb_dma_request) ?
+                         8'h02 : 8'h00;
+    assign sb_sound_l = sb_sample_l;
+    assign sb_sound_r = sb_sample_r;
+
+    generate
+        if (`ENABLE_SB) begin : GEN_SOUND_BLASTER
+            soundblaster u_soundblaster (
+                .clock             (clk),
+                .reset             (reset),
+                // The active PCAT profile advances the CPU on each 50 MHz
+                // sample edge, matching the source profile's enabled edge.
+                .cpu_ce_negedge    (cpu_sample_edge),
+                .clk_rate          (28'd50000000),
+                .address           (sb_cpu_active ? sb_address_q : 16'h0220),
+                .internal_data_bus (sb_dma_dack &&
+                                    dma_transfer_read_from_memory ?
+                                    dma_transfer_data_in[7:0] : data_out_q),
+                .io_read_n         (sb_cpu_strobe && read_q ? 1'b0 :
+                                    sb_dma_io_read_n),
+                .io_write_n        (sb_cpu_strobe && write_q ? 1'b0 :
+                                    sb_dma_io_write_n),
+                .address_enable_n  (!(sb_cpu_active || sb_dma_dack)),
+                .enable            (sb_en),
+                .read_select       (sb_read_select),
+                .data_bus_out      (sb_data_bus_out),
+                .dma_acknowledge   (sb_dma_dack),
+                .dma_request       (sb_dma_request),
+                .dma_data_out      (sb_dma_data_out),
+                .irq               (sb_irq),
+                .fm_l              ((opl2_io == 2'd2) ? 16'sd0 :
+                                     opl2_sound_i),
+                .fm_r              ((opl2_io == 2'd2) ? 16'sd0 :
+                                     opl2_sound_i),
+                .sample_l          (sb_sample_l),
+                .sample_r          (sb_sample_r)
+            );
+            assign sb_dma_transfer_data_out = {8'h00, sb_dma_data_out};
+        end else begin : GEN_NO_SOUND_BLASTER
+            assign sb_read_select = 1'b0;
+            assign sb_data_bus_out = 8'hFF;
+            assign sb_dma_request = 1'b0;
+            assign sb_dma_data_out = 8'h00;
+            assign sb_sample_l = 16'sd0;
+            assign sb_sample_r = 16'sd0;
+            assign sb_irq = 1'b0;
+            assign sb_dma_transfer_data_out = 16'h0000;
+        end
+    endgenerate
 
     // The three devices share an exact 50 MHz fractional clock divider in the
     // source profile: 3.579545 MHz for OPL2/SN76489 and 7.159090 MHz for
@@ -292,7 +415,8 @@ module spk286_at_sound (
         end
     end
 
-    assign opl2_sound = (opl2_io == 2'd2) ? 16'sd0 : opl2_sound_i;
+    assign opl2_sound = (`ENABLE_SB || (opl2_io == 2'd2)) ?
+                        16'sd0 : opl2_sound_i;
     assign cms_sound_l = cms_en ? $signed(cms_sound_l_q) : 16'sd0;
     assign cms_sound_r = cms_en ? $signed(cms_sound_r_q) : 16'sd0;
     assign tandy_sound = tandy_en ? tandy_sound_i : 11'sd0;
@@ -313,6 +437,9 @@ module spk286_at_sound (
             tandy_started_q <= 1'b0;
             cms_started_q   <= 1'b0;
             cms_det_q       <= 8'h00;
+            sb_address_q    <= 16'h0220;
+            sb_io_phase_q   <= 2'd0;
+            sb_dma_endpoint_seen_q <= 1'b0;
         end else begin
             if (!active_q && request_accept) begin
                 active_q        <= 1'b1;
@@ -323,6 +450,8 @@ module spk286_at_sound (
                 address_a0_q    <= request_address[0];
                 data_out_q      <= request_byte;
                 address_low_q   <= request_address[3:0];
+                sb_address_q    <= request_address[15:0];
+                sb_io_phase_q   <= 2'd0;
                 tandy_started_q <= 1'b0;
                 cms_started_q   <= 1'b0;
                 if (request_write && cms_candidate &&
@@ -339,8 +468,17 @@ module spk286_at_sound (
                     target_q        <= TARGET_NONE;
                     tandy_started_q <= 1'b0;
                     cms_started_q   <= 1'b0;
+                    sb_io_phase_q   <= 2'd0;
                 end
+                else if ((target_q == TARGET_SB) &&
+                         (sb_io_phase_q != 2'd3))
+                    sb_io_phase_q <= sb_io_phase_q + 2'd1;
             end
+
+            if (!dma_transfer_valid || dma_transfer_complete)
+                sb_dma_endpoint_seen_q <= 1'b0;
+            else if (sb_endpoint_accept)
+                sb_dma_endpoint_seen_q <= 1'b1;
         end
     end
 

@@ -3063,12 +3063,10 @@
         "file": "zzz_scalar.mc",
         "line": 21
       },
-      "operands": [
-        "TMP0"
-      ],
-      "operation": "READ_DST16",
-      "statement": "READ_DST16 -> TMP0",
-      "word": 13
+      "operands": [],
+      "operation": "EXEC_INC_DEC_DST16",
+      "statement": "EXEC_INC_DEC_DST16",
+      "word": 192
     },
     {
       "address": 219,
@@ -4399,9 +4397,9 @@
         "line": 10
       },
       "operands": [],
-      "operation": "DECODE_MODRM",
-      "statement": "DECODE_MODRM",
-      "word": 4
+      "operation": "DECODE_UNARY_RM8",
+      "statement": "DECODE_UNARY_RM8",
+      "word": 191
     },
     {
       "address": 318,
@@ -4495,9 +4493,9 @@
         "line": 18
       },
       "operands": [],
-      "operation": "DECODE_MODRM",
-      "statement": "DECODE_MODRM",
-      "word": 4
+      "operation": "DECODE_UNARY_RM16",
+      "statement": "DECODE_UNARY_RM16",
+      "word": 190
     },
     {
       "address": 325,
@@ -4591,9 +4589,9 @@
         "line": 26
       },
       "operands": [],
-      "operation": "DECODE_MODRM",
-      "statement": "DECODE_MODRM",
-      "word": 4
+      "operation": "DECODE_UNARY_RM8",
+      "statement": "DECODE_UNARY_RM8",
+      "word": 191
     },
     {
       "address": 332,
@@ -4687,9 +4685,9 @@
         "line": 34
       },
       "operands": [],
-      "operation": "DECODE_MODRM",
-      "statement": "DECODE_MODRM",
-      "word": 4
+      "operation": "DECODE_UNARY_RM16",
+      "statement": "DECODE_UNARY_RM16",
+      "word": 190
     },
     {
       "address": 339,
@@ -4783,9 +4781,9 @@
         "line": 42
       },
       "operands": [],
-      "operation": "DECODE_MODRM",
-      "statement": "DECODE_MODRM",
-      "word": 4
+      "operation": "DECODE_UNARY_RM8",
+      "statement": "DECODE_UNARY_RM8",
+      "word": 191
     },
     {
       "address": 346,
@@ -4879,9 +4877,9 @@
         "line": 50
       },
       "operands": [],
-      "operation": "DECODE_MODRM",
-      "statement": "DECODE_MODRM",
-      "word": 4
+      "operation": "DECODE_UNARY_RM16",
+      "statement": "DECODE_UNARY_RM16",
+      "word": 190
     },
     {
       "address": 353,

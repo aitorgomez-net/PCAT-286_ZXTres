@@ -84,7 +84,8 @@ STATEMENTS.update({151: 'VALIDATE_EVENT_GATE', 152: 'EVENT_GATE_IP -> TMP0',
                    165: 'COPY_CALL_PARAMETERS'})
 
 
-STATEMENTS.update({173: 'DECODE_ALU_RM16_REG16', 174: 'DECODE_ALU_REG16_RM16', 175: 'DECODE_ALU_RM8_REG8', 176: 'DECODE_ALU_REG8_RM8', 177: 'DECODE_MOV_RM16_REG16', 178: 'DECODE_MOV_REG16_RM16', 179: 'DECODE_MOV_RM8_REG8', 180: 'DECODE_MOV_REG8_RM8'})
+STATEMENTS.update({173: 'DECODE_ALU_RM16_REG16', 174: 'DECODE_ALU_REG16_RM16', 175: 'DECODE_ALU_RM8_REG8', 176: 'DECODE_ALU_REG8_RM8', 177: 'DECODE_MOV_RM16_REG16', 178: 'DECODE_MOV_REG16_RM16', 179: 'DECODE_MOV_RM8_REG8', 180: 'DECODE_MOV_REG8_RM8',
+                   190: 'DECODE_UNARY_RM16', 191: 'DECODE_UNARY_RM8', 192: 'EXEC_INC_DEC_DST16'})
 
 
 def read_generated_words(package: str, rom: str) -> tuple[int, ...]:
@@ -160,7 +161,8 @@ def read_generated_words(package: str, rom: str) -> tuple[int, ...]:
     if dimension('MC_FORMAT_VERSION') >= 20:
         expected.update({'SYSTEM_ARPL_CHECK': 166, 'SYSTEM_ARPL': 167, 'SYSTEM_CLTS': 168, 'TASK_SWITCH': 169, 'TASK_RETURN': 170})
     if dimension('MC_FORMAT_VERSION') >= 22:
-        expected.update({'DECODE_ALU_RM16_REG16': 173, 'DECODE_ALU_REG16_RM16': 174, 'DECODE_ALU_RM8_REG8': 175, 'DECODE_ALU_REG8_RM8': 176, 'DECODE_MOV_RM16_REG16': 177, 'DECODE_MOV_REG16_RM16': 178, 'DECODE_MOV_RM8_REG8': 179, 'DECODE_MOV_REG8_RM8': 180})
+        expected.update({'DECODE_ALU_RM16_REG16': 173, 'DECODE_ALU_REG16_RM16': 174, 'DECODE_ALU_RM8_REG8': 175, 'DECODE_ALU_REG8_RM8': 176, 'DECODE_MOV_RM16_REG16': 177, 'DECODE_MOV_REG16_RM16': 178, 'DECODE_MOV_RM8_REG8': 179, 'DECODE_MOV_REG8_RM8': 180,
+                         'DECODE_UNARY_RM16': 190, 'DECODE_UNARY_RM8': 191, 'EXEC_INC_DEC_DST16': 192})
     if dimension('MC_FORMAT_VERSION') >= 21:
         expected['CARRY_FILL8'] = 171
         expected['LOADALL'] = 172
@@ -247,9 +249,9 @@ def canonical_source(words, entries, labels=None, branch_targets=None):
     version = 20 if any(w > 164 for w in words) else 19 if any(w > 160 for w in words) else 18 if any(w > 150 for w in words) else 17 if any(w > 130 for w in words) else 16 if any(w > 120 for w in words) else 15 if any(w > 115 for w in words) else 14 if any(w > 112 for w in words) else 13 if any(w > 77 for w in words) else 12 if any(w > 75 for w in words) else 11 if any(w > 73 for w in words) else 10 if any(w > 70 for w in words) or unary else 9 if any(w > 63 for w in words) else 8 if any(w > 61 for w in words) else 7 if any(w > 57 for w in words) or any(tuple(words[i:i+2]) == (30, 54) for i in range(len(words)-1)) else 6 if any(w > 45 for w in words) else 5 if any(w > 28 for w in words) else (4 if any(w > 18 for w in words) else (3 if any(w > 8 for w in words) else (2 if any(w > 3 for w in words) else 1)))
     if 171 in words or 172 in words:
         version = 21
-    if any(173 <= w <= 180 for w in words):
+    if any(173 <= w <= 180 or 190 <= w <= 192 for w in words):
         version = 22
-    if any(w > 180 for w in words):
+    if any(181 <= w <= 189 for w in words):
         version = 23
     lines = [f"microcode_format {version}"]
     for address, word in enumerate(words[:used]):

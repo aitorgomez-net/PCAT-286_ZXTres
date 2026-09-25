@@ -15,6 +15,7 @@ module spk286_at_video_adapter (
     input  logic        reset,
     input  logic        clk_video,
     input  logic        splashscreen,
+    input  logic [1:0]  ega_monitor_profile,
     input  logic        vga_enabled,
     input  logic        vga_mode13_native,
     input  logic [3:0]  crt_h_offset,
@@ -77,15 +78,49 @@ module spk286_at_video_adapter (
     logic splash_video_sync1_q;
     (* altera_attribute = "-name SYNCHRONIZER_IDENTIFICATION FORCED_IF_ASYNCHRONOUS" *)
     logic splash_video_sync2_q;
+    (* altera_attribute = "-name SYNCHRONIZER_IDENTIFICATION FORCED_IF_ASYNCHRONOUS" *)
+    logic vga_mode13_native_video_sync1_q;
+    (* altera_attribute = "-name SYNCHRONIZER_IDENTIFICATION FORCED_IF_ASYNCHRONOUS" *)
+    logic vga_mode13_native_video_sync2_q;
     always_ff @(posedge clk_video) begin
         if (video_reset) begin
             splash_video_sync1_q <= 1'b0;
             splash_video_sync2_q <= 1'b0;
+            vga_mode13_native_video_sync1_q <= 1'b1;
+            vga_mode13_native_video_sync2_q <= 1'b1;
         end else begin
             splash_video_sync1_q <= splashscreen;
             splash_video_sync2_q <= splash_video_sync1_q;
+            vga_mode13_native_video_sync1_q <= vga_mode13_native;
+            vga_mode13_native_video_sync2_q <= vga_mode13_native_video_sync1_q;
         end
     end
+
+    // Transfer geometry and the applied physical monitor profile coherently.
+    // The profile latch can change throughout machine reset (including the
+    // splash, while this raster is live). Two independent bit synchronizers
+    // cannot guarantee an atomic 01 <-> 10 change. Reuse the held mailbox;
+    // it stays live across machine resets and stopped raster clocks.
+    wire [15:0] video_geometry_source = {
+        ega_monitor_profile, vga_enabled, hsync_width_osd, vsync_width_osd,
+        crt_v_offset, crt_h_offset
+    };
+    logic [15:0] video_geometry_sent_q = 16'd0;
+    wire video_geometry_ready;
+    wire [15:0] video_geometry;
+    always_ff @(posedge clk) begin
+        if (video_geometry_ready && video_geometry_source != video_geometry_sent_q)
+            video_geometry_sent_q <= video_geometry_source;
+    end
+    at_cdc_snapshot #(.WIDTH(16)) video_geometry_cdc (
+        .src_clk   (clk),
+        .src_send  (video_geometry_ready && video_geometry_source != video_geometry_sent_q),
+        .src_data  (video_geometry_source),
+        .src_ready (video_geometry_ready),
+        .dst_clk   (clk_video),
+        .dst_data  (video_geometry),
+        .dst_update()
+    );
 
     wire video_io_request = request_valid && request_command_valid &&
                             request_io &&
@@ -117,7 +152,7 @@ module spk286_at_video_adapter (
     ega_switch_sense_host u_ega_switch_sense_host (
         .clock             (clk),
         .reset             (reset),
-        .monitor_profile   (2'b00),
+        .monitor_profile   (ega_monitor_profile),
         .io_address        (request_address[14:0]),
         .io_data           (request_byte),
         .io_write_n        (!(ega_switch_request && request_write)),
@@ -281,7 +316,13 @@ module spk286_at_video_adapter (
     // Standard VGA mode 13h uses a packed 64 KiB A0000 framebuffer. Keep its
     // CPU aperture separate from the planar EGA VRAM, whose Chain-4 path is
     // intentionally handled by ega_vram_bram_frontend.
+    // Register the decoded mode before crossing clocks: the planar/packed
+    // decision depends on several graphics registers and must not propagate
+    // combinational decode glitches into the CPU-domain synchronizer.
+    logic vga_packed_memory_video_q;
+    (* altera_attribute = "-name SYNCHRONIZER_IDENTIFICATION FORCED_IF_ASYNCHRONOUS; -name DONT_MERGE_REGISTER ON" *)
     logic vga_packed_memory_sync1_q;
+    (* altera_attribute = "-name SYNCHRONIZER_IDENTIFICATION FORCED_IF_ASYNCHRONOUS; -name DONT_MERGE_REGISTER ON" *)
     logic vga_packed_memory_sync2_q;
     wire  vga_packed_memory_active = vga_packed_memory_sync2_q;
     wire  vga_packed_memory_request = memory_busy_q &&
@@ -293,13 +334,20 @@ module spk286_at_video_adapter (
     assign memory_ready = vga_packed_memory_request ?
                           vga_framebuffer_cpu_ready : vram_cpu_ready;
 
+    always_ff @(posedge clk_video) begin
+        if (video_reset)
+            vga_packed_memory_video_q <= 1'b0;
+        else
+            vga_packed_memory_video_q <= vga_mode13_active_video &&
+                                         !vga_planar_memory_active_video;
+    end
+
     always_ff @(posedge clk or posedge reset) begin
         if (reset) begin
             vga_packed_memory_sync1_q <= 1'b0;
             vga_packed_memory_sync2_q <= 1'b0;
         end else begin
-            vga_packed_memory_sync1_q <= vga_mode13_active_video &&
-                                         !vga_planar_memory_active_video;
+            vga_packed_memory_sync1_q <= vga_packed_memory_video_q;
             vga_packed_memory_sync2_q <= vga_packed_memory_sync1_q;
         end
     end
@@ -483,6 +531,15 @@ module spk286_at_video_adapter (
         end
     end
 
+    // Native EGA RGB follows the renderer/attribute pipeline, whose visible
+    // window is later than the CRTC's HBLANK (13 dots in 80-column text).
+    // Match PCXT-EGA's LHBL selection so the HDMI mixer and framebuffer keep
+    // the entire rendered line. Private VGA and scandoubled rasters already
+    // supply their own aligned blanking.
+    wire ega_hblank_raw;
+    assign video_hblank = (video_scandouble_active || vga_mode13_active_video)
+                          ? ega_hblank_raw : ~video_de;
+
     ega_top u_ega (
         .clk                        (clk_video),
         .reset                      (video_reset),
@@ -535,7 +592,7 @@ module spk286_at_video_adapter (
         .ega_blink_counter_out      (),
         .ega_blink_state_out        (),
         .hsync                      (video_hsync),
-        .hblank                     (video_hblank),
+        .hblank                     (ega_hblank_raw),
         .dbl_hsync                  (video_dbl_hsync),
         .vsync                      (video_vsync),
         .vblank                     (video_vblank),
@@ -557,9 +614,9 @@ module spk286_at_video_adapter (
         .thin_font                  (1'b0),
         .scandouble_en              (1'b0),
         .ega_enabled                (1'b1),
-        .ega_monitor_profile        (2'b00),
-        .vga_enabled                (vga_enabled),
-        .vga_mode13_native          (vga_mode13_native),
+        .ega_monitor_profile        (video_geometry[15:14]),
+        .vga_enabled                (video_geometry[13]),
+        .vga_mode13_native          (vga_mode13_native_video_sync2_q),
         .vga_mode13_set             (1'b0),
         .vga_mode13_clear           (1'b0),
         .vga_mode13_active_out      (vga_mode13_active_video),
@@ -567,10 +624,10 @@ module spk286_at_video_adapter (
         .vga_mode13_wide_clock_out  (),
         .vga_planar_memory_active_out(vga_planar_memory_active_video),
         .vga_mode13_pixel_toggle_out(),
-        .crt_h_offset               (crt_h_offset),
-        .crt_v_offset               (crt_v_offset),
-        .vsync_width_osd            (vsync_width_osd),
-        .hsync_width_osd            (hsync_width_osd)
+        .crt_h_offset               (video_geometry[3:0]),
+        .crt_v_offset               (video_geometry[6:4]),
+        .vsync_width_osd            (video_geometry[9:7]),
+        .hsync_width_osd            (video_geometry[12:10])
     );
 
 endmodule

@@ -11,8 +11,9 @@ derive_clock_uncertainty
 
 # Decouple different clock groups (to simplify routing)
 # In the opt-in AT CDC experiment, remove clock-group exclusions between
-# the participating control domains. Keep all unrelated legacy exclusions;
-# do not introduce any new exclusions involving the AT video PLL outputs.
+# the participating control domains. Keep all unrelated legacy exclusions.
+# The f2sdram exception below applies in both profiles because it is
+# limited to paths that pass through the HPS hard block.
 set at_cdc_enabled 0
 foreach_in_collection a [get_all_global_assignments -name VERILOG_MACRO] {
    if {[lindex $a 2] eq "SPK286_AT_CDC"} { set at_cdc_enabled 1 }
@@ -41,6 +42,45 @@ foreach names {
 }
 eval $at_groups
 }
+
+# The Cyclone V f2sdram timing model can attribute an output of one DDR
+# port to the clock of another. The video and audio DDR ports have separate
+# clocks, so timing/hold repair across this hard-block boundary is invalid.
+# Keep direct FPGA logic crossings between these clocks visible to TimeQuest.
+set video_ddr_clock [get_clocks -nowarn {*u_at_video_pll*general[1]*divclk}]
+set audio_ddr_clock [get_clocks -nowarn {pll_audio*general[0]*divclk}]
+set hps_user_clock [get_clocks -nowarn {*h2f_user0_clk}]
+set hps_ddr_pins [get_pins -compatibility_mode -nowarn {*|f2sdram|*}]
+if {[get_collection_size $video_ddr_clock] != 1 ||
+    [get_collection_size $audio_ddr_clock] != 1 ||
+    [get_collection_size $hps_user_clock] != 1 ||
+    [get_collection_size $hps_ddr_pins] == 0} {
+   error "Expected HPS/video/audio DDR clocks and f2sdram pins were not found"
+}
+set_false_path -from $video_ddr_clock -through $hps_ddr_pins -to $audio_ddr_clock
+set_false_path -from $audio_ddr_clock -through $hps_ddr_pins -to $video_ddr_clock
+set_false_path -from $hps_user_clock -through $hps_ddr_pins -to $video_ddr_clock
+set_false_path -from $video_ddr_clock -through $hps_ddr_pins -to $hps_user_clock
+set_false_path -from $hps_user_clock -through $hps_ddr_pins -to $audio_ddr_clock
+set_false_path -from $audio_ddr_clock -through $hps_ddr_pins -to $hps_user_clock
+
+# sysmem reset is synchronized independently in each DDR port clock domain.
+# The input of each first stage may change asynchronously; later stages stay timed.
+foreach reset_port {ram1 ram2 vbuf} {
+   set reset_meta [get_registers -nowarn "*|${reset_port}_reset_0"]
+   if {[get_collection_size $reset_meta] != 1} {
+      error "Expected ${reset_port} DDR reset synchronizer was not found"
+   }
+   set_false_path -to $reset_meta
+}
+
+# The OSD mode switch is sampled by a two-stage register chain in the EGA
+# raster domain. Only the first stage may receive the asynchronous transition.
+set vga_mode13_meta [get_registers -nowarn {*vga_mode13_native_video_sync1_q}]
+if {[get_collection_size $vga_mode13_meta] != 1} {
+   error "Expected EGA mode-13 clock-domain synchronizer was not found"
+}
+set_false_path -to $vga_mode13_meta
 
 set_false_path -from [get_ports {KEY*}]
 set_false_path -from [get_ports {BTN_*}]
@@ -83,7 +123,9 @@ set_false_path -from {vol_att[*] scaler_flt[*] led_overtake[*] led_state[*]}
 set_false_path -from {aflt_* acx* acy* areset* arc*}
 set_false_path -from {arx* ary*}
 set_false_path -from {vs_line*}
+if {!$at_cdc_enabled} {
 set_false_path -from {ColorBurst_Range* PhaseInc* pal_en cvbs yc_en}
+}
 
 if {!$at_cdc_enabled} {
 set_false_path -from {ascal|o_ihsize*}

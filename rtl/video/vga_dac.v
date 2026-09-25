@@ -37,9 +37,27 @@ module vga_dac(
     output wire        port_valid
 );
 
-    reg [5:0] red_ram[0:255];
-    reg [5:0] green_ram[0:255];
-    reg [5:0] blue_ram[0:255];
+    // Each colour RAM has one write port and one asynchronous read port.
+    // The pixel and I/O readers need independent addresses, so keep a copy
+    // for each reader. Cyclone V MLABs support this flow-through read mode;
+    // M10Ks would add a clock of latency to the existing video pipeline.
+    // The explicit bypass below defines same-address read-after-write data;
+    // Quartus must not try to reproduce the array's HDL collision semantics.
+    (* ramstyle = "MLAB, no_rw_check" *) reg [5:0] sample_red_ram[0:255];
+    (* ramstyle = "MLAB, no_rw_check" *) reg [5:0] sample_green_ram[0:255];
+    (* ramstyle = "MLAB, no_rw_check" *) reg [5:0] sample_blue_ram[0:255];
+    (* ramstyle = "MLAB, no_rw_check" *) reg [5:0] port_red_ram[0:255];
+    (* ramstyle = "MLAB, no_rw_check" *) reg [5:0] port_green_ram[0:255];
+    (* ramstyle = "MLAB, no_rw_check" *) reg [5:0] port_blue_ram[0:255];
+
+    // Independent ROM copies provide the two asynchronous read addresses.
+    // The RAMs hold only software changes; clearing the override bits
+    // restores every default without a 256-entry parallel palette write.
+    (* ramstyle = "MLAB" *) reg [17:0] sample_default_palette[0:255];
+    (* ramstyle = "MLAB" *) reg [17:0] port_default_palette[0:255];
+    reg [255:0] red_override = 256'd0;
+    reg [255:0] green_override = 256'd0;
+    reg [255:0] blue_override = 256'd0;
     // Set for every index loaded by load_defaults (i.e. while VGA mode 13h
     // is active) or explicitly written through the DAC ports; cleared by
     // invalidate (a mode set to anything other than mode 13h). Lets the EGA
@@ -48,7 +66,7 @@ module vga_dac(
     // cannot serve both the VGA and EGA 200-line attribute code conventions.
     reg [255:0] entry_valid;
 
-    integer reset_index;
+    integer default_index;
 
     function [5:0] ega16_component;
         input [3:0] index;
@@ -282,37 +300,82 @@ module vga_dac(
         end
     endfunction
 
+    initial begin
+        for (default_index = 0; default_index < 256; default_index = default_index + 1)
+            sample_default_palette[default_index] = {
+                default_component(default_index[7:0], 2'd0),
+                default_component(default_index[7:0], 2'd1),
+                default_component(default_index[7:0], 2'd2)
+            };
+        for (default_index = 0; default_index < 256; default_index = default_index + 1)
+            port_default_palette[default_index] = {
+                default_component(default_index[7:0], 2'd0),
+                default_component(default_index[7:0], 2'd1),
+                default_component(default_index[7:0], 2'd2)
+            };
+    end
+
+    wire palette_write = !reset && !load_defaults && !invalidate;
+    wire full_write = palette_write && write_en;
+    wire component_write = palette_write && !write_en && component_write_en;
+    wire [7:0] ram_write_index = full_write ? write_index : component_write_index;
+    wire red_write = full_write || (component_write && component_select == 2'd0);
+    wire green_write = full_write || (component_write && component_select == 2'd1);
+    wire blue_write = full_write || (component_write && component_select == 2'd2);
+    wire [5:0] red_write_data = full_write ? write_red : component_data;
+    wire [5:0] green_write_data = full_write ? write_green : component_data;
+    wire [5:0] blue_write_data = full_write ? write_blue : component_data;
+
+    // Same-address reads on a write cycle see the new component explicitly.
+    // This also avoids depending on the device's read-during-write setting.
+    reg [7:0] last_write_index;
+    reg [5:0] last_red_data, last_green_data, last_blue_data;
+    reg last_red_write, last_green_write, last_blue_write;
+    always @(posedge clock) begin
+        last_write_index <= ram_write_index;
+        last_red_write <= red_write;
+        last_green_write <= green_write;
+        last_blue_write <= blue_write;
+        if (red_write) begin
+            sample_red_ram[ram_write_index] <= red_write_data;
+            port_red_ram[ram_write_index] <= red_write_data;
+            last_red_data <= red_write_data;
+        end
+        if (green_write) begin
+            sample_green_ram[ram_write_index] <= green_write_data;
+            port_green_ram[ram_write_index] <= green_write_data;
+            last_green_data <= green_write_data;
+        end
+        if (blue_write) begin
+            sample_blue_ram[ram_write_index] <= blue_write_data;
+            port_blue_ram[ram_write_index] <= blue_write_data;
+            last_blue_data <= blue_write_data;
+        end
+    end
+
     always @(posedge clock or posedge reset) begin
         if (reset) begin
-            for (reset_index = 0; reset_index < 256; reset_index = reset_index + 1) begin
-                // Blocking assignments keep this reset-time table fill
-                // compatible with Verilator's synthesizable array model;
-                // the loop is still unrolled as a reset initializer by
-                // Quartus and no run-time ordering is observable here.
-                red_ram[reset_index] = default_component(reset_index[7:0], 2'd0);
-                green_ram[reset_index] = default_component(reset_index[7:0], 2'd1);
-                blue_ram[reset_index] = default_component(reset_index[7:0], 2'd2);
-            end
+            red_override <= 256'd0;
+            green_override <= 256'd0;
+            blue_override <= 256'd0;
             entry_valid <= 256'd0;
         end else if (load_defaults) begin
-            for (reset_index = 0; reset_index < 256; reset_index = reset_index + 1) begin
-                red_ram[reset_index] = default_component(reset_index[7:0], 2'd0);
-                green_ram[reset_index] = default_component(reset_index[7:0], 2'd1);
-                blue_ram[reset_index] = default_component(reset_index[7:0], 2'd2);
-            end
+            red_override <= 256'd0;
+            green_override <= 256'd0;
+            blue_override <= 256'd0;
             entry_valid <= {256{1'b1}};
         end else if (invalidate) begin
             entry_valid <= 256'd0;
         end else if (write_en) begin
-            red_ram[write_index] <= write_red;
-            green_ram[write_index] <= write_green;
-            blue_ram[write_index] <= write_blue;
+            red_override[write_index] <= 1'b1;
+            green_override[write_index] <= 1'b1;
+            blue_override[write_index] <= 1'b1;
             entry_valid[write_index] <= 1'b1;
         end else if (component_write_en) begin
             case (component_select)
-                2'd0: red_ram[component_write_index] <= component_data;
-                2'd1: green_ram[component_write_index] <= component_data;
-                2'd2: blue_ram[component_write_index] <= component_data;
+                2'd0: red_override[component_write_index] <= 1'b1;
+                2'd1: green_override[component_write_index] <= 1'b1;
+                2'd2: blue_override[component_write_index] <= 1'b1;
                 default: begin
                 end
             endcase
@@ -320,16 +383,30 @@ module vga_dac(
         end
     end
 
-    assign sample_red = red_ram[sample_index];
-    assign sample_green = green_ram[sample_index];
-    assign sample_blue = blue_ram[sample_index];
+    wire [17:0] sample_default = sample_default_palette[sample_index];
+    wire [17:0] port_default = port_default_palette[port_index];
+    assign sample_red = red_override[sample_index] ?
+                        (last_red_write && last_write_index == sample_index ? last_red_data : sample_red_ram[sample_index]) :
+                        sample_default[17:12];
+    assign sample_green = green_override[sample_index] ?
+                          (last_green_write && last_write_index == sample_index ? last_green_data : sample_green_ram[sample_index]) :
+                          sample_default[11:6];
+    assign sample_blue = blue_override[sample_index] ?
+                         (last_blue_write && last_write_index == sample_index ? last_blue_data : sample_blue_ram[sample_index]) :
+                         sample_default[5:0];
     assign sample_red_8 = {sample_red, sample_red[5:4]};
     assign sample_green_8 = {sample_green, sample_green[5:4]};
     assign sample_blue_8 = {sample_blue, sample_blue[5:4]};
     assign sample_valid = entry_valid[sample_index];
-    assign port_red = red_ram[port_index];
-    assign port_green = green_ram[port_index];
-    assign port_blue = blue_ram[port_index];
+    assign port_red = red_override[port_index] ?
+                      (last_red_write && last_write_index == port_index ? last_red_data : port_red_ram[port_index]) :
+                      port_default[17:12];
+    assign port_green = green_override[port_index] ?
+                        (last_green_write && last_write_index == port_index ? last_green_data : port_green_ram[port_index]) :
+                        port_default[11:6];
+    assign port_blue = blue_override[port_index] ?
+                       (last_blue_write && last_write_index == port_index ? last_blue_data : port_blue_ram[port_index]) :
+                       port_default[5:0];
     assign port_valid = entry_valid[port_index];
 
 endmodule

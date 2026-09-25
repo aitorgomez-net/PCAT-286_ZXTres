@@ -6,8 +6,12 @@ set_global_assignment -name QIP_FILE rtl/video/video.qip
 set_global_assignment -name QIP_FILE rtl/uart/uart.qip
 set_global_assignment -name QIP_FILE rtl/spk286_integration/spk286_integration.qip
 
-# AdLib/OPL2, C/MS and Tandy SN76489 audio. Sound Blaster sources are not
-# included in this profile.
+# AdLib/OPL2, Sound Blaster Pro, C/MS and Tandy SN76489 audio.
+set_global_assignment -name SYSTEMVERILOG_FILE "rtl/sound/soundblaster.sv"
+set_global_assignment -name SYSTEMVERILOG_FILE "rtl/sound/sb_dsp.sv"
+set_global_assignment -name SYSTEMVERILOG_FILE "rtl/sound/sb_mixer.sv"
+set_global_assignment -name SYSTEMVERILOG_FILE "rtl/sound/sb_volume.sv"
+set_global_assignment -name SYSTEMVERILOG_FILE "rtl/sound/sb_dma_glue.sv"
 set_global_assignment -name SYSTEMVERILOG_FILE "rtl/sound/saa1099.sv"
 set_global_assignment -name QIP_FILE rtl/sound/jtopl/hdl/jtopl2.qip
 set_global_assignment -name QIP_FILE rtl/sound/jt89/hdl/jt89.qip

@@ -321,11 +321,14 @@ reg  [1:0] vol_boost = 0;
 reg  [11:0] coef_addr;
 reg  [9:0] coef_data;
 reg        coef_wr = 0;
+`ifdef SPK286_AT_CDC
+reg        coef_active = 0;
+`endif
 
 wire[12:0] ARX, ARY;
 reg [11:0] VSET = 0, HSET = 0;
 reg        FREESCALE = 0;
-reg  [2:0] scaler_flt;
+reg  [2:0] scaler_flt = 0;
 reg        lowlat = 0;
 reg        cfg_done = 0;
 
@@ -351,20 +354,45 @@ reg [12:0] arc2x = 0;
 reg [12:0] arc2y = 0;
 reg [15:0] io_dout_sys;
 
+`ifdef SPK286_AT_CDC
+wire [1:0] sl_r;
+wire hdmi_vs_sys_rise;
+at_hdmi_vsync u_at_hdmi_vsync (
+	.clk_sys(clk_sys), .vs(HDMI_TX_VS), .rise(hdmi_vs_sys_rise)
+);
+at_scanlines_status u_at_scanlines_status (
+	.clk_video(clk_vid), .clk_sys(clk_sys), .scanlines(scanlines),
+	.fb_en(FB_EN), .status(sl_r)
+);
+`endif
+
 always@(posedge clk_sys) begin
 	reg  [7:0] cmd;
 	reg        has_cmd;
 	reg  [7:0] cnt = 0;
+`ifndef SPK286_AT_CDC
 	reg        vs_d0,vs_d1,vs_d2;
+`endif
 	reg  [4:0] acx_att;
 	reg  [7:0] fb_crc;
+`ifndef SPK286_AT_CDC
 	reg  [1:0] sl_r;
+`endif
 
 	coef_wr <= 0;
+`ifdef SPK286_AT_CDC
+	// Align the whole coefficient transaction with the registered write strobe.
+	coef_active <= io_uio && has_cmd && (cmd == 'h2A);
+`endif
+`ifndef SPK286_AT_CDC
 	sl_r <= FB_EN ? 2'b00 : scanlines;
+`endif
 
 `ifndef MISTER_DEBUG_NOHDMI
 	shadowmask_wr <= 0;
+	// Keep the transaction envelope aligned with the registered command strobe.
+	// A falling edge commits the complete flags/LUT/dimensions command stream.
+	shadowmask_active <= io_uio && has_cmd && (cmd == 'h3E);
 `endif
 
 	if(~io_uio) begin
@@ -541,13 +569,23 @@ always@(posedge clk_sys) begin
 				^ ary[7:0] ^ ary[11:8];
 `endif
 
+`ifdef SPK286_AT_CDC
+	if(hdmi_vs_sys_rise) vs_wait <= 0;
+`else
 	vs_d0 <= HDMI_TX_VS;
 	if(vs_d0 == HDMI_TX_VS) vs_d1 <= vs_d0;
 
 	vs_d2 <= vs_d1;
 	if(~vs_d2 & vs_d1) vs_wait <= 0;
+`endif
 end
 
+`ifdef SPK286_AT_CDC
+wire [7:0] frame_cnt;
+at_frame_counter u_at_frame_counter (
+	.clk_video(clk_vid), .clk_sys(clk_sys), .vs(vs_fix), .frame_cnt(frame_cnt)
+);
+`else
 reg [7:0] frame_cnt;
 always @(posedge clk_sys) begin
 	reg vs_r, vs_old;
@@ -556,6 +594,7 @@ always @(posedge clk_sys) begin
 	if(vs_r == vs_fix) vs_old <= vs_r;
 	if(~vs_old & vs_r) frame_cnt <= frame_cnt + 1'd1;
 end
+`endif
 
 cyclonev_hps_interface_peripheral_uart uart
 (
@@ -708,6 +747,19 @@ wire         hdmi_vs, hdmi_hs, hdmi_de, hdmi_vbl, hdmi_brd;
 wire         freeze;
 wire         bob_deint;
 
+`ifdef SPK286_AT_CDC
+wire [4:0] at_input_mode, at_output_mode;
+wire at_output_enable, at_output_vrr, at_output_lfb, at_output_update, at_output_retime;
+wire [11:0] at_htotal, at_hsstart, at_hsend, at_hdisp;
+wire [11:0] at_vtotal, at_vsstart, at_vsend, at_vdisp, at_vrrmax;
+wire at_hs_polarity, at_vs_polarity;
+wire at_fb_enable;
+wire [11:0] at_fb_width, at_fb_height;
+wire [5:0] at_fb_format;
+wire [31:0] at_fb_base;
+wire [13:0] at_fb_stride;
+`endif
+
 `ifndef MISTER_DEBUG_NOHDMI
 	wire clk_hdmi  = hdmi_clk_out;
 
@@ -716,6 +768,7 @@ wire         bob_deint;
 		.RAMBASE(32'h20000000),
 `ifdef SPK286_AT_CDC
 		.AT_CDC("true"),
+		.AT_LOCAL_CONFIG("true"),
 `endif
 	`ifdef MISTER_SMALL_VBUF
 		.RAMSIZE(32'h00200000),
@@ -765,7 +818,17 @@ wire         bob_deint;
 		.vimax    (0),
 
 		.o_clk    (clk_hdmi),
+`ifdef SPK286_AT_CDC
+		.o_ce     (at_output_enable),
+		// Only buffering and the nearest/polyphase selector are variable in
+		// this core. Keep reserved/filter bits constant at the consumer: a
+		// preserved mailbox otherwise prevents pruning unused interpolators.
+		.at_input_mode ({1'b0,at_input_mode[3:2],2'b00}),
+		.at_config_update (at_output_update),
+		.at_config_retime (at_output_retime),
+`else
 		.o_ce     (scaler_out),
+`endif
 		.o_r      (hdmi_data[23:16]),
 		.o_g      (hdmi_data[15:8]),
 		.o_b      (hdmi_data[7:0]),
@@ -775,27 +838,43 @@ wire         bob_deint;
 		.o_vbl    (hdmi_vbl),
 		.o_brd    (hdmi_brd),
 		.o_lltune (lltune),
+`ifdef SPK286_AT_CDC
+		.htotal   (at_htotal),
+		.hsstart  (at_hsstart),
+		.hsend    (at_hsend),
+		.hdisp    (at_hdisp),
+		.vtotal   (at_vtotal),
+		.vsstart  (at_vsstart),
+		.vsend    (at_vsend),
+		.vdisp    (at_vdisp),
+		.vrr      (at_output_vrr),
+		.vrrmax   (at_vrrmax),
+		.mode     ({1'b0,at_output_mode[3:2],2'b00}),
+`else
 		.htotal   (WIDTH + HFP + HBP + HS[11:0]),
 		.hsstart  (WIDTH + HFP),
 		.hsend    (WIDTH + HFP + HS[11:0]),
 		.hdisp    (WIDTH),
-		.hmin     (hmin),
-		.hmax     (hmax),
 		.vtotal   (HEIGHT + VFP + VBP + VS[11:0]),
 		.vsstart  (HEIGHT + VFP),
 		.vsend    (HEIGHT + VFP + VS[11:0]),
 		.vdisp    (HEIGHT),
-		.vmin     (vmin),
-		.vmax     (vmax),
 		.vrr      (vrr_mode),
 		.vrrmax   (HEIGHT + VBP + VS[11:0] + 12'd1),
-		.swblack  (hdmi_blackout),
-
 		.mode     ({~lowlat,LFB_EN ? LFB_FLT : |scaler_flt,2'b00}),
+`endif
+		.hmin     (hmin),
+		.hmax     (hmax),
+		.vmin     (vmin),
+		.vmax     (vmax),
+		.swblack  (hdmi_blackout),
 		.poly_clk (clk_sys),
 		.poly_a   (coef_addr),
 		.poly_dw  (coef_data),
 		.poly_wr  (coef_wr),
+`ifdef SPK286_AT_CDC
+		.at_poly_active (coef_active),
+`endif
 
 		.pal1_clk (clk_pal),
 		.pal1_dw  (pal_d),
@@ -813,12 +892,21 @@ wire         bob_deint;
 		`endif
 	`endif
 
+`ifdef SPK286_AT_CDC
+		.o_fb_ena         (at_fb_enable),
+		.o_fb_hsize       (at_fb_width),
+		.o_fb_vsize       (at_fb_height),
+		.o_fb_format      (at_fb_format),
+		.o_fb_base        (at_fb_base),
+		.o_fb_stride      (at_fb_stride),
+`else
 		.o_fb_ena         (FB_EN),
 		.o_fb_hsize       (FB_WIDTH),
 		.o_fb_vsize       (FB_HEIGHT),
 		.o_fb_format      (FB_FMT),
 		.o_fb_base        (FB_BASE),
 		.o_fb_stride      (FB_STRIDE),
+`endif
 
 		.avl_clk          (clk_100m),
 		.avl_waitrequest  (vbuf_waitrequest),
@@ -853,6 +941,10 @@ reg [31:0] FB_BASE   = 0;
 reg [13:0] FB_STRIDE = 0;
 
 always @(posedge clk_sys) begin
+`ifdef SPK286_AT_CDC
+	// LFB is a multiword UIO transaction; publish its complete descriptor.
+	if (!io_uio) begin
+`endif
 	FB_EN <= LFB_EN | fb_en;
 	if(LFB_EN) begin
 		FB_FMT    <= LFB_FMT;
@@ -868,6 +960,9 @@ always @(posedge clk_sys) begin
 		FB_BASE   <= fb_base;
 		FB_STRIDE <= fb_stride;
 	end
+`ifdef SPK286_AT_CDC
+	end
+`endif
 end
 
 `ifdef MISTER_FB
@@ -875,6 +970,41 @@ end
 	always @(posedge clk_vid) fb_vbl <= hdmi_vbl;
 `endif
 
+`ifdef SPK286_AT_CDC
+wire [11:0] hmin, hmax, vmin, vmax, hdmi_height, hdmi_width;
+wire [11:0] arx, ary;
+wire arxy;
+at_scaler_config u_at_scaler_config (
+	.clk_sys(clk_sys), .clk_video(clk_vid),
+`ifndef MISTER_DEBUG_NOHDMI
+	.clk_hdmi(clk_hdmi), .hdmi_vs(hdmi_vs),
+`else
+	.clk_hdmi(clk_vid), .hdmi_vs(vs_fix),
+`endif
+	.src_idle(!io_uio), .video_vs(hvs_fix),
+	.width(WIDTH), .hfp(HFP), .hs(HS), .hbp(HBP),
+	.height(HEIGHT), .vfp(VFP), .vs(VS), .vbp(VBP),
+	.hset(HSET), .vset(VSET), .pixel_repeat(HDMI_PR), .freescale(FREESCALE),
+	.enable(scaler_out), .vrr(vrr_mode),
+	.mode({1'b0,~lowlat,LFB_EN ? LFB_FLT : |scaler_flt,2'b00}),
+	.arc1x(arc1x), .arc1y(arc1y), .arc2x(arc2x), .arc2y(arc2y),
+	.arx_video(ARX), .ary_video(ARY),
+	.lfb(LFB_EN), .lfb_hmin(LFB_HMIN), .lfb_hmax(LFB_HMAX),
+	.lfb_vmin(LFB_VMIN), .lfb_vmax(LFB_VMAX),
+	.fb_enable(FB_EN), .fb_width(FB_WIDTH), .fb_height(FB_HEIGHT),
+	.fb_format(FB_FMT), .fb_base(FB_BASE), .fb_stride(FB_STRIDE),
+	.hdmi_width(hdmi_width), .hdmi_height(hdmi_height),
+	.arx_sys(arx), .ary_sys(ary), .arxy_sys(arxy),
+	.input_mode(at_input_mode), .output_mode(at_output_mode),
+	.output_enable(at_output_enable), .output_vrr(at_output_vrr), .output_lfb(at_output_lfb),
+	.htotal(at_htotal), .hsstart(at_hsstart), .hsend(at_hsend), .hdisp(at_hdisp), .hmin(hmin), .hmax(hmax),
+	.vtotal(at_vtotal), .vsstart(at_vsstart), .vsend(at_vsend), .vdisp(at_vdisp), .vmin(vmin), .vmax(vmax), .vrrmax(at_vrrmax),
+	.hs_polarity(at_hs_polarity), .vs_polarity(at_vs_polarity),
+	.output_fb_enable(at_fb_enable), .output_fb_width(at_fb_width), .output_fb_height(at_fb_height),
+	.output_fb_format(at_fb_format), .output_fb_base(at_fb_base), .output_fb_stride(at_fb_stride),
+	.output_update(at_output_update), .output_retime(at_output_retime)
+);
+`else
 reg  ar_md_start;
 wire ar_md_busy;
 reg  [11:0] ar_md_mul1, ar_md_mul2, ar_md_div;
@@ -996,6 +1126,7 @@ always @(posedge clk_vid) begin
 	vmin <= vmini;
 	vmax <= vmaxi;
 end
+`endif
 
 `ifndef MISTER_DEBUG_NOHDMI
 	wire [15:0] lltune;
@@ -1097,12 +1228,18 @@ reg  [31:0] adj_data;
 
 	reg cfg_got = 0;
 	always @(posedge clk_sys) begin
+`ifndef SPK286_AT_CDC
 		reg vsd, vsd2;
+`endif
 		if(~cfg_ready || ~cfg_set) cfg_got <= cfg_set;
 		else begin
+`ifdef SPK286_AT_CDC
+			if(hdmi_vs_sys_rise) cfg_got <= cfg_set;
+`else
 			vsd  <= HDMI_TX_VS;
 			vsd2 <= vsd;
 			if(~vsd2 & vsd) cfg_got <= cfg_set;
+`endif
 		end
 	end
 
@@ -1138,6 +1275,14 @@ reg  [31:0] adj_data;
 	wire cfg_ready = 1;
 `endif
 
+`ifdef SPK286_AT_CDC
+wire scaled_hs_polarity = at_hs_polarity;
+wire scaled_vs_polarity = at_vs_polarity;
+`else
+wire scaled_hs_polarity = HS[12];
+wire scaled_vs_polarity = VS[12];
+`endif
+
 assign HDMI_I2C_SCL = hdmi_scl_en ? 1'b0 : 1'bZ;
 assign HDMI_I2C_SDA = hdmi_sda_en ? 1'b0 : 1'bZ;
 
@@ -1155,7 +1300,11 @@ cyclonev_hps_interface_peripheral_i2c hdmi_i2c
 	reg dis_output;
 	always @(posedge clk_hdmi) begin
 		reg dis;
+`ifdef SPK286_AT_CDC
+		dis <= fb_force_blank & ~at_output_lfb;
+`else
 		dis <= fb_force_blank & ~LFB_EN;
+`endif
 		dis_output <= dis;
 	end
 	`else
@@ -1167,21 +1316,33 @@ cyclonev_hps_interface_peripheral_i2c hdmi_i2c
 
 	reg [15:0] shadowmask_data;
 	reg        shadowmask_wr = 0;
+	reg        shadowmask_active = 0;
 
-	shadowmask HDMI_shadowmask
+	shadowmask #(
+`ifdef SPK286_AT_CDC
+		.AT_CDC(1), .AT_VIDEO_ENABLE(1)
+`else
+		.AT_CDC(0)
+`endif
+	) HDMI_shadowmask
 	(
 		.clk(clk_hdmi),
 		.clk_sys(clk_sys),
 
 		.cmd_wr(shadowmask_wr),
 		.cmd_in(shadowmask_data),
+		.cmd_active(shadowmask_active),
 
 		.din(dis_output ? 24'd0 : hdmi_data),
 		.hs_in(hdmi_hs),
 		.vs_in(hdmi_vs),
 		.de_in(hdmi_de),
 		.brd_in(hdmi_brd),
+`ifdef SPK286_AT_CDC
+		.enable(~at_output_lfb),
+`else
 		.enable(~LFB_EN),
+`endif
 
 		.dout(hdmi_data_mask),
 		.hs_out(hdmi_hs_mask),
@@ -1257,7 +1418,11 @@ always @(posedge clk_vid) begin
 	end
 
 	dv_d1  <= dv_data_osd;
+`ifdef SPK286_AT_CDC
+	dv_hs1 <= at_csync_video ? dv_cs_osd : dv_hs_osd;
+`else
 	dv_hs1 <= csync_en ? dv_cs_osd : dv_hs_osd;
+`endif
 	dv_vs1 <= dv_vs_osd;
 
 	dv_d2  <= dv_d1;
@@ -1272,18 +1437,25 @@ always @(posedge clk_vid) begin
 end
 
 `ifndef MISTER_DISABLE_YC
-	assign {dv_data_osd, dv_hs_osd, dv_vs_osd, dv_cs_osd } = ~yc_en ? {vga_data_osd, vga_hs_osd, vga_vs_osd, vga_cs_osd } : {yc_o, yc_hs, yc_vs, yc_cs };
+	assign {dv_data_osd, dv_hs_osd, dv_vs_osd, dv_cs_osd } = ~yc_video_en ? {vga_data_osd, vga_hs_osd, vga_vs_osd, vga_cs_osd } : {yc_o, yc_hs, yc_vs, yc_cs };
 `else
 	assign {dv_data_osd, dv_hs_osd, dv_vs_osd, dv_cs_osd } = {vga_data_osd, vga_hs_osd, vga_vs_osd, vga_cs_osd };
 `endif
 
 wire hdmi_tx_clk;
-`ifdef AT_PROFILE
-	// The AT source video runs from CLK_50M, but the HDMI pipeline and OSD
-	// still run from the standard HDMI PLL clock. Sampling hdmi_data_osd with
-	// clk_vid would cross from the 148.5 MHz pipeline into 50 MHz and makes
-	// the physical HDMI link unstable.
-	assign hdmi_tx_clk = hdmi_clk_out;
+`ifdef SPK286_AT_CDC
+`ifndef MISTER_DEBUG_NOHDMI
+`define AT_NATIVE_HDMI_OUTPUT
+`endif
+`endif
+`ifdef AT_NATIVE_HDMI_OUTPUT
+	wire at_direct_select;
+	// Native video and scaler each keep their own clock. Select the matching
+	// clock and data only while at_hdmi_output holds the transmitter in reset.
+	cyclonev_clkselect hdmi_clk_sw (
+		.clkselect({1'b1, at_direct_select}),
+		.inclk({clk_vid, hdmi_clk_out, 2'b00}), .outclk(hdmi_tx_clk)
+	);
 `elsif MISTER_DEBUG_NOHDMI
 	assign hdmi_tx_clk = clk_vid;
 `else
@@ -1320,6 +1492,19 @@ hdmiclk_ddr
 	.sset(1'b0)
 );
 
+`ifdef AT_NATIVE_HDMI_OUTPUT
+wire hdmi_out_hs, hdmi_out_vs, hdmi_out_de;
+wire [23:0] hdmi_out_d;
+at_hdmi_output u_at_hdmi_output (
+	.clk_sys(clk_sys), .clk_video(clk_vid), .clk_hdmi(clk_hdmi), .clk_tx(hdmi_tx_clk),
+	.src_idle(~io_uio), .direct_video(direct_video), .vga_fb(vga_fb), .csync(csync_en),
+	.direct_pixel({dv_hs,dv_vs,dv_de,dv_data}),
+	.scaled_pixel({hdmi_hs_osd,hdmi_vs_osd,hdmi_de_osd,hdmi_data_osd}),
+	.scaled_csync(hdmi_cs_osd), .select_direct(at_direct_select),
+	.tx_pixel({hdmi_out_hs,hdmi_out_vs,hdmi_out_de,hdmi_out_d})
+);
+`undef AT_NATIVE_HDMI_OUTPUT
+`else
 reg hdmi_out_hs;
 reg hdmi_out_vs;
 reg hdmi_out_de;
@@ -1354,6 +1539,7 @@ always @(posedge hdmi_tx_clk) begin
 	hdmi_out_de <= de;
 	hdmi_out_d  <= d;
 end
+`endif
 
 assign HDMI_TX_HS = hdmi_out_hs;
 assign HDMI_TX_VS = hdmi_out_vs;
@@ -1459,20 +1645,27 @@ wire vga_cs_osd;
 csync csync_vga(clk_vid, vga_hs_osd, vga_vs_osd, vga_cs_osd);
 
 `ifndef MISTER_DISABLE_YC
-	reg         pal_en;
-	reg         yc_en;
-	reg         cvbs;
-	reg  [16:0] ColorBurst_Range;
+	reg         pal_en = 0;
+	reg         yc_en = 0;
+	reg         cvbs = 0;
+	reg  [16:0] ColorBurst_Range = 0;
 	wire [23:0] yc_o;
 	wire        yc_hs, yc_vs, yc_cs, yc_de;
 
 	yc_out yc_out
 	(
 		.clk(clk_vid),
+`ifdef SPK286_AT_CDC
+		.PAL_EN(at_pal_video),
+		.CVBS(at_cvbs_video),
+		.PHASE_INC(at_phase_video),
+		.COLORBURST_RANGE(at_burst_video),
+`else
 		.PAL_EN(pal_en),
 		.CVBS(cvbs),
 		.PHASE_INC(PhaseInc),
 		.COLORBURST_RANGE(ColorBurst_Range),
+`endif
 		.hsync(vga_hs_osd),
 		.vsync(vga_vs_osd),
 		.csync(vga_cs_osd),
@@ -1486,18 +1679,52 @@ csync csync_vga(clk_vid, vga_hs_osd, vga_vs_osd, vga_cs_osd);
 	);
 `endif
 
-reg  [39:0] PhaseInc;
+reg  [39:0] PhaseInc = 0;
+`ifdef SPK286_AT_CDC
+wire [39:0] at_phase_video;
+wire [16:0] at_burst_video;
+wire at_pal_video, at_cvbs_video, yc_video_en, at_subcarrier_video, at_csync_video;
+at_video_output_config u_at_video_output_config (
+	.clk_sys(clk_sys), .clk_video(clk_vid), .src_idle(~io_uio), .video_vs(vga_vs_osd),
+	.phase_inc(PhaseInc),
+`ifndef MISTER_DISABLE_YC
+	.burst_range(ColorBurst_Range), .pal(pal_en), .cvbs(cvbs), .yc(yc_en),
+`else
+	.burst_range(17'd0), .pal(1'b0), .cvbs(1'b0), .yc(1'b0),
+`endif
+`ifndef MISTER_DUAL_SDRAM
+	.subcarrier_enable(subcarrier & csync_en & ~ypbpr_en & ~forced_scandoubler & ~vgas_en),
+`else
+	.subcarrier_enable(1'b0),
+`endif
+	.csync(csync_en), .phase_video(at_phase_video), .burst_video(at_burst_video),
+	.pal_video(at_pal_video), .cvbs_video(at_cvbs_video), .yc_video(yc_video_en),
+	.subcarrier_video(at_subcarrier_video), .csync_video(at_csync_video)
+);
+`else
+`ifndef MISTER_DISABLE_YC
+wire yc_video_en = yc_en;
+`endif
+`endif
 
 `ifndef MISTER_DUAL_SDRAM
 	// Subcarrier generation for external encoders (independent of YC module)
-	reg         subcarrier;
+	reg         subcarrier = 0;
 
-	reg  [39:0] sub_accum;
+	reg  [39:0] sub_accum = 0;
+`ifdef SPK286_AT_CDC
+	always @(posedge clk_vid) sub_accum <= sub_accum + at_phase_video;
+`else
 	always @(posedge clk_vid) sub_accum <= sub_accum + PhaseInc;
+`endif
 
 	// 1-bit output for positive/negative of wave, no LUT required. Output 1 if disabled for further logic
 	reg subcarrier_out;
+`ifdef SPK286_AT_CDC
+	always @(posedge clk_vid) subcarrier_out <= ~at_subcarrier_video | sub_accum[39];
+`else
 	always @(posedge clk_vid) subcarrier_out <= ~(subcarrier & csync_en & ~ypbpr_en & ~forced_scandoubler & ~vgas_en) | sub_accum[39];
+`endif
 
 
 	wire VGA_DISABLE;
@@ -1542,7 +1769,7 @@ reg  [39:0] PhaseInc;
 	);
 
 	`ifndef MISTER_DISABLE_YC
-		assign {vga_o, vga_hs, vga_vs, vga_cs, vga_de } = ~yc_en ? {vga_o_t, vga_hs_t, vga_vs_t, vga_cs_t, vga_de_t } : {yc_o, yc_hs, yc_vs, yc_cs, yc_de };
+		assign {vga_o, vga_hs, vga_vs, vga_cs, vga_de } = ~yc_video_en ? {vga_o_t, vga_hs_t, vga_vs_t, vga_cs_t, vga_de_t } : {yc_o, yc_hs, yc_vs, yc_cs, yc_de };
 	`else
 		assign {vga_o, vga_hs, vga_vs, vga_cs, vga_de } =  {vga_o_t, vga_hs_t, vga_vs_t, vga_cs_t, vga_de_t } ;
 	`endif
@@ -1552,8 +1779,8 @@ reg  [39:0] PhaseInc;
 	wire cs1 = vgas_en ? vgas_cs : vga_cs;
 	wire de1 = vgas_en ? vgas_de : vga_de;
 
-	assign VGA_VS = av_dis ? 1'bZ      :(((vgas_en ? (~vgas_vs ^ VS[12])                         : VGA_DISABLE ? 1'd1 : ~vga_vs) | csync_en) & subcarrier_out);
-	assign VGA_HS = av_dis ? 1'bZ      :  (vgas_en ? ((csync_en ? ~vgas_cs : ~vgas_hs) ^ HS[12]) : VGA_DISABLE ? 1'd1 : (csync_en ? ~vga_cs : ~vga_hs));
+	assign VGA_VS = av_dis ? 1'bZ      :(((vgas_en ? (~vgas_vs ^ scaled_vs_polarity)                         : VGA_DISABLE ? 1'd1 : ~vga_vs) | csync_en) & subcarrier_out);
+	assign VGA_HS = av_dis ? 1'bZ      :  (vgas_en ? ((csync_en ? ~vgas_cs : ~vgas_hs) ^ scaled_hs_polarity) : VGA_DISABLE ? 1'd1 : (csync_en ? ~vga_cs : ~vga_hs));
 	assign VGA_R  = av_dis ? 6'bZZZZZZ :   vgas_en ? vgas_o[23:18]                               : VGA_DISABLE ? 6'd0 : vga_o[23:18];
 	assign VGA_G  = av_dis ? 6'bZZZZZZ :   vgas_en ? vgas_o[15:10]                               : VGA_DISABLE ? 6'd0 : vga_o[15:10];
 	assign VGA_B  = av_dis ? 6'bZZZZZZ :   vgas_en ? vgas_o[7:2]                                 : VGA_DISABLE ? 6'd0 : vga_o[7:2]  ;
@@ -1788,13 +2015,29 @@ wire [13:0] fb_stride;
 `endif
 
 `ifdef AT_PROFILE
+// The HPS initialization reset originates on h2f_user0_clk. Assert the AT
+// reset immediately, then release it on FPGA_CLK2_50 before it reaches the
+// CPU, memory port and physical SDRAM owner.
+(* altera_attribute = "-name SYNCHRONIZER_IDENTIFICATION FORCED_IF_ASYNCHRONOUS" *) reg at_reset_sync1_q = 1'b1;
+(* altera_attribute = "-name SYNCHRONIZER_IDENTIFICATION FORCED_IF_ASYNCHRONOUS" *) reg at_reset_sync2_q = 1'b1;
+always @(posedge FPGA_CLK2_50 or posedge reset) begin
+	if (reset) begin
+		at_reset_sync1_q <= 1'b1;
+		at_reset_sync2_q <= 1'b1;
+	end else begin
+		at_reset_sync1_q <= 1'b0;
+		at_reset_sync2_q <= at_reset_sync1_q;
+	end
+end
+wire emu_reset = at_reset_sync2_q;
 emu_at emu
 `else
+wire emu_reset = reset;
 emu emu
 `endif
 (
 	.CLK_50M(FPGA_CLK2_50),
-	.RESET(reset),
+	.RESET(emu_reset),
 	.HPS_BUS({f1, HDMI_TX_VS, 
 				 clk_100m, clk_ihdmi,
 				 ce_hpix, hde_emu, hhs_fix, hvs_fix, 

@@ -1,9 +1,9 @@
 # PCAT-286 for MiSTer
 
-Add selectable installed RAM, CMOS readback, LOADALL support and high-memory map corrections; reduce memory latency and expand instruction buffering.
+Add Sound Blaster Pro, update OPL2, expose display options and correct video, scaler, HDMI and Avalon clock-domain crossings.
 
 This development snapshot is part of the consolidated chronological
-history. Its source state comes from 2026-09-22.
+history. Its source state comes from 2026-09-25.
 The latest revision contains the common technical reference and current
 validation instructions. Historical reports and compiled candidates are
 kept in the original development archive, outside this branch.

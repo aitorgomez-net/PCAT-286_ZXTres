@@ -16,6 +16,9 @@
 `ifndef ENABLE_TANDY_AUDIO
 `define ENABLE_TANDY_AUDIO 0
 `endif
+`ifndef ENABLE_SB
+`define ENABLE_SB 0
+`endif
 `ifndef ENABLE_MIDI
 `define ENABLE_MIDI 0
 `endif
@@ -38,10 +41,13 @@ module spk286_at_machine #(
     input  logic         cpu_reset,
     input  logic         clk_video,
     input  logic         splashscreen,
+    input  logic [1:0]   ega_monitor_profile,
     input  logic [39:0]  at286ctl_status_effective,
     input  logic [17:0]  at286ctl_status_osd_match,
     input  logic [1:0]   at286ctl_eff_opl2,
     input  logic         at286ctl_eff_cms,
+    input  logic         at286ctl_eff_sb,
+    input  logic [2:0]   at286ctl_eff_sb_irq,
     input  logic         at286ctl_eff_tandy,
     input  logic         at286ctl_eff_mpu401,
     input  logic         at286ctl_eff_ems,
@@ -140,6 +146,8 @@ module spk286_at_machine #(
     output logic signed [15:0] cms_sound_l,
     output logic signed [15:0] cms_sound_r,
     output logic signed [10:0] tandy_sound,
+    output logic signed [15:0] sb_sound_l,
+    output logic signed [15:0] sb_sound_r,
     output logic         midi_tx,
     output logic         uart2_tx,
     output logic         uart2_rts_n,
@@ -632,7 +640,21 @@ module spk286_at_machine #(
                                   (at_address[3:0] == 4'hB))))) ||
                               ((`ENABLE_TANDY_AUDIO) && at286ctl_eff_tandy &&
                                at_write &&
-                               (at_address[15:4] == 12'h00C)));
+                               (at_address[15:4] == 12'h00C)) ||
+                              // Admit SB DSP/mixer accesses before the
+                              // unmapped-I/O sink can consume them. Match
+                              // the device router's direction-aware decode.
+                              ((`ENABLE_SB) && at286ctl_eff_sb &&
+                               (at_address[15:4] == 12'h022) &&
+                               ((at_address[3:0] == 4'h6) ||
+                                (at_address[3:0] == 4'hA) ||
+                                (at_address[3:0] == 4'hC) ||
+                                (at_address[3:0] == 4'hE) ||
+                                (at_write &&
+                                 ((at_address[3:0] == 4'h4) ||
+                                  (at_address[3:0] == 4'h5))) ||
+                                (!at_write &&
+                                 (at_address[3:0] == 4'h5)))));
         // Tandy's C0h-CFh decode takes the first half of the AT secondary-DMA
         // page, just as it does on the source XT profile. Keep D0h-DFh for
         // the DMA controller when Tandy sound is enabled.
@@ -819,9 +841,11 @@ module spk286_at_machine #(
 
     spk286_at_device_router u_devices (
         .clk                    (clk),
+        .cpu_sample_edge        (cpu_sample_edge),
         .reset                  (reset),
         .clk_video              (clk_video),
         .splashscreen           (splashscreen),
+        .ega_monitor_profile    (ega_monitor_profile),
         .clear_vga13            (warm_boot_marker_event),
         .at286ctl_status_effective(at286ctl_status_effective),
         .at286ctl_status_osd_match(at286ctl_status_osd_match),
@@ -839,6 +863,8 @@ module spk286_at_machine #(
         .joya1                  (joya1),
         .at286ctl_eff_opl2     (at286ctl_eff_opl2),
         .at286ctl_eff_cms      (at286ctl_eff_cms),
+        .at286ctl_eff_sb       (at286ctl_eff_sb),
+        .at286ctl_eff_sb_irq   (at286ctl_eff_sb_irq),
         .at286ctl_eff_tandy    (at286ctl_eff_tandy),
         .at286ctl_eff_mpu401   (at286ctl_eff_mpu401),
         .at286ctl_eff_ems      (ems_runtime_enabled),
@@ -884,6 +910,9 @@ module spk286_at_machine #(
         .dma_transfer_complete  (dma_transfer_complete),
         .dma_terminal_count     (dma_terminal_count),
         .dma_active_channel     (dma_active_channel),
+        .dma_transfer_read_from_memory(dma_transfer_read_from_memory),
+        .dma_memory_data_valid  (dma_memory_ready &&
+                                 (dma_memory_accept || dma_memory_accept_q)),
         // DMA1 byte devices consume a normalized low-byte value. Select the
         // addressed SDRAM lane for memory-to-I/O transfers.
         .dma_transfer_data_in   ((dma_active_channel < 3'd4) &&
@@ -940,6 +969,8 @@ module spk286_at_machine #(
         .cms_sound_l            (cms_sound_l),
         .cms_sound_r            (cms_sound_r),
         .tandy_sound            (tandy_sound),
+        .sb_sound_l             (sb_sound_l),
+        .sb_sound_r             (sb_sound_r),
         .side_effect_count      (device_side_effect_count),
         .irq_request             (devices_irq_request),
         .protocol_error          (devices_protocol_error)
