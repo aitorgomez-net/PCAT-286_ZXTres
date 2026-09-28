@@ -100,7 +100,7 @@ module ega_raster_baseline_tb;
         .ega_scandouble_active_out(),
         .ega_mode350_out(mode350), .ega_active_dots_out(active_dots),
         .ega_active_lines_out(active_lines),
-        .splashscreen(1'b0), .thin_font(1'b0), .scandouble_en(1'b0),
+        .prebios_video(1'b0), .splashscreen(1'b0), .thin_font(1'b0), .scandouble_en(1'b0),
         .ega_enabled(1'b1), .ega_monitor_profile(monitor_profile), .vga_enabled(1'b0),
         .vga_mode13_set(1'b0), .vga_mode13_clear(1'b0), .vga_mode13_active_out(),
         .crt_h_offset(4'd6), .crt_v_offset(3'd4),

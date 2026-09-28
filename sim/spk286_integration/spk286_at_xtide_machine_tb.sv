@@ -36,14 +36,15 @@ module spk286_at_xtide_machine_tb;
         .ext_hotswap(2'b00)
     );
     spk286_at_machine dut (
-        .clk(clk), .clk_cpu(clk), .cpu_sample_edge(1'b1), .reset(reset), .cpu_reset(1'b0), .clk_video(clk),
+        .clk(clk), .clk_cpu(clk), .cpu_sample_edge(1'b1), .reset(reset), .video_reset(reset),
+        .cpu_reset(1'b0), .clk_video(clk),
         .splashscreen(1'b0), .ega_monitor_profile(2'b00),
         .execute_enable(1'b1), .counter_clock(1'b0),
         .at286ctl_eff_opl2(2'd0), .at286ctl_eff_cms(1'b1),
         .at286ctl_eff_tandy(1'b0),
         .at286ctl_eff_mpu401(`ENABLE_MIDI),
         .midi_baudce(1'b1), .uart_baudce(1'b1),
-        .midi_rx(1'b1), .uart2_rx(1'b1),
+        .midi_rx(1'b1), .uart1_rx(1'b1), .uart2_rx(1'b1),
         .uart2_cts_n(1'b1), .uart2_dsr_n(1'b1), .uart2_dcd_n(1'b1),
         .refresh_enable(1'b0), .keyboard_byte_valid(1'b0), .keyboard_byte(8'd0),
         .periodic_tick(1'b0), .second_tick(1'b0), .parity_event(1'b0),

@@ -215,7 +215,9 @@ module KF8259_Control_Logic (
 
     // Latch in service register signal
     always_comb begin
-        if ((control_state == CTL_READY) && (next_control_state == POLL))
+        if (write_initial_command_word_1 == 1'b1)
+            latch_in_service = 1'b0;
+        else if ((control_state == CTL_READY) && (next_control_state == POLL))
             latch_in_service = 1'b1;
         else if (cascade_slave == 1'b0)
             latch_in_service = (control_state == CTL_READY) & (next_control_state != CTL_READY);
@@ -391,7 +393,12 @@ module KF8259_Control_Logic (
     //
     // End of interrupt
     always_comb begin
-        if ((auto_eoi_config == 1'b1) && (end_of_acknowledge_sequence == 1'b1))
+        // ICW1 reinitializes the ISR as well as the request latches. A BIOS
+        // can restart from an IRQ handler without EOI; retaining that bit
+        // would block the same and lower-priority IRQs after reprogramming.
+        if (write_initial_command_word_1 == 1'b1)
+            end_of_interrupt = 8'b11111111;
+        else if ((auto_eoi_config == 1'b1) && (end_of_acknowledge_sequence == 1'b1))
             end_of_interrupt = acknowledge_interrupt;
         else if (write_operation_control_word_2 == 1'b1) begin
             casez (internal_data_bus[6:5])

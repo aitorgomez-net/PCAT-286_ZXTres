@@ -1,6 +1,6 @@
 //============================================================================
 //
-//  VGA unchained 320x200x256 renderer (Mode-X family subset)
+//  VGA unchained 256-colour renderer (Mode-X family subset)
 //
 //  Four consecutive pixels live at the same byte address in planes 0..3.
 //  Within the bounded Mode-X profiles, CRTC Offset supplies the row stride,
@@ -64,15 +64,18 @@ module vga_unchained256_renderer(
     reg        timing_vsync_q = 1'b0;
 
     // The profiles retain the planar four-pixels-per-byte layout. CRTC Offset
-    // is measured in words in this byte-addressed VGA configuration, so 40,
-    // 42 and 45 select 80, 84 and 90 bytes respectively. Accepting only this
-    // 80..90-byte window gives hardware scrolling its useful Mode-X range
-    // without turning this path into a generic VGA CRTC renderer.
+    // is measured in words in this byte-addressed VGA configuration. Dyna
+    // Blaster uses 64 (128 bytes per plane row) for a 512-pixel virtual map
+    // viewed through its 256-pixel window, and 32 for a direct-width page.
     wire mode_x_360 = (mode_x_profile == 2'd1);
-    wire [7:0] profile_stride = mode_x_360 ? 8'd90 : 8'd80;
+    wire mode_x_256 = (mode_x_profile == 2'd3);
+    wire [7:0] profile_stride = mode_x_256 ? 8'd128 :
+                                mode_x_360 ? 8'd90 : 8'd80;
     wire offset_in_range = (crtc_offset >= 8'd40) && (crtc_offset <= 8'd45);
-    wire [7:0] stride_bytes = offset_in_range ? {crtc_offset[6:0], 1'b0} :
-                                                 profile_stride;
+    wire [7:0] stride_bytes = mode_x_256 ?
+                              ((crtc_offset == 8'd32) ? 8'd64 : 8'd128) :
+                              offset_in_range ? {crtc_offset[6:0], 1'b0} :
+                                                profile_stride;
 
     // The CRTC counts physical VGA scanlines. The fixed output profiles sample
     // one line for every doubled pair, hence a split starts at ceil((R18+1)/2).
@@ -82,8 +85,9 @@ module vga_unchained256_renderer(
     // or below the visible raster as a real split; without this guard a stale
     // Mode-X compare becomes a bogus lower screen while a program is changing
     // modes or returning to EGA.
-    wire [9:0] profile_physical_lines = (mode_x_profile == 2'd2) ? 10'd480 :
-                                                                     10'd400;
+    wire [9:0] profile_physical_lines = mode_x_256 ? 10'd464 :
+                                        (mode_x_profile == 2'd2) ? 10'd480 :
+                                                                      10'd400;
     wire split_active = (crtc_line_compare < profile_physical_lines);
     wire [10:0] line_compare_plus_two = {1'b0, crtc_line_compare} + 11'd2;
     wire [9:0] split_start_y = line_compare_plus_two[10:1];
@@ -167,6 +171,8 @@ module vga_unchained256_renderer(
     reg [18:0] row_base;
     always @(*) begin
         case (stride_bytes)
+            8'd64: row_base = {3'b0, source_y, 6'b0};
+            8'd128: row_base = {2'b0, source_y, 7'b0};
             8'd80: row_base = ({9'b0, source_y} << 6) + ({9'b0, source_y} << 4);
             8'd82: row_base = ({9'b0, source_y} << 6) + ({9'b0, source_y} << 4) + ({9'b0, source_y} << 1);
             8'd84: row_base = ({9'b0, source_y} << 6) + ({9'b0, source_y} << 4) + ({9'b0, source_y} << 2);

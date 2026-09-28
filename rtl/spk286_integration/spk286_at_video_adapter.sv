@@ -13,6 +13,8 @@
 module spk286_at_video_adapter (
     input  logic        clk,
     input  logic        reset,
+    input  logic        video_reset_in,
+    input  logic        prebios_video,
     input  logic        clk_video,
     input  logic        splashscreen,
     input  logic [1:0]  ega_monitor_profile,
@@ -53,17 +55,17 @@ module spk286_at_video_adapter (
     output logic [9:0]  video_active_lines
 );
 
-    // Release video-side state only on a video-clock edge. The machine reset
-    // is generated in the 50 MHz domain and is also asserted while the
-    // private PLL acquires lock.
+    // Release video-side state only on a video-clock edge. This reset is
+    // independent of the machine reset so the default raster can keep MiSTer
+    // video detection alive while firmware is missing.
     (* altera_attribute = "-name SYNCHRONIZER_IDENTIFICATION FORCED_IF_ASYNCHRONOUS" *)
     logic video_reset_sync1_q;
     (* altera_attribute = "-name SYNCHRONIZER_IDENTIFICATION FORCED_IF_ASYNCHRONOUS" *)
     logic video_reset_sync2_q;
     wire  video_reset = video_reset_sync2_q;
 
-    always_ff @(posedge clk_video or posedge reset) begin
-        if (reset) begin
+    always_ff @(posedge clk_video or posedge video_reset_in) begin
+        if (video_reset_in) begin
             video_reset_sync1_q <= 1'b1;
             video_reset_sync2_q <= 1'b1;
         end else begin
@@ -79,6 +81,10 @@ module spk286_at_video_adapter (
     (* altera_attribute = "-name SYNCHRONIZER_IDENTIFICATION FORCED_IF_ASYNCHRONOUS" *)
     logic splash_video_sync2_q;
     (* altera_attribute = "-name SYNCHRONIZER_IDENTIFICATION FORCED_IF_ASYNCHRONOUS" *)
+    logic prebios_video_sync1_q;
+    (* altera_attribute = "-name SYNCHRONIZER_IDENTIFICATION FORCED_IF_ASYNCHRONOUS" *)
+    logic prebios_video_sync2_q;
+    (* altera_attribute = "-name SYNCHRONIZER_IDENTIFICATION FORCED_IF_ASYNCHRONOUS" *)
     logic vga_mode13_native_video_sync1_q;
     (* altera_attribute = "-name SYNCHRONIZER_IDENTIFICATION FORCED_IF_ASYNCHRONOUS" *)
     logic vga_mode13_native_video_sync2_q;
@@ -86,11 +92,15 @@ module spk286_at_video_adapter (
         if (video_reset) begin
             splash_video_sync1_q <= 1'b0;
             splash_video_sync2_q <= 1'b0;
+            prebios_video_sync1_q <= 1'b0;
+            prebios_video_sync2_q <= 1'b0;
             vga_mode13_native_video_sync1_q <= 1'b1;
             vga_mode13_native_video_sync2_q <= 1'b1;
         end else begin
             splash_video_sync1_q <= splashscreen;
             splash_video_sync2_q <= splash_video_sync1_q;
+            prebios_video_sync1_q <= prebios_video;
+            prebios_video_sync2_q <= prebios_video_sync1_q;
             vga_mode13_native_video_sync1_q <= vga_mode13_native;
             vga_mode13_native_video_sync2_q <= vga_mode13_native_video_sync1_q;
         end
@@ -611,6 +621,7 @@ module spk286_at_video_adapter (
         .ega_active_lines_out       (video_active_lines),
         .ega_vmode_toggle_out       (video_vmode_toggle),
         .splashscreen               (splash_video_sync2_q),
+        .prebios_video              (prebios_video_sync2_q),
         .thin_font                  (1'b0),
         .scandouble_en              (1'b0),
         .ega_enabled                (1'b1),

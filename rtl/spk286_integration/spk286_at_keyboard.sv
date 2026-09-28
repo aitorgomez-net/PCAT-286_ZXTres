@@ -8,6 +8,7 @@ module spk286_at_keyboard (
     input  logic        reset,
     input  logic [10:0] ps2_key,
     input  logic        translate_set1,
+    input  logic        num_lock,
     input  logic        keyboard_byte_ready,
     output logic        keyboard_byte_valid,
     output logic [7:0]  keyboard_byte,
@@ -19,8 +20,9 @@ module spk286_at_keyboard (
     logic [FIFO_BITS-1:0] read_ptr_q, write_ptr_q;
     logic [FIFO_BITS:0] count_q;
     logic toggle_q = 1'b0;
-    logic [63:0] sequence_q, next_sequence;
-    logic [3:0] remaining_q, next_length;
+    logic [63:0] sequence_q, next_sequence, base_sequence;
+    logic [3:0] remaining_q, next_length, base_length;
+    logic left_shift_q, right_shift_q;
     wire event_new = ps2_key[10] ^ toggle_q;
     wire load_event = (remaining_q == 0) && (count_q != 0) &&
                       keyboard_byte_ready;
@@ -30,6 +32,11 @@ module spk286_at_keyboard (
     wire extended = event_head[8];
     wire [7:0] code = event_head[7:0];
     wire [7:0] translated = set1_code(code);
+    wire navigation_key = extended &&
+        ((code == 8'h6C) || (code == 8'h75) || (code == 8'h7D) ||
+         (code == 8'h6B) || (code == 8'h74) || (code == 8'h69) ||
+         (code == 8'h72) || (code == 8'h7A) || (code == 8'h70) ||
+         (code == 8'h71));
 
     // Standard AT translation table, checked against 86Box kbc_at.c
     // nont_to_t; the existing XT KFPS2KB uses the same set-2 -> set-1
@@ -171,53 +178,118 @@ module spk286_at_keyboard (
     // Little-endian packed byte sequences, first byte in bits [7:0].
     // hps_io collapses Print Screen and Pause to E0:7C and E0:77.
     always_comb begin
-        next_sequence = 64'h0;
-        next_length = 4'd0;
+        base_sequence = 64'h0;
+        base_length = 4'd0;
         if (extended && code == 8'h77) begin
             // Pause has one make event and no independent break event.
             if (pressed) begin
                 if (translate_set1) begin
-                    next_sequence = 64'h0000_C59D_E145_1DE1;
-                    next_length = 4'd6;
+                    base_sequence = 64'h0000_C59D_E145_1DE1;
+                    base_length = 4'd6;
                 end else begin
-                    next_sequence = 64'h77F0_14F0_E177_14E1;
-                    next_length = 4'd8;
+                    base_sequence = 64'h77F0_14F0_E177_14E1;
+                    base_length = 4'd8;
                 end
             end
         end else if (extended && code == 8'h7C) begin
             if (translate_set1) begin
-                next_sequence = pressed ? 64'h0000_0000_37E0_2AE0 :
+                base_sequence = pressed ? 64'h0000_0000_37E0_2AE0 :
                                           64'h0000_0000_AAE0_B7E0;
-                next_length = 4'd4;
+                base_length = 4'd4;
             end else begin
-                next_sequence = pressed ? 64'h0000_0000_7CE0_12E0 :
+                base_sequence = pressed ? 64'h0000_0000_7CE0_12E0 :
                                           64'h0000_12F0_E07C_F0E0;
-                next_length = pressed ? 4'd4 : 4'd6;
+                base_length = pressed ? 4'd4 : 4'd6;
             end
         end else if (translate_set1) begin
             // As on an 8042, a translated code with bit 7 already set has
             // no representable break. Normal make/break differs by bit 7.
             if (pressed || !translated[7]) begin
                 if (extended) begin
-                    next_sequence[15:0] = {translated | (pressed ? 8'h00 : 8'h80), 8'hE0};
-                    next_length = 4'd2;
+                    base_sequence[15:0] = {translated | (pressed ? 8'h00 : 8'h80), 8'hE0};
+                    base_length = 4'd2;
                 end else begin
-                    next_sequence[7:0] = translated | (pressed ? 8'h00 : 8'h80);
-                    next_length = 4'd1;
+                    base_sequence[7:0] = translated | (pressed ? 8'h00 : 8'h80);
+                    base_length = 4'd1;
                 end
             end
         end else begin
             if (extended && !pressed) begin
-                next_sequence[23:0] = {code, 8'hF0, 8'hE0};
-                next_length = 4'd3;
+                base_sequence[23:0] = {code, 8'hF0, 8'hE0};
+                base_length = 4'd3;
             end else if (extended || !pressed) begin
-                next_sequence[15:0] = {code, extended ? 8'hE0 : 8'hF0};
-                next_length = 4'd2;
+                base_sequence[15:0] = {code, extended ? 8'hE0 : 8'hF0};
+                base_length = 4'd2;
             end else begin
-                next_sequence[7:0] = code;
-                next_length = 4'd1;
+                base_sequence[7:0] = code;
+                base_length = 4'd1;
             end
         end
+    end
+
+    // A 101-key AT keyboard surrounds navigation keys with temporary Shift
+    // events. With Num Lock on this cancels the numeric-pad digit mapping;
+    // with Shift held it cancels that modifier for the cursor operation.
+    // 86Box keyboard_at.c/add_data_kbd emits the same E0-prefixed sequences.
+    always_comb begin : build_sequence
+        integer index;
+        next_sequence = 64'h0;
+        index = 0;
+
+        if (navigation_key && pressed) begin
+            if (num_lock && !left_shift_q && !right_shift_q) begin
+                next_sequence[index*8 +: 8] = 8'hE0; index = index + 1;
+                next_sequence[index*8 +: 8] = translate_set1 ? 8'h2A : 8'h12;
+                index = index + 1;
+            end else if (!num_lock) begin
+                if (left_shift_q) begin
+                    next_sequence[index*8 +: 8] = 8'hE0; index = index + 1;
+                    if (!translate_set1) begin
+                        next_sequence[index*8 +: 8] = 8'hF0; index = index + 1;
+                    end
+                    next_sequence[index*8 +: 8] = translate_set1 ? 8'hAA : 8'h12;
+                    index = index + 1;
+                end
+                if (right_shift_q) begin
+                    next_sequence[index*8 +: 8] = 8'hE0; index = index + 1;
+                    if (!translate_set1) begin
+                        next_sequence[index*8 +: 8] = 8'hF0; index = index + 1;
+                    end
+                    next_sequence[index*8 +: 8] = translate_set1 ? 8'hB6 : 8'h59;
+                    index = index + 1;
+                end
+            end
+        end
+
+        for (integer i = 0; i < 8; i = i + 1) begin
+            if (i < base_length) begin
+                next_sequence[index*8 +: 8] = base_sequence[i*8 +: 8];
+                index = index + 1;
+            end
+        end
+
+        if (navigation_key && !pressed) begin
+            if (num_lock && !left_shift_q && !right_shift_q) begin
+                next_sequence[index*8 +: 8] = 8'hE0; index = index + 1;
+                if (!translate_set1) begin
+                    next_sequence[index*8 +: 8] = 8'hF0; index = index + 1;
+                end
+                next_sequence[index*8 +: 8] = translate_set1 ? 8'hAA : 8'h12;
+                index = index + 1;
+            end else if (!num_lock) begin
+                if (left_shift_q) begin
+                    next_sequence[index*8 +: 8] = 8'hE0; index = index + 1;
+                    next_sequence[index*8 +: 8] = translate_set1 ? 8'h2A : 8'h12;
+                    index = index + 1;
+                end
+                if (right_shift_q) begin
+                    next_sequence[index*8 +: 8] = 8'hE0; index = index + 1;
+                    next_sequence[index*8 +: 8] = translate_set1 ? 8'h36 : 8'h59;
+                    index = index + 1;
+                end
+            end
+        end
+        next_length = index[3:0];
     end
 
     assign keyboard_byte = sequence_q[7:0];
@@ -233,6 +305,8 @@ module spk286_at_keyboard (
             count_q <= '0;
             sequence_q <= '0;
             remaining_q <= '0;
+            left_shift_q <= 1'b0;
+            right_shift_q <= 1'b0;
             overflow <= 1'b0;
         end else begin
             if (enqueue) begin
@@ -250,6 +324,10 @@ module spk286_at_keyboard (
                 read_ptr_q <= read_ptr_q + 1'b1;
                 sequence_q <= next_sequence;
                 remaining_q <= next_length;
+                if (!extended && code == 8'h12)
+                    left_shift_q <= pressed;
+                if (!extended && code == 8'h59)
+                    right_shift_q <= pressed;
             end else if (keyboard_byte_valid && keyboard_byte_ready) begin
                 sequence_q <= {8'h00, sequence_q[63:8]};
                 remaining_q <= remaining_q - 1'b1;

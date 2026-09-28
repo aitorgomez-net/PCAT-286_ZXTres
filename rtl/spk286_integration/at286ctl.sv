@@ -16,7 +16,7 @@
 // ---------------------------
 //   8980h  R   signature, 'E'
 //   8981h  R/W CPU        [2:0] speed  [4:3] fake 286 FLAGS
-//   8982h  R/W expansion  [1:0] OPL2  [3:2] CMS  [5:4] EMS  [7:6] UMB
+//   8982h  R/W expansion  [1:0] OPL2  [3:2] CMS  [7:4] reserved (EMS/UMB fixed on)
 //   8983h  R/W video      [1:0] VGA 13h+ (0/1 off, 2 on; warm boot clears)
 //   8984h  R/W input      [1:0] joy 1  [3:2] joy 2  [5:4] swap  [7:6] joy sync
 //   8985h  R/W MIDI       [1:0] MT32-pi mode  [3:2] MPU-401

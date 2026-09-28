@@ -10,6 +10,7 @@
 module spk286_at_machine_tb;
     logic clk = 1'b0;
     logic reset = 1'b1;
+    logic cpu_local_reset = 1'b0;
     always #5 clk = ~clk;
     logic clk_video = 1'b0;
     always #17.45 clk_video = ~clk_video;
@@ -219,6 +220,7 @@ module spk286_at_machine_tb;
     integer port81_writes = 0;
     integer pit_data_writes = 0;
     integer first_bios_read_count = 0;
+    logic [7:0] last_post_code = 8'h00;
     logic [7:0] port80_sequence [0:3];
     logic saw_native_reset_fetch = 1'b0;
     logic saw_native_reset_response = 1'b0;
@@ -360,6 +362,7 @@ module spk286_at_machine_tb;
                              a20_enable);
                 accepted_io_writes <= accepted_io_writes + 1;
                 if (cpu_address[15:0] == 16'h0080) begin
+                    last_post_code <= cpu_data_out[7:0];
                     if ($test$plusargs("TRACE_POST") && port80_writes < 64)
                         $display("TRACE_POST t=%0t cs:ip=%04h:%04h code=%02h",
                                  $time, debug_cs, debug_ip, cpu_data_out[7:0]);
@@ -487,11 +490,13 @@ module spk286_at_machine_tb;
     );
 
     spk286_at_machine dut (
-        .clk(clk), .clk_cpu(clk), .cpu_sample_edge(1'b1), .reset(reset), .cpu_reset(reset), .clk_video(clk_video), .splashscreen(1'b0),
+        .clk(clk), .clk_cpu(clk), .cpu_sample_edge(1'b1), .reset(reset), .video_reset(reset),
+        .cpu_reset(reset | cpu_local_reset), .clk_video(clk_video), .splashscreen(1'b0),
         .ega_monitor_profile(2'b00),
         .installed_ram_size_osd(3'd0),
         .at286ctl_eff_mpu401(runtime_mpu_enable),
         .midi_baudce(1'b1), .uart_baudce(1'b1), .midi_rx(runtime_midi_rx),
+        .uart1_rx(1'b1),
         .uart2_rx(1'b1), .uart2_cts_n(1'b1), .uart2_dsr_n(1'b1),
         .uart2_dcd_n(1'b1),
         .execute_enable(execute_enable),
@@ -551,10 +556,18 @@ module spk286_at_machine_tb;
     initial begin : run
         integer cycles;
         integer max_cycles;
+        integer mrbios_warm_restarts;
+        integer last_mrbios_restart_port80_writes;
+        integer mrbios_reset_grace;
+        logic mrbios_ram_fault_seen;
         if (!$value$plusargs("MAX_CYCLES=%d", max_cycles))
             max_cycles = 2000000;
 
         runtime_mpu_test = $test$plusargs("RUNTIME_MPU_ENABLE");
+        mrbios_warm_restarts = 0;
+        last_mrbios_restart_port80_writes = -1;
+        mrbios_reset_grace = 0;
+        mrbios_ram_fault_seen = 1'b0;
         full_pit = $test$plusargs("FULL_PIT");
         fast_pit = $test$plusargs("FAST_PIT");
         if (runtime_mpu_test) begin
@@ -624,13 +637,71 @@ module spk286_at_machine_tb;
 
         for (cycles = 0; cycles < max_cycles; cycles = cycles + 1) begin
             @(negedge clk);
+            if (mrbios_reset_grace != 0)
+                mrbios_reset_grace = mrbios_reset_grace - 1;
+            if ($test$plusargs("MRBIOS_WARM_RESET") ||
+                $test$plusargs("MRBIOS_DIRECT_RESTART")) begin
+                if (!mrbios_ram_fault_seen && debug_cs == 16'hF000 &&
+                    debug_ip == 16'h9067) begin
+                    mrbios_ram_fault_seen = 1'b1;
+                    $display("MRBIOS_RAM_FAULT restart=%0d ax=%04h bx=%04h si=%04h di=%04h flags=%04h",
+                             mrbios_warm_restarts, dut.spk_debug_gpr[15:0],
+                             dut.spk_debug_gpr[63:48],
+                             dut.spk_debug_gpr[111:96],
+                             dut.spk_debug_gpr[127:112], dut.spk_debug_flags);
+                end
+                if (cpu_halted) begin
+                    $fatal(1, "MRBIOS_HALT restart=%0d post=%02h cs_ip=%04h:%04h ax=%04h di=%04h",
+                           mrbios_warm_restarts, last_post_code, debug_cs,
+                           debug_ip, dut.spk_debug_gpr[15:0],
+                           dut.spk_debug_gpr[127:112]);
+                end
+                if (last_post_code == 8'h0B &&
+                    port80_writes != last_mrbios_restart_port80_writes) begin
+                    if (mrbios_warm_restarts == 3) begin
+                        $display("MRBIOS_WARM_MEMORY_PASS restarts=%0d post=%02h memory_beats=%0d",
+                                 mrbios_warm_restarts, last_post_code,
+                                 accepted_memory_beats);
+                        $finish;
+                    end
+                    // Keep RAM and chipset live. DIRECT_RESTART mirrors the
+                    // MR BIOS keyboard handler's near jump to POST; the other
+                    // mode pulses only the processor reset input.
+                    base_ram[16'h0472] = 8'h34;
+                    base_ram[16'h0473] = 8'h12;
+                    last_mrbios_restart_port80_writes = port80_writes;
+                    mrbios_warm_restarts = mrbios_warm_restarts + 1;
+                    mrbios_ram_fault_seen = 1'b0;
+                    if ($test$plusargs("MRBIOS_DIRECT_RESTART")) begin
+                        dut.u_cpu.sim_redirect = 1'b1;
+                        // The native-jump mode executes the handler's own
+                        // F49A near jump, exercising the CPU's branch and
+                        // prefetch flush instead of jumping straight to POST.
+                        dut.u_cpu.sim_redirect_ip =
+                            $test$plusargs("MRBIOS_NATIVE_JUMP") ? 16'hF49A : 16'hC2E6;
+                        @(posedge clk);
+                        #1;
+                        dut.u_cpu.sim_redirect = 1'b0;
+                        dut.u_cpu.sim_redirect_ip = 16'h0000;
+                    end else begin
+                        cpu_local_reset = 1'b1;
+                        @(posedge clk);
+                        #1;
+                        cpu_local_reset = 1'b0;
+                    end
+                    mrbios_reset_grace = 4;
+                    $display("MRBIOS_WARM_RESTART restart=%0d direct=%0d cycle=%0d",
+                             mrbios_warm_restarts,
+                             $test$plusargs("MRBIOS_DIRECT_RESTART"), cycles);
+                end
+            end
             if (runtime_mpu_test && !runtime_mpu_switched &&
                 (cycles == 500)) begin
                 runtime_mpu_enable = 1'b1;
                 runtime_mpu_switched = 1'b1;
                 $display("AT_RUNTIME_MPU_ENABLED midi_rx=%b", runtime_midi_rx);
             end
-            if (cpu_fault || protocol_error)
+            if ((cpu_fault || protocol_error) && mrbios_reset_grace == 0)
                 $fatal(1, "AT_SYSTEM_FAULT cycle=%0d cs_ip=%04h:%04h opcode=%02h owner=%0d bridge_idle=%b fault=%b",
                        cycles, debug_cs, debug_ip, debug_opcode, bus_owner,
                        bridge_idle, cpu_fault);

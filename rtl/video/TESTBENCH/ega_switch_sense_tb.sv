@@ -65,6 +65,7 @@ module ega_switch_sense_tb;
         .vga_framebuffer_data_valid  (1'b0),
         .cpu_mem_select              (1'b0),
         .cpu_mem_write               (1'b0),
+        .prebios_video               (1'b0),
         .splashscreen                (splashscreen),
         .thin_font                   (1'b0),
         .scandouble_en               (1'b0),

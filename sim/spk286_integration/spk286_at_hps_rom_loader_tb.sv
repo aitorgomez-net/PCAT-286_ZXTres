@@ -22,7 +22,6 @@ module spk286_at_hps_rom_loader_tb;
     wire [2:0]   bios_protect_flag;
     wire         main_rom_loaded;
     wire         ega_rom_loaded;
-    wire         xtide_rom_loaded;
     wire         load_active;
     wire         protocol_error;
 
@@ -37,7 +36,7 @@ module spk286_at_hps_rom_loader_tb;
         .loader_accept(loader_accept), .loader_ready(loader_ready),
         .bios_protect_flag(bios_protect_flag),
         .main_rom_loaded(main_rom_loaded), .ega_rom_loaded(ega_rom_loaded),
-        .xtide_rom_loaded(xtide_rom_loaded), .load_active(load_active),
+        .load_active(load_active),
         .protocol_error(protocol_error)
     );
 
@@ -86,7 +85,6 @@ module spk286_at_hps_rom_loader_tb;
     function automatic logic [23:0] rom_base(input logic [7:0] index);
         case (index)
             8'd0: rom_base = 24'h0F0000;
-            8'd2: rom_base = 24'h0C8000;
             default: rom_base = 24'h0C0000;
         endcase
     endfunction
@@ -95,7 +93,6 @@ module spk286_at_hps_rom_loader_tb;
         case (index)
             8'd0: target_loaded = main_rom_loaded;
             8'd3: target_loaded = ega_rom_loaded;
-            8'd2: target_loaded = xtide_rom_loaded;
             default: target_loaded = 1'b0;
         endcase
     endfunction
@@ -112,7 +109,7 @@ module spk286_at_hps_rom_loader_tb;
             @(posedge clk); #1;
             check(!target_loaded(index), "new download retained old ROM presence");
             @(negedge clk);
-            ioctl_addr = (index == 8'd2) ? 25'h0001FF0 : 25'h000FFF0;
+            ioctl_addr = (index == 8'd0) ? 25'h000FFF0 : 25'h0007FF0;
             ioctl_data = 16'h5BEA;
             ioctl_wr = 1'b1;
             @(posedge clk); #1;
@@ -168,12 +165,11 @@ module spk286_at_hps_rom_loader_tb;
 
         complete_word(8'd0, 25'h0000010, 16'h2860);
         complete_word(8'd3, 25'h0000020, 16'hE6A5);
-        complete_word(8'd2, 25'h0000010, 16'h1DEA);
         ioctl_wr = 1'b0;
         ioctl_download = 1'b0;
         @(posedge clk);
         #1;
-        check(main_rom_loaded && ega_rom_loaded && xtide_rom_loaded,
+        check(main_rom_loaded && ega_rom_loaded,
               "ROM presence was not latched after download completion");
         check(bios_protect_flag == 3'b011,
               "ROM protection was not restored after download");
@@ -181,30 +177,27 @@ module spk286_at_hps_rom_loader_tb;
         check(ega_rom_loaded, "main reload invalidated the EGA ROM");
         reload_with_pending_final(8'd3);
         check(main_rom_loaded, "EGA reload invalidated the main ROM");
-        reload_with_pending_final(8'd2);
-        reload_with_pending_final(8'd2);
         empty_reload(8'd0);
         empty_reload(8'd3);
-        empty_reload(8'd2);
         check(!protocol_error, "unexpected HPS loader protocol error");
         @(negedge clk);
-        ioctl_index = 8'd2;
-        ioctl_addr = 25'h0002000;
+        ioctl_index = 8'd3;
+        ioctl_addr = 25'h0008000;
         ioctl_download = 1'b1;
         ioctl_wr = 1'b1;
         @(posedge clk); #1;
         check(!loader_valid && !ioctl_wait,
-              "oversized XTIDE write escaped its 8 KiB ROM window");
+              "oversized EGA write escaped its 32 KiB ROM window");
         ioctl_wr = 1'b0;
         ioctl_download = 1'b0;
         repeat (2) @(posedge clk);
         #1;
-        check(!xtide_rom_loaded && protocol_error,
-              "oversized XTIDE image was accepted as a loaded ROM");
+        check(!ega_rom_loaded && protocol_error,
+              "oversized EGA image was accepted as a loaded ROM");
         if (failures != 0)
             $fatal(1, "AT_HPS_ROM_LOADER_FAILURES count=%0d", failures);
-        $display("AT_HPS_ROM_LOADER_PASS main=%b ega=%b xtide=%b",
-                 main_rom_loaded, ega_rom_loaded, xtide_rom_loaded);
+        $display("AT_HPS_ROM_LOADER_PASS main=%b ega=%b",
+                 main_rom_loaded, ega_rom_loaded);
         $finish;
     end
 endmodule

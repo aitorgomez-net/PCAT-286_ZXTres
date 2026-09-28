@@ -1,11 +1,11 @@
 // What the AT286CTL registers mean, and how they combine with the OSD.
 //
-// Every field encodes 0 as "leave it to the OSD" and 1..N as the N choices in
-// the same order the menu lists them.  So the power-on state of all zeroes is
-// plain OSD behaviour, a program overrides only what it cares about, and a
-// setting left behind by an earlier program cannot quietly capture an option
-// nobody meant to touch.  It also means the tool never has to read the menu
-// back to leave something alone: writing zero is how you say "not mine".
+// Configurable fields encode 0 as "leave it to the OSD" and 1..N as the N
+// choices in the same order the menu lists them. So the power-on state of all
+// zeroes is plain OSD behaviour, a program overrides only what it cares about,
+// and a setting left behind by an earlier program cannot quietly capture an
+// option nobody meant to touch. It also means the tool never has to read the
+// menu back to leave something alone: writing zero is how you say "not mine".
 //
 // Purely combinational, and kept apart from the port block so it can sit at
 // the top level where the OSD status is. Besides driving the core, it emits a
@@ -30,8 +30,6 @@ module at286ctl_resolve (
     input  wire        osd_cms,
     input  wire        osd_sb,
     input  wire  [2:0] osd_sb_irq,
-    input  wire        osd_ems,
-    input  wire        osd_umb,
     input  wire        osd_joy1_digital,
     input  wire        osd_joy1_disable,
     input  wire        osd_joy2_digital,
@@ -83,9 +81,9 @@ module at286ctl_resolve (
     // effective VGA 13h+ bit is included, but has no OSD match bit because
     // VGATSR owns that enable rather than an OSD option.
     output wire [39:0] status_effective,
-    // Match bits: speed, fake FLAGS, OPL2, Audio 220h, EMS, UMB, joystick 1,
-    // joystick 2, swap, joy sync, MT32-pi, MPU-401, Tandy, SB IRQ, CRT H,
-    // CRT V, VSync and HSync, respectively.
+    // Match bits: speed, fake FLAGS, OPL2, Audio 220h, fixed EMS, fixed UMB,
+    // joystick 1, joystick 2, swap, joy sync, MT32-pi, MPU-401, Tandy, SB IRQ,
+    // CRT H, CRT V, VSync and HSync, respectively.
     output wire [17:0] status_osd_match
 );
 
@@ -95,8 +93,6 @@ module at286ctl_resolve (
     wire [1:0] f_fake286 = reg_cpu[4:3];
     wire [1:0] f_opl2    = reg_exp[1:0];
     wire [1:0] f_cms     = reg_exp[3:2];
-    wire [1:0] f_ems     = reg_exp[5:4];
-    wire [1:0] f_umb     = reg_exp[7:6];
     wire [1:0] f_vga13   = reg_vid[1:0];
     wire [1:0] f_joy1    = reg_inp[1:0];
     wire [1:0] f_joy2    = reg_inp[3:2];
@@ -146,8 +142,10 @@ module at286ctl_resolve (
                          (f_sb_irq == 2'd1) ? 3'd5 :
                          (f_sb_irq == 2'd2) ? 3'd7 : osd_sb_irq;
     assign eff_cms     = cms_selected & ~eff_sb;
-    assign eff_ems     = (f_ems     == 2'd0) ? osd_ems      : (f_ems   == 2'd1);
-    assign eff_umb     = (f_umb     == 2'd0) ? osd_umb      : (f_umb   == 2'd1);
+    // EMS and UMB are fixed parts of this machine profile. Preserve their
+    // status fields for AT286CTL compatibility, but ignore legacy overrides.
+    assign eff_ems     = 1'b1;
+    assign eff_umb     = 1'b1;
     // VGA 13h+ deliberately has no OSD master switch. The extension starts
     // absent after reset and VGATSR selects value 2 (vga13) before it installs
     // its INT 10h hook. Keep value 1 as the legacy novga13 spelling, so old
@@ -191,7 +189,7 @@ module at286ctl_resolve (
 
     // Five compact effective-value bytes:
     //   8989: speed[1:0], fake286[3], OPL2[5:4], Audio 220h[7:6]
-    //   898A: EMS[0], UMB[1], VGA13[2], joy1[4:3], joy2[6:5], swap[7]
+    //   898A: EMS[0]=1, UMB[1]=1, VGA13[2], joy1[4:3], joy2[6:5], swap[7]
     //   898B: joy sync[0], MT32[1], MPU[2], Tandy[4:3], SB IRQ7[5]
     //   898C: CRT H[3:0], CRT V[6:4]
     //   898D: VSync[2:0], HSync[5:3]
@@ -213,8 +211,8 @@ module at286ctl_resolve (
     assign status_osd_match[1]  = (eff_fake286 == osd_fake286);
     assign status_osd_match[2]  = (eff_opl2 == osd_opl2);
     assign status_osd_match[3]  = (effective_audio220 == osd_audio220);
-    assign status_osd_match[4]  = (eff_ems == osd_ems);
-    assign status_osd_match[5]  = (eff_umb == osd_umb);
+    assign status_osd_match[4]  = 1'b1;
+    assign status_osd_match[5]  = 1'b1;
     assign status_osd_match[6]  = (effective_joy1 == osd_joy1);
     assign status_osd_match[7]  = (effective_joy2 == osd_joy2);
     assign status_osd_match[8]  = (eff_joy_swap == osd_joy_swap);

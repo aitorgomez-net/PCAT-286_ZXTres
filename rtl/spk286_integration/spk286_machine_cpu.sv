@@ -88,6 +88,15 @@ module spk286_machine_cpu (
     // exposes the bus state and protected transaction class separately.
     assign debug_biu_detail = {debug_bus_state, unused_debug_bus_transaction};
 
+`ifdef SPK286_AT_SIM_MODEL
+    // The MR BIOS integration fixture can reproduce the keyboard handler's
+    // direct POST jump without resetting the CPU or the AT devices.
+    logic        sim_redirect = 1'b0;
+    logic [15:0] sim_redirect_ip = 16'h0000;
+    logic        sim_cs_load = 1'b0;
+    logic [15:0] sim_cs = 16'h0000;
+`endif
+
     spk286 cpu (
         .clk(clk),
         .reset(reset),
@@ -120,14 +129,25 @@ module spk286_machine_cpu (
         .gpr_write_byte(1'b0),
         .gpr_write_index(3'd0),
         .gpr_write_data(16'd0),
+`ifdef SPK286_AT_SIM_MODEL
+        .ip_write_en(sim_redirect),
+        .ip_write_data(sim_redirect_ip),
+`else
         .ip_write_en(1'b0),
         .ip_write_data(16'd0),
+`endif
         .flags_write_en(1'b0),
         .flags_write_data(16'd0),
         .flags_write_mask(16'd0),
+`ifdef SPK286_AT_SIM_MODEL
+        .segment_load_en(sim_redirect && sim_cs_load),
+        .segment_load_index(2'd1),
+        .segment_load_selector(sim_cs),
+`else
         .segment_load_en(1'b0),
         .segment_load_index(2'd0),
         .segment_load_selector(16'd0),
+`endif
         .segment_read_index(2'd0),
         .segment_offset(16'd0),
         .segment_selector(unused_segment_selector),
@@ -135,7 +155,11 @@ module spk286_machine_cpu (
         .segment_limit(unused_segment_limit),
         .segment_access(unused_segment_access),
         .segment_address(unused_segment_address),
+`ifdef SPK286_AT_SIM_MODEL
+        .redirect(sim_redirect),
+`else
         .redirect(1'b0),
+`endif
         .control_error(control_error),
         .unsupported_opcode(unsupported_opcode),
         .debug_opcode(debug_opcode),

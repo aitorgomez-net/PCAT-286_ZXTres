@@ -8,7 +8,9 @@ org 100h
 ;   nasm -O9 -f bin -o vgatsr.com vgatsr.asm
 ;
 ; Installs an INT 10h hook. AX=0013h updates the BIOS Data Area and writes
-; 13h to the private VGA control port 03CDh. AX=000Dh first lets the EGA BIOS
+; 13h to the private VGA control port 03CDh. AX=0012h stages Dyna Blaster's
+; 256x232 direct-register tweak through the EGA BIOS mode 0Dh, then writes 12h
+; to the private port. AX=000Dh first lets the EGA BIOS
 ; establish the planar mode, then writes 0Dh so the core can emit it through
 ; its fixed VGA 320x200x16 raster. While mode 13h is active, the hook provides
 ; the minimal BIOS calls needed by bring-up software. Other mode sets clear
@@ -109,6 +111,12 @@ int10_hook_entry:
 
     push ax
     and al, 7Fh
+    cmp al, 12h
+    pop ax
+    je .try_mode12
+
+    push ax
+    and al, 7Fh
     cmp al, 0Dh
     pop ax
     je .try_mode0d
@@ -124,6 +132,13 @@ int10_hook_entry:
     ; caller falls back instead of drawing into a mode nothing will display.
     jmp .clear_and_chain
 
+.try_mode12:
+    push ax
+    call vga_available
+    pop ax
+    je .set_mode12
+    jmp .clear_and_chain
+
 .try_mode0d:
     push ax
     call vga_available
@@ -136,10 +151,13 @@ int10_hook_entry:
     push dx
     ; The EGA BIOS below owns its normal mode table, but it does not know
     ; about VGA-only CRTC 12h-18h, pel panning or split-panning suppression.
-    ; Restore the state that was present before mode 13h instead of leaving a
+    ; Restore the state that was present before the VGA modes instead of leaving a
     ; Mode-X Offset/Line Compare behind for the EGA renderer to inherit.
     cmp byte [cs:current_mode], 13h
+    je .restore_vga_state
+    cmp byte [cs:current_mode], 12h
     jne .just_clear
+.restore_vga_state:
     call restore_ega_state
 .just_clear:
     mov dx, VGA_CTRL_PORT
@@ -154,7 +172,14 @@ int10_hook_entry:
     cmp ah, 0Fh
     jne .check_ega_info
     cmp byte [cs:current_mode], 13h
+    je .get_mode13
+    cmp byte [cs:current_mode], 12h
     jne .chain
+    mov al, 12h
+    mov ah, 80
+    xor bh, bh
+    iret
+.get_mode13:
     mov al, 13h
     mov ah, 40
     xor bh, bh
@@ -246,10 +271,13 @@ int10_hook_entry:
     ; Mode 0Dh itself is already in the IBM EGA ROM. Let that handler load its
     ; sequencer, graphics/attribute controller, BDA and planar clear exactly as
     ; before; the private control write below changes only the display fetch
-    ; and raster. If mode 13h owned the registers, first put back the EGA state
+    ; and raster. If VGA+ owned the registers, first put back the EGA state
     ; saved on entry so the old BIOS starts from a clean adapter.
     cmp byte [cs:current_mode], 13h
+    je .restore_before_0d
+    cmp byte [cs:current_mode], 12h
     jne .call_ega_mode0d
+.restore_before_0d:
     call restore_ega_state
 .call_ega_mode0d:
     pushf
@@ -265,13 +293,72 @@ int10_hook_entry:
     pop ax
     iret
 
+.set_mode12:
+    ; Dyna Blaster starts with VGA BIOS mode 12h, then writes a complete CRTC
+    ; table and switches to unchained 256-colour memory. The underlying EGA
+    ; BIOS has no mode 12h, so establish its planar A000h register state with
+    ; mode 0Dh and leave a private 12h marker for the signature-gated renderer.
+    ; Actual 640x480x16 VGA mode 12h is outside this extension.
+    cmp byte [cs:current_mode], 12h
+    je .restore_before_12
+    cmp byte [cs:current_mode], 13h
+    je .restore_before_12
+    call save_ega_state
+    jmp short .call_ega_for_12
+.restore_before_12:
+    call restore_ega_state
+.call_ega_for_12:
+    push ax
+    push bx
+    push cx
+    push dx
+    push si
+    push di
+    push bp
+    push ds
+    push es
+
+    and al, 80h                    ; preserve VGA do-not-clear request
+    or al, 0Dh
+    xor ah, ah
+    pushf
+    call far [cs:old10_off]
+
+    mov dx, VGA_CTRL_PORT
+    mov al, 12h
+    out dx, al
+    mov ax, BDA_SEG
+    mov ds, ax
+    mov byte [BDA_MODE], 12h
+    mov word [BDA_COLS], 80
+    mov word [BDA_REGEN_SIZE], 0A000h
+    mov word [BDA_PAGE_OFFSET], 0000h
+    mov byte [BDA_ACTIVE_PAGE], 00h
+
+    pop es
+    pop ds
+    pop bp
+    pop di
+    pop si
+    pop dx
+    pop cx
+    pop bx
+    pop ax
+    mov byte [cs:current_mode], 12h
+    iret
+
 .set_mode13:
     ; A second INT 10h/13h is allowed while mode 13h is already active. Keep
     ; the original EGA state in that case: saving again would save our own
     ; VGA table and make a later return to DOS restore the wrong registers.
     cmp byte [cs:current_mode], 13h
     je .state_saved
+    cmp byte [cs:current_mode], 12h
+    je .restore_before_13
     call save_ega_state
+    jmp short .state_saved
+.restore_before_13:
+    call restore_ega_state
 .state_saved:
     push ax
     push bx

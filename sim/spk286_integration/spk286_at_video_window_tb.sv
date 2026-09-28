@@ -27,7 +27,8 @@ module spk286_at_video_window_tb;
     );
 
     spk286_at_video_adapter dut (
-        .clk(clk), .reset(reset), .clk_video(clk_video), .splashscreen(1'b0),
+        .clk(clk), .reset(reset), .video_reset_in(reset), .prebios_video(1'b0),
+        .clk_video(clk_video), .splashscreen(1'b0),
         .ega_monitor_profile(applied_profile), .vga_enabled(vga_enabled), .vga_mode13_native(1'b1),
         .crt_h_offset(h_offset), .crt_v_offset(3'd0),
         .vsync_width_osd(3'd0), .hsync_width_osd(3'd0),

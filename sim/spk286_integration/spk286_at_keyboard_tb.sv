@@ -4,7 +4,7 @@ module spk286_at_keyboard_tb;
     always #10 clk = ~clk;
     logic reset = 1;
     logic [10:0] ps2_key = 0;
-    wire byte_valid, byte_ready, translate_set1, overflow;
+    wire byte_valid, byte_ready, translate_set1, num_lock, overflow;
     wire [7:0] key_byte;
     logic request_valid = 0, request_write = 0;
     logic [23:0] request_address = 0;
@@ -19,11 +19,12 @@ module spk286_at_keyboard_tb;
 
     spk286_at_keyboard adapter (
         .clk(clk), .reset(reset), .ps2_key(ps2_key),
-        .translate_set1(translate_set1), .keyboard_byte_ready(byte_ready),
+        .translate_set1(translate_set1), .num_lock(num_lock),
+        .keyboard_byte_ready(byte_ready),
         .keyboard_byte_valid(byte_valid), .keyboard_byte(key_byte),
         .overflow(overflow)
     );
-    spk286_at_8042 controller (
+    spk286_at_8042 #(.KEYBOARD_GAP_CYCLES(128)) controller (
         .clk(clk), .reset(reset), .request_valid(request_valid),
         .request_command_valid(request_valid), .request_write(request_write),
         .request_io(1'b1), .request_address(request_address),
@@ -32,6 +33,7 @@ module spk286_at_keyboard_tb;
         .request_read_data(read_data), .request_read_data_valid(read_valid),
         .keyboard_byte_valid(byte_valid), .keyboard_byte(key_byte),
         .keyboard_byte_ready(byte_ready), .keyboard_translate_set1(translate_set1),
+        .keyboard_num_lock(num_lock),
         .keyboard_output_valid(obf), .keyboard_output_byte(output_byte),
         .irq1(irq1), .a20_enable(), .cpu_reset_request(),
         .side_effect_count(), .protocol_error(protocol_error)
@@ -57,13 +59,22 @@ module spk286_at_keyboard_tb;
         if (translate_set1 !== value[6]) $fatal(1, "Translation bit was lost");
     endtask
 
+    task automatic set_leds(input [7:0] value);
+        write_port(16'h60, 8'hED);
+        expect_byte(8'hFA);
+        write_port(16'h60, value);
+        expect_byte(8'hFA);
+        if (num_lock !== value[1]) $fatal(1, "Num Lock LED state was lost");
+    endtask
+
     task automatic key_event(input bit pressed, input bit extended, input [7:0] code);
         @(negedge clk);
         ps2_key = {~ps2_key[10], pressed, extended, code};
         @(negedge clk);
     endtask
 
-    task automatic expect_byte(input [7:0] expected, input bit log_key = 0);
+    task automatic expect_byte(input [7:0] expected, input bit log_key = 0,
+                               input bit expect_irq = 1);
         integer cycles;
         cycles = 0;
         // 8042 self-test/device replies are intentionally delayed by 1023
@@ -72,7 +83,8 @@ module spk286_at_keyboard_tb;
             @(negedge clk);
             cycles = cycles + 1;
         end
-        if (!obf || !irq1) $fatal(1, "Missing output/IRQ1 for %02x", expected);
+        if (!obf || irq1 !== expect_irq)
+            $fatal(1, "Missing output or wrong IRQ1 for %02x", expected);
         // Model slow BIOS service: queued prefixes/breaks must not overwrite
         // the current byte or disappear while the CPU has not read it yet.
         repeat (11) begin
@@ -131,6 +143,25 @@ module spk286_at_keyboard_tb;
         key_event(1, 1, 8'h14); key_event(0, 1, 8'h14);
         key_event(1, 1, 8'h6B); key_event(0, 1, 8'h6B);
         expect_sequence(64'hCBE0_4BE0_9DE0_1DE0, 8);
+        // Prince of Persia reads port 60h in its IRQ1 handler and then
+        // chains the BIOS IRQ1 handler, which reads the port again. The
+        // second byte of E0 48 must wait until that chain has finished.
+        key_event(1, 1, 8'h75);
+        expect_byte(8'hE0);
+        if (obf) $fatal(1, "Cursor code reached OBF before chained IRQ1 read");
+        request_valid = 1;
+        request_write = 0;
+        request_address = 24'h60;
+        @(posedge clk); #1;
+        if (!ready || !read_valid || read_data[7:0] !== 8'hE0 || obf)
+            $fatal(1, "Chained IRQ1 did not see the same E0 prefix");
+        @(negedge clk);
+        request_valid = 0;
+        repeat (20) @(negedge clk);
+        if (obf) $fatal(1, "Cursor code arrived during the IRQ1 chain");
+        expect_byte(8'h48);
+        key_event(0, 1, 8'h75);
+        expect_sequence(64'h0000_0000_C8E0, 2);
         key_event(1, 1, 8'h5A); key_event(0, 1, 8'h5A);
         expect_sequence(64'h0000_0000_9CE0_1CE0, 4);
         key_event(1, 0, 8'h83); key_event(0, 0, 8'h83);
@@ -140,6 +171,26 @@ module spk286_at_keyboard_tb;
         expect_sequence(64'hAAE0_B7E0_37E0_2AE0, 8);
         key_event(1, 1, 8'h77); key_event(0, 1, 8'h77);
         expect_sequence(64'h0000_C59D_E145_1DE1, 6);
+        expect_idle();
+
+        // The 101-key AT keyboard identifies as AB 83 and reports its LED
+        // state to the cursor-sequence generator. With Num Lock on, the
+        // dedicated Up key surrounds its E0 code with fake Shift, exactly
+        // unlike keypad 8. Shift held with Num Lock off needs the inverse.
+        write_port(16'h60, 8'hF2);
+        expect_sequence(64'h0000_0000_83AB_FA, 3);
+        set_leds(8'h02);
+        key_event(1, 1, 8'h75); key_event(0, 1, 8'h75);
+        expect_sequence(64'hAAE0_C8E0_48E0_2AE0, 8);
+        key_event(1, 0, 8'h75); key_event(0, 0, 8'h75);
+        expect_sequence(64'h0000_0000_0000_C848, 2);
+        set_leds(8'h00);
+        key_event(1, 0, 8'h12);
+        expect_byte(8'h2A);
+        key_event(1, 1, 8'h75); key_event(0, 1, 8'h75);
+        expect_sequence(64'h2AE0_C8E0_48E0_AAE0, 8);
+        key_event(0, 0, 8'h12);
+        expect_byte(8'hAA);
         expect_idle();
 
         // With translation disabled, restore genuine set-2 F0/E0 streams.
@@ -155,16 +206,24 @@ module spk286_at_keyboard_tb;
         expect_sequence(64'h77F0_14F0_E177_14E1, 8);
         expect_idle();
 
-        // Retain events while AD inhibits the interface. Controller replies
-        // must not be translated and must take priority over queued events.
+        set_leds(8'h02);
+        key_event(1, 1, 8'h75); key_event(0, 1, 8'h75);
+        expect_sequence(64'h0000_0000_75E0_12E0, 4);
+        expect_sequence(64'h0000_12F0_E075_F0E0, 6);
+        set_leds(8'h00);
+
+        // MR BIOS enters POST without a CPU reset. Key releases may arrive
+        // while the 8042 self-test runs; its reply must not raise IRQ1 and
+        // those events must wait for BIOS keyboard reconfiguration.
         set_command_byte(8'h65);
-        write_port(16'h64, 8'hAD);
-        key_event(1, 0, 8'h32); key_event(0, 0, 8'h32);
-        expect_idle();
         write_port(16'h64, 8'hAA);
-        expect_byte(8'h55);
+        key_event(1, 0, 8'h32); key_event(0, 0, 8'h32);
+        expect_byte(8'h55, 0, 0);
         write_port(16'h64, 8'hAB);
-        expect_byte(8'h00);
+        expect_byte(8'h00, 0, 0);
+        // Self-test reinitializes the command byte and inhibits the keyboard.
+        // POST must restore its IRQ/translation policy before enabling input.
+        set_command_byte(8'h75);
         write_port(16'h64, 8'hAE);
         expect_sequence(64'hB030, 2);
         expect_idle();

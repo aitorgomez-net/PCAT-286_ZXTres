@@ -25,6 +25,10 @@ module spk286_at_config_tb;
 
     initial begin
         #1;
+        if (!dut.u_at_machine.is_a5_io_port(16'h03f8) ||
+            !dut.u_at_machine.is_a5_io_port(16'h03ff) ||
+            dut.u_at_machine.is_a5_io_port(16'h0400))
+            $fatal(1, "AT_CONFIG: COM1 does not reach the AT device router");
         config_text = "";
         byte_count = $bits(dut.hps_io_at.CONF_STR) / 8;
         for (integer i = 0; i < byte_count; i = i + 1) begin
@@ -35,10 +39,10 @@ module spk286_at_config_tb;
         end
         if (!contains("PCAT-286;") ||
             !contains("P1FC0,ROM,PCAT BIOS:;") ||
-            !contains("P1FC2,ROM,C800 BIOS:;") ||
             !contains("P1FC3,ROM,EGA BIOS:;") ||
-            !contains("P3OB,2MB EMS D000-DFFF,Enabled,Disabled;") ||
-            !contains("P3OC,UMB E000-EFFF,Enabled,Disabled;") ||
+            contains("P1FC2,ROM,C800 BIOS:;") ||
+            contains("2MB EMS D000-DFFF") ||
+            contains("UMB E000-EFFF") ||
             !contains("S2,VHD,IDE 0-0;") ||
             !contains("R0,Reset & apply settings;") ||
             !contains("J,Fire 1,Fire 2;") ||

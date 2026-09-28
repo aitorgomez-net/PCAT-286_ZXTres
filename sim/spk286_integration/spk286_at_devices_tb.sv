@@ -35,6 +35,7 @@ module spk286_at_devices_tb;
 
     logic        keyboard_byte_valid = 1'b0;
     logic [7:0]  keyboard_byte = 8'h00;
+    wire         keyboard_byte_ready;
     wire         keyboard_output_valid;
     wire [7:0]   keyboard_output_byte;
     wire         irq1;
@@ -59,6 +60,8 @@ module spk286_at_devices_tb;
     wire [7:0]   at286ctl_vid;
     wire [15:0]  side_effect_count;
     wire [15:0]  irq_request;
+    logic        uart1_rx = 1'b1;
+    wire         uart1_rts_n;
     wire         devices_protocol_error;
     logic [15:0] mgmt_address = 16'h0000;
     logic [15:0] mgmt_writedata = 16'h0000;
@@ -124,7 +127,9 @@ module spk286_at_devices_tb;
     logic [15:0] dma_payloads [0:7];
 
     spk286_at_device_router devices (
-        .clk(clk), .reset(reset),
+        .clk(clk), .reset(reset), .uart_baudce(1'b1),
+        .uart1_rx(uart1_rx), .uart1_rts_n(uart1_rts_n),
+        .video_reset(reset), .prebios_video(1'b0),
         .clk_video(clk_video), .splashscreen(splashscreen),
         .ega_monitor_profile(2'b00),
         .clear_vga13(clear_vga13),
@@ -148,6 +153,7 @@ module spk286_at_devices_tb;
         .unmapped_request(unmapped_request),
         .keyboard_byte_valid(keyboard_byte_valid),
         .keyboard_byte(keyboard_byte),
+        .keyboard_byte_ready(keyboard_byte_ready),
         .keyboard_output_valid(keyboard_output_valid),
         .keyboard_output_byte(keyboard_output_byte), .irq1(irq1),
         .a20_enable(a20_enable), .cpu_reset_request(cpu_reset_request),
@@ -314,6 +320,21 @@ module spk286_at_devices_tb;
     task automatic router_read(input logic [15:0] port, output logic [7:0] value);
         begin
             router_read_lane(port, port[0] ? 2'b10 : 2'b01, value);
+        end
+    endtask
+
+    task automatic send_com1_byte(input logic [7:0] data);
+        integer bit_index;
+        begin
+            @(negedge clk);
+            uart1_rx = 1'b0;
+            repeat (16) @(negedge clk);
+            for (bit_index = 0; bit_index < 8; bit_index = bit_index + 1) begin
+                uart1_rx = data[bit_index];
+                repeat (16) @(negedge clk);
+            end
+            uart1_rx = 1'b1;
+            repeat (16) @(negedge clk);
         end
     endtask
 
@@ -535,6 +556,18 @@ module spk286_at_devices_tb;
         router_read(16'h8980, value);
         check(value == 8'h45, "AT286CTL signature was not visible on the AT bus");
 
+        // COM1 is the internal serial mouse's UART, independent of MIDI.
+        router_write(16'h03fb, 8'h03);
+        router_write(16'h03f9, 8'h01);
+        router_write(16'h03fc, 8'h02);
+        check(!uart1_rts_n, "COM1 RTS did not reach the mouse boundary");
+        send_com1_byte(8'h4d);
+        check(irq_request[4], "COM1 receive did not assert AT IRQ4");
+        router_read(16'h03f8, value);
+        check(value == 8'h4d, "COM1 receive byte did not reach port 3F8h");
+        repeat (3) @(posedge clk);
+        check(!irq_request[4], "COM1 IRQ4 did not clear after RX read");
+
         router_write(16'h0201, 8'h00);
         repeat (36000) @(posedge clk);
         router_read(16'h0201, value);
@@ -574,6 +607,18 @@ module spk286_at_devices_tb;
               "8042 self-test did not set command/system/output status");
         router_read(16'h0060, value);
         check(value == 8'h55, "8042 AA self-test response was not 55h");
+        check(!keyboard_byte_ready && a20_enable,
+              "8042 self-test did not inhibit keyboard and restore output port");
+        router_write(16'h0064, 8'h20);
+        router_wait_8042_output(value);
+        router_read(16'h0060, value);
+        check(value == 8'h10,
+              "8042 self-test did not reinitialize the command byte");
+        router_write(16'h0064, 8'hD0);
+        router_wait_8042_output(value);
+        router_read(16'h0060, value);
+        check(value == 8'hCF,
+              "8042 self-test did not reinitialize the output port");
         router_write(16'h0064, 8'hAB);
         router_wait_8042_output(value);
         router_read(16'h0060, value);
@@ -670,7 +715,10 @@ module spk286_at_devices_tb;
         check(value == 8'h80, "RTC did not advertise 640 KiB base memory");
         router_write(16'h0070, 8'h17);
         router_read(16'h0071, value);
-        check(value == 8'h80, "RTC did not advertise 384 KiB extended memory");
+        check(value == 8'h80, "RTC did not advertise 3456 KiB extended-memory low byte");
+        router_write(16'h0070, 8'h18);
+        router_read(16'h0071, value);
+        check(value == 8'h0D, "RTC default profile was not 4 MiB");
         router_write(16'h0070, 8'h0B);
         router_write(16'h0071, 8'h42);
         check(!nmi_mask, "RTC NMI mask did not clear");

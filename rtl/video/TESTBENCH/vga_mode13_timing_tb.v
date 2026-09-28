@@ -154,6 +154,53 @@ module vga_mode13_timing_tb;
         check(!active, "native 320x240 active area must end at line 240");
         release dut.h_count; release dut.v_count;
 
+        // Dyna Blaster presents 256x232 logical pixels. Native doubles both
+        // dimensions into a 512x464 picture on a 525-line 60 Hz VGA frame.
+        reset_timing(1'b1, 2'd3);
+        #1 check((dut.h_total == 11'd800) && (dut.v_total == 10'd525),
+                 "native Dyna frame must be 800x525");
+        force dut.h_count = 11'd510; force dut.v_count = 10'd462; #1;
+        check(active && pixel_x == 10'd255 && pixel_y == 10'd231,
+              "native Dyna must include source pixel 255,231");
+        force dut.h_count = 11'd512; #1;
+        check(!active, "native Dyna must blank at clock 512");
+        force dut.h_count = 11'd592; #1;
+        check(hsync, "native Dyna HSYNC must start at clock 592");
+        force dut.h_count = 11'd688; #1;
+        check(!hsync, "native Dyna HSYNC must be 96 clocks wide");
+        force dut.h_count = 11'd0; force dut.v_count = 10'd463; #1;
+        check(active && pixel_y == 10'd231,
+              "native Dyna must repeat source row 231");
+        force dut.v_count = 10'd464; #1;
+        check(!active, "native Dyna must blank at line 464");
+        force dut.v_count = 10'd482; #1;
+        check(vsync, "native Dyna VSYNC must start at line 482");
+        force dut.v_count = 10'd484; #1;
+        check(!vsync, "native Dyna VSYNC must be two lines wide");
+        release dut.h_count; release dut.v_count;
+
+        // The TV route retains the established 1824x262, 15.7 kHz frame and
+        // emits each source row once.
+        reset_timing(1'b0, 2'd3);
+        #1 check((dut.h_total == 11'd1824) && (dut.v_total == 10'd262),
+                 "TV Dyna frame must be 1824x262");
+        force dut.h_count = 11'd1022; force dut.v_count = 10'd231; #1;
+        check(active && pixel_x == 10'd255 && pixel_y == 10'd231,
+              "TV Dyna must include source pixel 255,231");
+        force dut.h_count = 11'd1024; #1;
+        check(!active, "TV Dyna must blank at clock 1024");
+        force dut.h_count = 11'd1296; #1;
+        check(hsync, "TV Dyna HSYNC must start at clock 1296");
+        force dut.h_count = 11'd1456; #1;
+        check(!hsync, "TV Dyna HSYNC must be 160 clocks wide");
+        force dut.h_count = 11'd0; force dut.v_count = 10'd232; #1;
+        check(!active, "TV Dyna must blank at line 232");
+        force dut.v_count = 10'd240; #1;
+        check(vsync, "TV Dyna VSYNC must start at line 240");
+        force dut.v_count = 10'd243; #1;
+        check(!vsync, "TV Dyna VSYNC must be three lines wide");
+        release dut.h_count; release dut.v_count;
+
         if (errors == 0)
             $display("RESULT: PASS");
         else

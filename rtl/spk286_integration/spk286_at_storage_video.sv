@@ -9,6 +9,8 @@
 module spk286_at_storage_video (
     input  logic        clk,
     input  logic        reset,
+    input  logic        video_reset,
+    input  logic        prebios_video,
     input  logic        clk_video,
     input  logic        splashscreen,
     input  logic [1:0]  ega_monitor_profile,
@@ -385,6 +387,8 @@ module spk286_at_storage_video (
     spk286_at_video_adapter u_video (
         .clk                    (clk),
         .reset                  (reset),
+        .video_reset_in         (video_reset),
+        .prebios_video          (prebios_video),
         .clk_video              (clk_video),
         .splashscreen           (splashscreen),
         .ega_monitor_profile    (ega_monitor_profile),

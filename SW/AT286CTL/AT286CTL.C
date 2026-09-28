@@ -49,10 +49,11 @@
 
 #define SIGNATURE       0x45    /* 'E' */
 
-/* Every field except VGA 13h+ reads 0 as "leave it to the OSD" and 1..N as
-   the N choices, in the same order the OSD lists them. The Sound Blaster IRQ
-   field is P_EXP2[5:4]: 1=IRQ5 and 2=IRQ7. VGA 13h+ starts off and is enabled
-   by VGATSR through the same port. */
+/* Configurable fields except VGA 13h+ read 0 as "leave it to the OSD" and
+   1..N as the choices in menu order. P_EXP[5:4] and [7:6] are reserved legacy
+   EMS/UMB fields; this core keeps both memory windows fixed on. The Sound
+   Blaster IRQ field is P_EXP2[5:4]: 1=IRQ5 and 2=IRQ7. VGA 13h+ starts off
+   and is enabled by VGATSR through the same port. */
 static unsigned char r_cpu, r_exp, r_vid, r_inp, r_midi, r_exp2, r_crt, r_sync;
 static unsigned char e_cpu, e_input, e_misc, e_crt, e_sync;
 static unsigned char osd_match_lo, osd_match_hi;
@@ -167,7 +168,7 @@ static void usage(char *argv0)
     printf("Audio      adlib  sbfm  noadlib\n");
     printf("           cms  nocms      sb  nosb\n");
     printf("           sbirq=auto|5|7  Sound Blaster IRQ\n");
-    printf("Memory     ems  noems       umb  noumb\n");
+    printf("Memory     EMS and UMB always enabled\n");
     printf("Input      joy1=analog|digital|off   joy2=analog|digital|off\n");
     printf("           swap  noswap      joysync  nojoysync\n");
     printf("MIDI       mt32  gm         mpu  nompu\n");
@@ -321,8 +322,8 @@ static void show_legacy(void)
     printf("  Fake 286 FLAGS %s\n", onoff[(r_cpu >> 3) & 3]);
     printf("  OPL2           %s\n", opl[r_exp & 3]);
     printf("  Audio 220h     %s\n", audio220_state());
-    printf("  EMS            %s\n", enab[(r_exp >> 4) & 3]);
-    printf("  UMB            %s\n", enab[(r_exp >> 6) & 3]);
+    printf("  EMS            always enabled\n");
+    printf("  UMB            always enabled\n");
     printf("  VGA 13h+       %s\n", vga13[r_vid & 3]);
     printf("  Joystick 1     %s\n", joy[r_inp & 3]);
     printf("  Joystick 2     %s\n", joy[(r_inp >> 2) & 3]);
@@ -405,8 +406,8 @@ static void show(void)
     printf("  Fake 286 FLAGS %s%s\n", onoff[(e_cpu >> 3) & 1], status_suffix(1));
     printf("  OPL2           %s%s\n", opl[(e_cpu >> 4) & 3], status_suffix(2));
     printf("  Audio 220h     %s%s\n", audio[(e_cpu >> 6) & 3], status_suffix(3));
-    printf("  EMS            %s%s\n", enabled[e_input & 1], status_suffix(4));
-    printf("  UMB            %s%s\n", enabled[(e_input >> 1) & 1], status_suffix(5));
+    printf("  EMS            always enabled\n");
+    printf("  UMB            always enabled\n");
     /* VGA 13h+ has no OSD fallback: VGATSR owns its enable state. */
     printf("  VGA 13h+       %s\n", (e_input & 4) ? "on" : "off");
     printf("  Joystick 1     %s%s\n", joy[(e_input >> 3) & 3], status_suffix(6));
@@ -493,12 +494,6 @@ int main(int argc, char **argv)
         else if (opt("nosb")) put(&r_exp2, 2, 2, 2);
 
         if (soundblaster_irq(&r_exp2) < 0) return 1;
-
-        if (opt("ems")) put(&r_exp, 4, 2, 1);
-        else if (opt("noems")) put(&r_exp, 4, 2, 2);
-
-        if (opt("umb")) put(&r_exp, 6, 2, 1);
-        else if (opt("noumb")) put(&r_exp, 6, 2, 2);
 
         if (joystick("joy1=", &r_inp, 0) < 0) return 1;
         if (joystick("joy2=", &r_inp, 2) < 0) return 1;

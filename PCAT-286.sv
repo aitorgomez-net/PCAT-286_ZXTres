@@ -20,12 +20,6 @@
 `ifndef ENABLE_SB
 `define ENABLE_SB 0
 `endif
-`ifndef ENABLE_EMS
-`define ENABLE_EMS 0
-`endif
-`ifndef ENABLE_UMB
-`define ENABLE_UMB 0
-`endif
 
 module emu_at
 (
@@ -44,7 +38,14 @@ module emu_at
 
     localparam CONF_STR_INFO = {
         "I,Monitor setting pending\n",
-        "Reset to apply;"
+        "Reset to apply\n",
+        "OSD: Hardware,",
+        "No PCAT BIOS selected\n",
+        "Machine halted\n",
+        "OSD: System & BIOS,",
+        "No EGA BIOS selected\n",
+        "Machine halted\n",
+        "OSD: System & BIOS;"
     };
 
 `ifndef SPK286_AT_NO_DEBUG
@@ -62,10 +63,6 @@ module emu_at
         "P2oAB,OPL2,Adlib 388h,SB FM 388h/228h, Disabled;" : "");
     localparam CONF_STR_TANDY = (`ENABLE_TANDY_AUDIO ?
         "P2oN,Tandy Sound,Disabled,Enabled;" : "");
-    localparam CONF_STR_EMS = (`ENABLE_EMS ?
-        "P3OB,2MB EMS D000-DFFF,Enabled,Disabled;P3-;" : "");
-    localparam CONF_STR_UMB = (`ENABLE_UMB ?
-        "P3OC,UMB E000-EFFF,Enabled,Disabled;P3-;" : "");
     // Keep the source profile's MIDI/MT32-pi page and status-bit placement.
     // MPU-401 is the AT card at 330h; USER I/O selects the physical MIDI
     // cable or the COM2 pins, while the h3P4 entries configure the external
@@ -96,7 +93,6 @@ module emu_at
         "P1O7,Boot Splash Screen,Yes,No;",
 `endif
         "P1FC0,ROM,PCAT BIOS:;",
-        "P1FC2,ROM,C800 BIOS:;",
         "P1FC3,ROM,EGA BIOS:;",
         "P1-;",
         // An empty packed Verilog string is an 8-bit NUL, not zero bytes.
@@ -126,10 +122,8 @@ module emu_at
         "P2-;",
         "P3,Hardware;",
         "P3-;",
-        "P3O[74:72],Installed RAM,1MB,2MB,4MB,8MB,16MB;",
+        "P3O[74:72],Installed RAM,4MB,8MB,16MB,1MB,2MB;",
         "P3oCD,Monitor,5154/ECD,5153/CGA,5151/MDA;",
-        CONF_STR_EMS,
-        CONF_STR_UMB,
         "P3ONO,Joystick 1, Analog, Digital, Disabled;",
         "P3OPQ,Joystick 2, Analog, Digital, Disabled;",
         "P3OR,Sync Joy to CPU Speed,No,Yes;",
@@ -190,6 +184,10 @@ module emu_at
     wire [1:0]   at_monitor_profile_applied;
     wire         at_monitor_pending_info_req;
     wire [7:0]   at_monitor_pending_info;
+    wire         at_bios_info_req;
+    wire [7:0]   at_bios_info;
+    wire         at_info_req = at_bios_info_req | at_monitor_pending_info_req;
+    wire [7:0]   at_info = at_bios_info_req ? at_bios_info : at_monitor_pending_info;
     wire         at_monitor_profile_pending =
         at_monitor_profile_osd != at_monitor_profile_applied;
     wire         at_debug_enable = hps_status[71];
@@ -209,8 +207,6 @@ module emu_at
     wire         at_a220_sb_osd = `ENABLE_SB ?
         (`ENABLE_CMS ? (hps_status[29:28] == 2'b01) : ~hps_status[29]) : 1'b0;
     wire [2:0]   at_sb_irq_osd = hps_status[70] ? 3'd7 : 3'd5;
-    wire         at_ems_osd = `ENABLE_EMS ? ~hps_status[11] : 1'b0;
-    wire         at_umb_osd = `ENABLE_UMB ? ~hps_status[12] : 1'b0;
     wire [2:0]   at_installed_ram_size_osd = hps_status[74:72];
 
     wire [7:0] at286ctl_cpu;
@@ -261,7 +257,6 @@ module emu_at
         .osd_speed(2'd0), .osd_fake286(1'b0), .osd_opl2(hps_status[43:42]),
         .osd_cms(at_a220_cms_osd), .osd_sb(at_a220_sb_osd),
         .osd_sb_irq(at_sb_irq_osd),
-        .osd_ems(at_ems_osd), .osd_umb(at_umb_osd),
         .osd_joy1_digital(at_joy1_digital_osd), .osd_joy1_disable(at_joy1_disable_osd),
         .osd_joy2_digital(at_joy2_digital_osd), .osd_joy2_disable(at_joy2_disable_osd),
         .osd_joy_sync(at_joy_sync_osd), .osd_joy_swap(at_joy_swap_osd),
@@ -305,13 +300,13 @@ module emu_at
     wire [15:0] ioctl_data;
     wire        ioctl_wait;
 
-    // No legacy PS/2 device is instantiated in this profile.  hps_io still
-    // supplies its decoded event stream, which is translated into the AT
-    // 8042 host-byte boundary below.
+    // The keyboard uses the decoded HPS event stream at the AT 8042 boundary.
+    // The mouse retains the source profile's PS/2 wire protocol and serial
+    // COM1 converter so DOS sees a Microsoft-compatible mouse at 3F8h.
     wire ps2_kbd_clk_in  = 1'b1;
     wire ps2_kbd_data_in = 1'b1;
-    wire ps2_mouse_clk_in  = 1'b1;
-    wire ps2_mouse_data_in = 1'b1;
+    wire ps2_mouse_clk_in;
+    wire ps2_mouse_data_in;
 
     hps_io #(
         .CONF_STR (CONF_STR_AT),
@@ -330,8 +325,8 @@ module emu_at
         .status_menumask      (hps_status_menumask),
         .video_rotated        (1'b0),
         .new_vmode            (1'b0),
-        .info_req             (at_monitor_pending_info_req),
-        .info                 (at_monitor_pending_info),
+        .info_req             (at_info_req),
+        .info                 (at_info),
         .status_in            (128'h0),
         .status_set           (1'b0),
         .uart_mode            (uart_mode),
@@ -379,6 +374,17 @@ module emu_at
                          mt32_midi_connected ?
                            mt32_pi_midi_rx : 1'b1;
     wire       midi_tx;
+    wire       uart1_rx;
+    wire       uart1_rts_n;
+    MSMouseWrapper #(.CLKFREQ(50_000_000)) u_serial_mouse (
+        .clk          (CLK_50M),
+        .ps2dta_in    (ps2_mouse_data_out),
+        .ps2clk_in    (ps2_mouse_clk_out),
+        .ps2dta_out   (ps2_mouse_data_in),
+        .ps2clk_out   (ps2_mouse_clk_in),
+        .rts          (~uart1_rts_n),
+        .rd           (uart1_rx)
+    );
     wire       uart2_rx = user_io_mt32 ? 1'b1 : USER_IN[0];
     wire       uart2_cts_n = user_io_mt32 ? 1'b1 : USER_IN[3];
     wire       uart2_dsr_n = user_io_mt32 ? 1'b1 : USER_IN[5];
@@ -403,8 +409,8 @@ module emu_at
     wire       mt32_use = user_io_mt32 && !mt32_disable;
     wire       mt32_mute = user_io_mt32 && mt32_disable;
 
-    // Exact MIDI baud enable: 50 MHz / (4 * 16 * 25) = 31250 baud. COM2
-    // receives the standard 1.8432 MHz x16 reference for 115200 baud.
+    // Exact MIDI baud enable: 50 MHz / (4 * 16 * 25) = 31250 baud. Both
+    // serial ports receive the standard 1.8432 MHz x16 reference.
     logic [1:0]  midi_baud_div_q;
     logic [25:0] uart_baud_phase_q;
     logic        midi_baudce;
@@ -481,13 +487,15 @@ module emu_at
     wire [2:0]  bios_protect_flag;
     wire        main_rom_loaded;
     wire        ega_rom_loaded;
-    wire        xtide_rom_loaded;
     wire        loader_active;
     wire        loader_protocol_error;
 
     // Match the source profile: bits 4 and 5 expose the missing-main/EGA
     // indicators, while the lower menu bits control the MIDI/MT32-pi entries.
-    assign hps_status_menumask = {10'd0, ~ega_rom_loaded, ~main_rom_loaded,
+    wire at_bios_missing_main = !main_rom_loaded;
+    wire at_bios_missing_ega = main_rom_loaded && !ega_rom_loaded;
+    wire at_bios_required_missing = at_bios_missing_main || at_bios_missing_ega;
+    assign hps_status_menumask = {10'd0, at_bios_missing_ega, at_bios_missing_main,
                                   (`ENABLE_MIDI && mt32_available && at286ctl_eff_mpu401),
                                   3'b111};
 
@@ -511,7 +519,6 @@ module emu_at
         .bios_protect_flag  (bios_protect_flag),
         .main_rom_loaded    (main_rom_loaded),
         .ega_rom_loaded     (ega_rom_loaded),
-        .xtide_rom_loaded   (xtide_rom_loaded),
         .load_active        (loader_active),
         .protocol_error     (loader_protocol_error)
     );
@@ -814,6 +821,7 @@ module emu_at
     wire [7:0] keyboard_byte;
     wire keyboard_byte_ready;
     wire keyboard_translate_set1;
+    wire keyboard_num_lock;
     wire keyboard_event_overflow;
 
     // Keep the AT machine in reset until the private video PLL is usable as
@@ -841,6 +849,11 @@ module emu_at
     // Reuse the XT reset controls without clearing the loaded ROM flags.
     wire at_boot_reset = RESET | hps_status[0] | hps_buttons[1] |
                          !main_rom_loaded | !at_video_pll_locked;
+    // Keep the external raster and MiSTer output path running at the EGA
+    // power-on timing while the main BIOS is absent. The machine itself stays
+    // reset through at_boot_reset and at_machine_reset below.
+    wire at_video_output_reset = RESET | hps_status[0] | hps_buttons[1] |
+                                 !at_video_pll_locked;
     // The XT splash lifetime survives OSD reset and Reset & apply settings.
     // Only re-arm it when the core itself restarts or its boot prerequisites
     // disappear; the host reset controls belong to the machine reset below.
@@ -851,6 +864,7 @@ module emu_at
         .reset                  (at_boot_reset),
         .ps2_key                (ps2_key),
         .translate_set1         (keyboard_translate_set1),
+        .num_lock               (keyboard_num_lock),
         .keyboard_byte_ready    (keyboard_byte_ready),
         .keyboard_byte_valid    (keyboard_byte_valid),
         .keyboard_byte          (keyboard_byte),
@@ -888,11 +902,25 @@ module emu_at
     assign at_splash_boot_hold = 1'b0;
 `endif
 
+    // Keep the processor stopped until both required firmware images exist.
+    // The periodic Info notice is independent of the optional splash artwork.
+    wire at_bios_hold;
+    spk286_at_bios_hold_notice u_at_bios_hold_notice (
+        .clock             (CLK_50M),
+        .splash_boot_phase (main_rom_loaded && at_splash_boot_hold),
+        .bios_missing_main (at_bios_missing_main),
+        .bios_missing_ega  (at_bios_missing_ega),
+        .hold              (at_bios_hold),
+        .info              (at_bios_info),
+        .info_req          (at_bios_info_req)
+    );
+
     // The splash is a real boot hold, not only a video overlay.  This keeps
     // CPU/BIU state frozen from boot settling until the image is removed.
     // As in XT, the pending interval is part of the boot hold; otherwise
     // the CPU runs before the first timer tick and is reset a second time.
-    wire at_machine_reset = at_boot_reset | at_splash_boot_hold;
+    wire at_machine_reset = at_boot_reset | at_splash_boot_hold |
+                            at_bios_required_missing | at_bios_hold;
 
     // The OSD choice represents physical EGA monitor switches. Sample it for
     // the active machine only during reset, then use that applied profile for
@@ -910,7 +938,7 @@ module emu_at
         .clock      (CLK_50M),
         .pending    (at_monitor_profile_pending),
         .osd_status (OSD_STATUS),
-        .suppress   (1'b0),
+        .suppress   (at_bios_hold),
         .info       (at_monitor_pending_info),
         .info_req   (at_monitor_pending_info_req)
     );
@@ -926,20 +954,20 @@ module emu_at
     // Reset release for each output pipeline is synchronized to its own
     // phase. This keeps PLL lock/BIOS-load reset out of recovery paths in the
     // 57.272 MHz output registers.
-    always_ff @(posedge at_video_clk_57 or posedge at_boot_reset) begin
-        if (at_boot_reset) begin
+    always_ff @(posedge at_video_clk_57 or posedge at_video_output_reset) begin
+        if (at_video_output_reset) begin
             at_video_pipe_reset_57_q1 <= 1'b1;
             at_video_pipe_reset_57_q2 <= 1'b1;
         end else begin
-            // The output pipeline must remain live while the splash is
-            // displayed; only the AT machine itself is held in reset.
+            // The output pipeline must remain live for the pre-BIOS raster and
+            // splash; only the AT machine itself stays held in reset.
             at_video_pipe_reset_57_q1 <= 1'b0;
             at_video_pipe_reset_57_q2 <= at_video_pipe_reset_57_q1;
         end
     end
 
-    always_ff @(posedge at_video_clk_57_ps or posedge at_boot_reset) begin
-        if (at_boot_reset) begin
+    always_ff @(posedge at_video_clk_57_ps or posedge at_video_output_reset) begin
+        if (at_video_output_reset) begin
             at_video_pipe_reset_57_ps_q1 <= 1'b1;
             at_video_pipe_reset_57_ps_q2 <= 1'b1;
         end else begin
@@ -1023,6 +1051,7 @@ module emu_at
         // Keep the AT devices and EGA raster alive during the splash.  Only
         // the CPU/BIU reset is extended over the splash interval.
         .reset                  (at_boot_reset),
+        .video_reset            (at_video_output_reset),
         .cpu_reset              (at_machine_reset),
         .clk_video              (at_video_clk_28),
         .splashscreen           (at_splashscreen),
@@ -1041,6 +1070,7 @@ module emu_at
         .midi_baudce           (midi_baudce),
         .uart_baudce           (uart_baudce),
         .midi_rx               (midi_rx),
+        .uart1_rx              (uart1_rx),
         .uart2_rx              (uart2_rx),
         .uart2_cts_n           (uart2_cts_n),
         .uart2_dsr_n           (uart2_dsr_n),
@@ -1064,6 +1094,7 @@ module emu_at
         .keyboard_byte          (keyboard_byte),
         .keyboard_byte_ready    (keyboard_byte_ready),
         .keyboard_translate_set1(keyboard_translate_set1),
+        .keyboard_num_lock      (keyboard_num_lock),
         .periodic_tick          (periodic_tick),
         .second_tick             (second_tick),
         .parity_event           (1'b0),
@@ -1191,6 +1222,7 @@ module emu_at
         .sb_sound_l             (at_sb_sound_l),
         .sb_sound_r             (at_sb_sound_r),
         .midi_tx               (midi_tx),
+        .uart1_rts_n           (uart1_rts_n),
         .uart2_tx              (uart2_tx),
         .uart2_rts_n           (uart2_rts_n),
         .uart2_dtr_n           (uart2_dtr_n),
@@ -1567,6 +1599,46 @@ module emu_at
     wire [23:0] at_debug_rgb_out;
 
 `ifndef SPK286_AT_NO_DEBUG
+`ifdef SPK286_AT_DEBUG_STABLE_RASTER
+    // Diagnostic output timing is independent of the EGA CRTC. A BIOS
+    // reprogramming the CRTC can otherwise freeze the last debug snapshot on
+    // screen even while the CPU and the snapshot mailbox keep running.
+    logic at_debug_ce_q;
+    logic [9:0] at_debug_hpos_q;
+    logic [8:0] at_debug_vpos_q;
+    always_ff @(posedge at_video_clk_57_ps) begin
+        if (at_video_pipe_reset_57_ps) begin
+            at_debug_ce_q   <= 1'b0;
+            at_debug_hpos_q <= 10'd0;
+            at_debug_vpos_q <= 9'd0;
+        end else begin
+            at_debug_ce_q <= ~at_debug_ce_q;
+            if (at_debug_ce_q) begin
+                if (at_debug_hpos_q == 10'd899) begin
+                    at_debug_hpos_q <= 10'd0;
+                    at_debug_vpos_q <= at_debug_vpos_q == 9'd448 ?
+                                       9'd0 : at_debug_vpos_q + 9'd1;
+                end else
+                    at_debug_hpos_q <= at_debug_hpos_q + 10'd1;
+            end
+        end
+    end
+    wire at_debug_hs = !(at_debug_hpos_q >= 10'd720 &&
+                         at_debug_hpos_q < 10'd816);
+    wire at_debug_vs = !(at_debug_vpos_q >= 9'd440 &&
+                         at_debug_vpos_q < 9'd442);
+    wire at_debug_hb = !(at_debug_hpos_q >= 10'd48 &&
+                         at_debug_hpos_q < 10'd688);
+    wire at_debug_vb = !(at_debug_vpos_q >= 9'd35 &&
+                         at_debug_vpos_q < 9'd435);
+    wire at_debug_pxl_cen = at_debug_ce_q;
+`else
+    wire at_debug_hs = at_video_hs_out_q;
+    wire at_debug_vs = at_video_vs_out_q;
+    wire at_debug_hb = at_video_hb_out_q;
+    wire at_debug_vb = at_video_vb_out_q;
+    wire at_debug_pxl_cen = at_video_ce_out_q;
+`endif
     // The single-page overlay is passive and never drives the machine.
     spk286_debug_min_overlay #(
         .COLW(8),
@@ -1576,14 +1648,18 @@ module emu_at
         .src_rst                (at_boot_reset),
         .src_clk                (CLK_50M),
         .clk                    (at_video_clk_57_ps),
-        .pxl_cen                (at_video_ce_out_q),
-        .HS                     (at_video_hs_out_q),
-        .VS                     (at_video_vs_out_q),
-        .HB                     (at_video_hb_out_q),
-        .VB                     (at_video_vb_out_q),
+        .pxl_cen                (at_debug_pxl_cen),
+        .HS                     (at_debug_hs),
+        .VS                     (at_debug_vs),
+        .HB                     (at_debug_hb),
+        .VB                     (at_debug_vb),
+`ifdef SPK286_AT_DEBUG_STABLE_RASTER
+        .rgb_in                 (24'h000000),
+`else
         .rgb_in                 ({at_video_r_out_q,
                                   at_video_g_out_q,
                                   at_video_b_out_q}),
+`endif
         .cpu_reset              (at_machine_reset | at_cpu_reset_request),
         .cpu_halted             (at_cpu_halted),
         .cpu_shutdown           (at_cpu_shutdown),
@@ -1654,7 +1730,7 @@ module emu_at
     always_ff @(posedge at_video_clk_57_ps) begin
         if (at_video_pipe_reset_57_ps)
             at_use_debug_q <= 1'b0;
-        else if (at_video_vb_out_q)
+        else if (at_debug_vb)
             at_use_debug_q <= at_debug_enable_sync2_q;
     end
 `else
@@ -1671,7 +1747,11 @@ module emu_at
                           loader_protocol_error;
 
     assign CLK_VIDEO    = at_video_clk_57_ps;
+`ifndef SPK286_AT_NO_DEBUG
+    assign CE_PIXEL     = at_use_debug_q ? at_debug_pxl_cen : at_video_ce_out_q;
+`else
     assign CE_PIXEL     = at_video_ce_out_q;
+`endif
     assign VIDEO_ARX    = at_video_arx_q;
     assign VIDEO_ARY    = at_video_ary_q;
     assign VGA_R        = at_use_debug_q ? at_debug_rgb_out[23:16] :
@@ -1680,8 +1760,13 @@ module emu_at
                           at_video_g_out_q;
     assign VGA_B        = at_use_debug_q ? at_debug_rgb_out[7:0] :
                           at_video_b_out_q;
+`ifndef SPK286_AT_NO_DEBUG
+    assign VGA_HS       = at_use_debug_q ? at_debug_hs : at_video_hs_out_q;
+    assign VGA_VS       = at_use_debug_q ? at_debug_vs : at_video_vs_out_q;
+`else
     assign VGA_HS       = at_video_hs_out_q;
     assign VGA_VS       = at_video_vs_out_q;
+`endif
     assign VGA_DE       = at_use_debug_q ?
                           (~at_debug_hb_out & ~at_debug_vb_out) :
                           at_video_de_out_q;

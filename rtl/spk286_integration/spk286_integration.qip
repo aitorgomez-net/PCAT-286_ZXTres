@@ -63,6 +63,7 @@ set_global_assignment -name SYSTEMVERILOG_FILE "rtl/spk286_integration/spk286_at
 set_global_assignment -name SYSTEMVERILOG_FILE "rtl/spk286_integration/spk286_at_mister_sdram_owner.sv"
 set_global_assignment -name SYSTEMVERILOG_FILE "rtl/spk286_integration/spk286_at_hps_rom_loader.sv"
 set_global_assignment -name SYSTEMVERILOG_FILE "rtl/spk286_integration/spk286_at_splash_control.sv"
+set_global_assignment -name SYSTEMVERILOG_FILE "rtl/spk286_integration/spk286_at_bios_hold_notice.sv"
 set_global_assignment -name SYSTEMVERILOG_FILE "rtl/spk286_integration/spk286_machine_cpu.sv"
 set_global_assignment -name SYSTEMVERILOG_FILE "rtl/spk286_integration/spk286_at_pit_clock.sv"
 set_global_assignment -name SYSTEMVERILOG_FILE "rtl/spk286_integration/spk286_at_system_control.sv"

@@ -28,7 +28,7 @@ module vga_mode13_timing(
     input  wire        reset,
     input  wire        enable,
     input  wire        native_70hz,
-    // 00 320x200, 01 360x200, 10 320x240. Packed Mode 13h supplies 00.
+    // 00 320x200, 01 360x200, 10 320x240, 11 256x232.
     input  wire [1:0]  mode_x_profile,
     input  wire [3:0]  crt_h_offset,
     input  wire [2:0]  crt_v_offset,
@@ -86,34 +86,46 @@ module vga_mode13_timing(
 
     localparam [1:0] PROFILE_360X200 = 2'd1;
     localparam [1:0] PROFILE_320X240 = 2'd2;
+    localparam [1:0] PROFILE_256X232 = 2'd3;
     wire mode_x_360 = (mode_x_profile == PROFILE_360X200);
     wire mode_x_240 = (mode_x_profile == PROFILE_320X240);
+    wire mode_x_256 = (mode_x_profile == PROFILE_256X232);
     // The 320x240 profile is already a direct 240-line mode. The two
     // 200-line profiles (packed mode 13h and 360x200 Mode X) need VGA's
     // double-scanned Native raster instead.
-    wire native_200_line = native_70hz && !mode_x_240;
+    wire native_line_double = native_70hz && !mode_x_240;
 
     // 360-wide mode borrows blank time for its wider active area; 320x240
     // borrows vertical blank time. The 60 Hz path remains a 15.70 kHz / 59.9
     // Hz TV raster, while standard Native now uses VGA's 800-clock line.
-    wire [10:0] h_active = mode_x_360 ? (native_70hz ? NATIVE_WIDE_H_ACTIVE : 11'd1440)
+    wire [10:0] h_active = mode_x_256 ? (native_70hz ? 11'd512 : 11'd1024) :
+                           mode_x_360 ? (native_70hz ? NATIVE_WIDE_H_ACTIVE : 11'd1440)
                                        : (native_70hz ? NATIVE_H_ACTIVE : TV_H_ACTIVE);
-    wire [10:0] h_front  = mode_x_360 ? (native_70hz ? NATIVE_WIDE_H_FRONT : 11'd112)
+    wire [10:0] h_front  = mode_x_256 ? (native_70hz ? 11'd80 : 11'd272) :
+                           mode_x_360 ? (native_70hz ? NATIVE_WIDE_H_FRONT : 11'd112)
                                        : (native_70hz ? NATIVE_H_FRONT : TV_H_FRONT);
     wire [10:0] h_sync   = native_70hz ? NATIVE_H_SYNC : TV_H_SYNC;
     wire [10:0] h_total  = native_70hz ? (mode_x_360 ? NATIVE_WIDE_H_TOTAL : NATIVE_H_TOTAL)
                                        : TV_H_TOTAL;
-    wire [9:0]  v_active = mode_x_240       ? 10'd240
-                          : native_200_line ? NATIVE_V_ACTIVE
+    wire [9:0]  v_active = mode_x_256       ? (native_70hz ? 10'd464 : 10'd232)
+                          : mode_x_240      ? 10'd240
+                          : native_line_double ? NATIVE_V_ACTIVE
                                              : TV_V_ACTIVE;
     // 240 direct lines leave only 22 raster lines blank in the 262-line 60 Hz
     // profile. This is deliberately exposed for hardware testing; an eight
     // line front porch still leaves CRT V offsets 0..7 safe from underflow.
-    wire [9:0]  v_front  = mode_x_240 ? (native_70hz ? 10'd12 : 10'd8)
+    // Centre the 464-line Native picture within the standard 480-line VGA
+    // field. On TV, leave 19 lines after sync before the next active picture,
+    // close to the established 200-line profile's 21-line back porch.
+    wire [9:0]  v_front  = mode_x_256 ? (native_70hz ? 10'd18 : 10'd8) :
+                           mode_x_240 ? (native_70hz ? 10'd12 : 10'd8)
                                        : (native_70hz ? NATIVE_V_FRONT : TV_V_FRONT);
-    wire [9:0]  v_sync   = mode_x_240 ? (native_70hz ? 10'd2 : 10'd3)
+    wire [9:0]  v_sync   = mode_x_256 ? (native_70hz ? 10'd2 : 10'd3) :
+                           mode_x_240 ? (native_70hz ? 10'd2 : 10'd3)
                                        : (native_70hz ? NATIVE_V_SYNC : TV_V_SYNC);
-    wire [9:0]  v_total  = native_70hz ? NATIVE_V_TOTAL : TV_V_TOTAL;
+    // 256x232 uses the 525-line VGA 60 Hz frame: 464 displayed scanlines.
+    wire [9:0]  v_total  = native_70hz ? (mode_x_256 ? 10'd525 : NATIVE_V_TOTAL)
+                                           : TV_V_TOTAL;
 
     // CRT H/V offset (PCXT-EGA.sv OSD), matching how the EGA CRTC applies the
     // same two settings. There, a higher offset takes delay off HSYNC/VSYNC
@@ -163,7 +175,7 @@ module vga_mode13_timing(
     // repeats every 200-line source row, yielding the real 640x400 mode 13h
     // image instead of a vertically compressed 640x200 one.
     assign pixel_x = native_70hz ? {1'b0, h_count[10:1]} : {1'b0, h_count[10:2]};
-    assign pixel_y = native_200_line ? {1'b0, v_count[9:1]} : v_count;
+    assign pixel_y = native_line_double ? {1'b0, v_count[9:1]} : v_count;
     assign active = enable && (h_count < h_active) && (v_count < v_active);
     assign hblank = !enable || (h_count >= h_active);
     assign vblank = !enable || (v_count >= v_active);

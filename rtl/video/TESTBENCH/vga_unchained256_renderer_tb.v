@@ -98,6 +98,23 @@ module vga_unchained256_renderer_tb;
         // Cute Demo's 336-pixel virtual map uses CRTC Offset 42 = 84 bytes.
         crtc_offset = 8'd42;
         check_addr(10'd319, 10'd239, 16'h4EBB);
+
+        // Dyna Blaster's 256x232 viewport can use either a 512-pixel virtual
+        // map (R13=64) or a direct 256-pixel row (R13=32).
+        mode_x_profile = 2'd3;
+        crtc_offset = 8'd64;
+        check_addr(10'd0,   10'd1,   16'h0080);
+        check_addr(10'd255, 10'd231, 16'h73BF);
+        // The game's R18=A3h puts a lower window below physical line 163.
+        crtc_line_compare = 10'h0A3;
+        check_addr(10'd0, 10'd81, 16'h2880);
+        check_addr(10'd0, 10'd82, 16'h0000);
+        crtc_line_compare = 10'h1FF;
+        crtc_offset = 8'd32;
+        check_addr(10'd0,   10'd1,   16'h0040);
+        check_addr(10'd255, 10'd231, 16'h39FF);
+        mode_x_profile = 2'd2;
+        crtc_offset = 8'd42;
         // Its 0,2,4,6 pel values map to 0,1,2,3 source pixels.
         attr_pixel_pan = 4'd6;
         check_addr(10'd1,   10'd0,   16'h0001);

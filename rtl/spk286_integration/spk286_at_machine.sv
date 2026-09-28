@@ -22,12 +22,6 @@
 `ifndef ENABLE_MIDI
 `define ENABLE_MIDI 0
 `endif
-`ifndef ENABLE_EMS
-`define ENABLE_EMS 0
-`endif
-`ifndef ENABLE_UMB
-`define ENABLE_UMB 0
-`endif
 
 module spk286_at_machine #(
     parameter logic CPU_USES_SAMPLE_EDGE = 1'b0
@@ -36,6 +30,9 @@ module spk286_at_machine #(
     input  logic         clk_cpu,
     input  logic         cpu_sample_edge,
     input  logic         reset,
+    // The video raster can run its power-on timing while the machine remains
+    // reset for a missing system BIOS.
+    input  logic         video_reset,
     // CPU-local reset.  The AT splash holds the 286/BIU in reset while the
     // device router and EGA raster remain alive to render the splash itself.
     input  logic         cpu_reset,
@@ -56,6 +53,7 @@ module spk286_at_machine #(
     input  logic         midi_baudce,
     input  logic         uart_baudce,
     input  logic         midi_rx,
+    input  logic         uart1_rx,
     input  logic         uart2_rx,
     input  logic         uart2_cts_n,
     input  logic         uart2_dsr_n,
@@ -80,6 +78,7 @@ module spk286_at_machine #(
     input  logic [7:0]   keyboard_byte,
     output logic         keyboard_byte_ready,
     output logic         keyboard_translate_set1,
+    output logic         keyboard_num_lock,
     input  logic         periodic_tick,
     input  logic         second_tick,
     input  logic         parity_event,
@@ -149,6 +148,7 @@ module spk286_at_machine #(
     output logic signed [15:0] sb_sound_l,
     output logic signed [15:0] sb_sound_r,
     output logic         midi_tx,
+    output logic         uart1_rts_n,
     output logic         uart2_tx,
     output logic         uart2_rts_n,
     output logic         uart2_dtr_n,
@@ -348,8 +348,11 @@ module spk286_at_machine #(
             installed_ram_size_q <= normalize_ram_size(installed_ram_size_osd);
     end
 
-    assign ems_runtime_enabled = (`ENABLE_EMS) && at286ctl_eff_ems;
-    assign umb_runtime_enabled = (`ENABLE_UMB) && at286ctl_eff_umb;
+    // The AT profile always decodes its EMS and UMB windows. Keep the legacy
+    // control inputs above for integration compatibility; they no longer gate
+    // the machine memory map.
+    assign ems_runtime_enabled = 1'b1;
+    assign umb_runtime_enabled = 1'b1;
 
     logic        memory_cycle;
     logic        conventional_ram_select;
@@ -364,9 +367,8 @@ module spk286_at_machine #(
     function automatic logic ems_page_selected(input logic [23:0] address);
         begin
             ems_page_selected = 1'b0;
-            if (ems_runtime_enabled &&
-                (address >= 24'h0D0000) &&
-                (address <= 24'h0DFFFF)) begin
+            if ((address >= 24'h0E0000) &&
+                (address <= 24'h0EFFFF)) begin
                 case (address[15:14])
                     2'b00: ems_page_selected = ems_window_enabled[0];
                     2'b01: ems_page_selected = ems_window_enabled[1];
@@ -600,6 +602,7 @@ module spk286_at_machine #(
                             ((port >= 16'h8980) && (port <= 16'h898F)) ||
                             ((port >= 16'h01F0) && (port <= 16'h01F7)) ||
                             ((port >= 16'h0200) && (port <= 16'h0207)) ||
+                            ((port >= 16'h03F8) && (port <= 16'h03FF)) ||
                             ((`ENABLE_MIDI) &&
                              (port >= 16'h02F8) && (port <= 16'h02FF)) ||
                             ((`ENABLE_MIDI) &&
@@ -843,6 +846,8 @@ module spk286_at_machine #(
         .clk                    (clk),
         .cpu_sample_edge        (cpu_sample_edge),
         .reset                  (reset),
+        .video_reset            (video_reset),
+        .prebios_video           ((reset || cpu_reset) && !video_reset),
         .clk_video              (clk_video),
         .splashscreen           (splashscreen),
         .ega_monitor_profile    (ega_monitor_profile),
@@ -872,11 +877,13 @@ module spk286_at_machine #(
         .midi_baudce           (midi_baudce),
         .uart_baudce           (uart_baudce),
         .midi_rx               (midi_rx),
+        .uart1_rx              (uart1_rx),
         .uart2_rx              (uart2_rx),
         .uart2_cts_n           (uart2_cts_n),
         .uart2_dsr_n           (uart2_dsr_n),
         .uart2_dcd_n           (uart2_dcd_n),
         .midi_tx               (midi_tx),
+        .uart1_rts_n           (uart1_rts_n),
         .uart2_tx              (uart2_tx),
         .uart2_rts_n           (uart2_rts_n),
         .uart2_dtr_n           (uart2_dtr_n),
@@ -897,6 +904,7 @@ module spk286_at_machine #(
         .keyboard_byte          (keyboard_byte),
         .keyboard_byte_ready    (keyboard_byte_ready),
         .keyboard_translate_set1(keyboard_translate_set1),
+        .keyboard_num_lock(keyboard_num_lock),
         .keyboard_output_valid  (keyboard_output_valid),
         .keyboard_output_byte   (keyboard_output_byte),
         .irq1                   (),

@@ -2,7 +2,7 @@
 
 // LIM EMS 4.0-compatible page-register block.
 //
-// The visible page frame is D0000h-DFFFFh, split into four 16 KiB windows.
+// The visible page frame is E0000h-EFFFFh, split into four 16 KiB windows.
 // Each window selects one of 128 16 KiB pages, providing 2 MiB of expanded
 // memory.  The backing address translation is deliberately kept at the
 // machine/memory boundary; this block owns only the 260h-263h registers.

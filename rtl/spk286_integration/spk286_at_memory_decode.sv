@@ -1,4 +1,4 @@
-// Authoritative address-range decode for the first AT memory profile.
+// Authoritative address-range decode for the PCAT-286 AT memory profile.
 //
 // This unit only classifies a normalized memory/code request.  It does not
 // implement RAM, ROM images or video side effects; those remain chipset
@@ -62,16 +62,17 @@ module spk286_at_memory_decode (
                                    (((address >= SYSTEM_BIOS_BASE) &&
                                      (address <= SYSTEM_BIOS_LIMIT)) ||
                                     system_bios_alias_select);
-        // The first profile has 640 KiB conventional + 384 KiB extended.
+        // The 1 MiB profile has 640 KiB conventional + 384 KiB extended.
         // Larger profiles retain that 384 KiB remap offset. Like the 86Box
         // 16-bit-bus AT model, the 16 MiB profile reserves the top 128 KiB:
         // FE0000h-FEFFFFh is unmapped and FF0000h-FFFFFFh is the BIOS alias.
         case (installed_ram_size)
-            3'd1:    extended_ram_limit = 24'h25FFFF;
-            3'd2:    extended_ram_limit = 24'h45FFFF;
-            3'd3:    extended_ram_limit = 24'h85FFFF;
-            3'd4:    extended_ram_limit = 24'hFDFFFF;
-            default: extended_ram_limit = 24'h15FFFF;
+            3'd0:    extended_ram_limit = 24'h45FFFF;
+            3'd1:    extended_ram_limit = 24'h85FFFF;
+            3'd2:    extended_ram_limit = 24'hFDFFFF;
+            3'd3:    extended_ram_limit = 24'h15FFFF;
+            3'd4:    extended_ram_limit = 24'h25FFFF;
+            default: extended_ram_limit = 24'h45FFFF;
         endcase
         extended_ram_select      = valid_memory_class &&
                                    (address >= EXTENDED_RAM_BASE) &&
@@ -87,27 +88,23 @@ module spk286_at_memory_decode (
                                   ((address[15:14] == 2'b11) &&
                                    ems_window_enabled[3]);
         ems_aperture_select     = valid_memory_class && ems_enabled &&
-                                  (address >= 24'h0D0000) &&
-                                  (address <= 24'h0DFFFF) &&
+                                  (address >= 24'h0E0000) &&
+                                  (address <= 24'h0EFFFF) &&
                                   ems_window_select;
         ems_page_frame_select  = valid_memory_class && ems_enabled &&
-                                 (address >= 24'h0D0000) &&
-                                 (address <= 24'h0DFFFF);
-
-        // C4000-CFFFF is reserved for option ROMs, including XTIDE at
-        // C8000. Keep the optional UMB contiguous at E0000-EFFFF instead.
-        umb_region_select      = valid_memory_class && umb_enabled &&
                                  (address >= 24'h0E0000) &&
                                  (address <= 24'h0EFFFF);
 
-        // C0000-EFFFF is normally the option-ROM region. D0000-DFFFF is
-        // replaced by the EMS page frame when EMS is enabled; E0000-EFFFF
-        // is replaced by the optional UMB when that OSD feature is enabled.
+        // Preserve the EGA option ROM at C0000-C7FFF. The always-on UMB
+        // covers C8000-DFFFF, and the EMS page frame occupies E0000-EFFFF.
+        umb_region_select      = valid_memory_class && umb_enabled &&
+                                 (address >= 24'h0C8000) &&
+                                 (address <= 24'h0DFFFF);
+
+        // Only the EGA BIOS window remains in the option-ROM region.
         option_region_select    = valid_memory_class &&
                                    (address >= 24'h0C0000) &&
-                                   (address <= 24'h0EFFFF) &&
-                                   !umb_region_select &&
-                                   !ems_page_frame_select;
+                                   (address <= 24'h0C7FFF);
 
         memory_cycle = conventional_ram_select || video_aperture_select ||
                        option_region_select || system_bios_select ||

@@ -246,6 +246,65 @@ module spk286_at_pic_tb;
         if (intr)
             $fatal(1, "A3 cascaded EOI did not clear INTR");
 
+`ifndef A3_PIC_MODEL
+        // A BIOS soft reboot can abandon IRQ1 without sending EOI. ICW1
+        // must clear that service state without a board reset. Also cover
+        // the slave, where both its ISR and master IRQ2 remain in service.
+        write_pic(16'h0021, 8'hF9); // IRQ1 and IRQ2
+        irq_request = 16'h0002;
+        wait_for_intr();
+        send_inta(1'b0, 8'h00);
+        send_inta(1'b1, 8'h09);
+        irq_request = 16'h0000;
+        write_pic(16'h0020, 8'h0B); // read ISR
+        read_pic(16'h0020, 8'h02);
+        write_pic(16'h0020, 8'h11);
+        write_pic(16'h0021, 8'h08);
+        write_pic(16'h0021, 8'h04);
+        write_pic(16'h0021, 8'h01);
+        write_pic(16'h0020, 8'h0B);
+        read_pic(16'h0020, 8'h00);
+        write_pic(16'h0021, 8'hF9);
+        irq_request = 16'h0002;
+        wait_for_intr();
+        send_inta(1'b0, 8'h00);
+        send_inta(1'b1, 8'h09);
+        irq_request = 16'h0000;
+        send_master_eoi();
+        repeat (8) @(posedge clk);
+        irq_request = 16'h0100;
+        wait_for_intr();
+        send_inta(1'b0, 8'h00);
+        send_inta(1'b1, 8'h70);
+        irq_request = 16'h0000;
+        write_pic(16'h0020, 8'h0B);
+        write_pic(16'h00A0, 8'h0B);
+        read_pic(16'h0020, 8'h04);
+        read_pic(16'h00A0, 8'h01);
+        write_pic(16'h0020, 8'h11);
+        write_pic(16'h0021, 8'h08);
+        write_pic(16'h0021, 8'h04);
+        write_pic(16'h0021, 8'h01);
+        write_pic(16'h00A0, 8'h11);
+        write_pic(16'h00A1, 8'h70);
+        write_pic(16'h00A1, 8'h02);
+        write_pic(16'h00A1, 8'h01);
+        write_pic(16'h0020, 8'h0B);
+        write_pic(16'h00A0, 8'h0B);
+        read_pic(16'h0020, 8'h00);
+        read_pic(16'h00A0, 8'h00);
+        write_pic(16'h0021, 8'hFB);
+        write_pic(16'h00A1, 8'hFE);
+        irq_request = 16'h0100;
+        wait_for_intr();
+        send_inta(1'b0, 8'h00);
+        send_inta(1'b1, 8'h70);
+        irq_request = 16'h0000;
+        write_pic(16'h00A0, 8'h20);
+        send_master_eoi();
+        $display("A3_AT_PIC_REINIT_PASS master_irq1=09 slave_irq8=70");
+`endif
+
         if (protocol_error)
             $fatal(1, "A3 PIC reported a protocol error");
 

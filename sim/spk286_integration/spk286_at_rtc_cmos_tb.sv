@@ -20,6 +20,7 @@ module spk286_at_rtc_cmos_tb;
     logic [15:0] mgmt_address = 16'h0000;
     logic [15:0] mgmt_writedata = 16'h0000;
     logic mgmt_write = 1'b0;
+    wire [15:0] mgmt_readdata;
     logic periodic_tick = 1'b0;
     logic second_tick = 1'b0;
     logic [2:0] installed_ram_size = 3'd0;
@@ -45,6 +46,7 @@ module spk286_at_rtc_cmos_tb;
         .request_read_data_valid(request_read_data_valid),
         .mgmt_address(mgmt_address), .mgmt_writedata(mgmt_writedata),
         .mgmt_write(mgmt_write),
+        .mgmt_readdata(mgmt_readdata),
         .periodic_tick(periodic_tick), .second_tick(second_tick),
         .irq8(irq8), .nmi_mask(nmi_mask),
         .side_effect_count(side_effect_count),
@@ -173,6 +175,91 @@ module spk286_at_rtc_cmos_tb;
         end
     endtask
 
+    // MRBIOS 1.65 F000:E9EC checks these fields independently of the AT
+    // checksum. The low five bits of CMOS 3Fh hold the sum plus 1Fh.
+    task automatic read_mrbios_checksum(output logic [4:0] sum);
+        logic [7:0] value;
+        integer address;
+        begin
+            sum = 5'h1F;
+            for (address = 'h10; address < 'h3F; address = address + 1) begin
+                if ((address == 'h11) || (address == 'h13) ||
+                    ((address >= 'h1B) && (address <= 'h2D)) ||
+                    ((address >= 'h33) && (address <= 'h3E))) begin
+                    cmos_read(address[6:0], value);
+                    sum = sum + value[4:0];
+                end
+            end
+        end
+    endtask
+
+    task automatic check_mrbios_date_sequence;
+        logic [7:0] original_century, original_37, original_3f;
+        logic [7:0] snapshot [0:47];
+        logic [7:0] century, stored;
+        logic [4:0] sum;
+        integer cycle, address;
+        begin
+            cmos_read(7'h32, original_century);
+            cmos_read(7'h37, original_37);
+            cmos_read(7'h3F, original_3f);
+            cmos_write(7'h32, 8'h00);
+            cmos_write(7'h37, 8'h00);
+            read_mrbios_checksum(sum);
+            cmos_write(7'h3F, {3'b101, sum});
+
+            // FreeDOS initializes the DOS clock and calls INT 1Ah/AH=05.
+            // MRBIOS's date setter writes the century at 32h. Its private
+            // checksum includes 37h but deliberately excludes century 32h.
+            for (cycle = 0; cycle < 4; cycle = cycle + 1) begin
+                century = cycle[0] ? 8'h20 : 8'h19;
+                cmos_write(7'h08, 8'h01);
+                cmos_write(7'h09, 8'h80);
+                cmos_write(7'h32, century);
+                cmos_write(7'h07, 8'h01);
+                cmos_write(7'h0B, 8'h02);
+                read_mrbios_checksum(sum);
+                cmos_read(7'h3F, stored);
+                check(stored[4:0] == sum,
+                      "MRBIOS secondary checksum changed after setting the date");
+                check_cmos(7'h37, 8'h00,
+                           "CPU century write changed independent CMOS 37h");
+
+                // Capture through the side-effect-free HPS readback path,
+                // then restore in ascending order as Main does on reset.
+                for (address = 'h10; address <= 'h3F; address = address + 1) begin
+                    @(negedge clk);
+                    mgmt_address = 16'hF400 + address[15:0];
+                    #1;
+                    snapshot[address - 'h10] = mgmt_readdata[7:0];
+                end
+                check(snapshot['h27] == 8'h00,
+                      "CMOS snapshot substituted century for register 37h");
+                @(negedge clk);
+                reset = 1'b1;
+                for (address = 'h10; address <= 'h3F; address = address + 1)
+                    mgmt_write_byte(16'hF400 + address[15:0],
+                                    snapshot[address - 'h10]);
+                reset = 1'b0;
+                repeat (2) @(negedge clk);
+                check_cmos(7'h32, century,
+                           "host restore of CMOS 37h overwrote century 32h");
+                read_mrbios_checksum(sum);
+                cmos_read(7'h3F, stored);
+                check(stored[4:0] == sum,
+                      "MRBIOS secondary checksum changed across host reset");
+            end
+
+            cmos_write(7'h37, 8'h5A);
+            check_cmos(7'h32, century,
+                       "CPU write to CMOS 37h overwrote century 32h");
+            cmos_write(7'h32, original_century);
+            cmos_write(7'h37, original_37);
+            cmos_write(7'h3F, original_3f);
+            $display("AT_RTC_MRBIOS_DATE_PASS resets=4 independent_32_37=1");
+        end
+    endtask
+
     initial begin
         logic [7:0] value;
 
@@ -210,9 +297,11 @@ module spk286_at_rtc_cmos_tb;
         check_cmos(7'h00, 8'h56, "host seconds were lost during reset");
         check_cmos(7'h0F, 8'h0A, "host shutdown byte was lost during reset");
         check_cmos(7'h7F, 8'h5A, "last host CMOS byte was lost during reset");
-        check_cmos(7'h18, 8'h01, "host reset upload replaced fixed RAM size");
+        check_cmos(7'h18, 8'h0D, "host reset upload replaced fixed RAM size");
         check_cmos(7'h2E, 8'h01, "reset upload checksum high byte was wrong");
-        check_cmos(7'h2F, 8'h94, "reset upload checksum low byte was wrong");
+        check_cmos(7'h2F, 8'hA0, "reset upload checksum low byte was wrong");
+
+        check_mrbios_date_sequence();
 
         cmos_write(7'h10, 8'h24);
         // Even a BIOS-supplied checksum is RAM, not resettable device state.
@@ -246,28 +335,30 @@ module spk286_at_rtc_cmos_tb;
         cmos_write(7'h14, 8'h00);
         cmos_write(7'h0F, 8'h00);
         cmos_write(7'h2E, 8'h01);
-        cmos_write(7'h2F, 8'h03);
+        cmos_write(7'h2F, 8'h0F);
 
-        // The CMOS description and actual decode agree on a 1 MiB AT:
-        // 640 KiB conventional plus 384 KiB above 1 MiB.
+        // The default CMOS description and actual decode agree on a 4 MiB AT:
+        // 640 KiB conventional plus 3456 KiB above 1 MiB.
         check_cmos(7'h15, 8'h80, "base-memory low byte was not 640 KiB");
         check_cmos(7'h16, 8'h02, "base-memory high byte was not 640 KiB");
-        check_cmos(7'h17, 8'h80, "extended-memory low byte was not 384 KiB");
-        check_cmos(7'h18, 8'h01, "extended-memory high byte was not 384 KiB");
+        check_cmos(7'h17, 8'h80, "extended-memory low byte was not 3456 KiB");
+        check_cmos(7'h18, 8'h0D, "extended-memory high byte was not 3456 KiB");
         check_cmos(7'h30, 8'h80, "duplicate extended-memory low byte differed");
-        check_cmos(7'h31, 8'h01, "duplicate extended-memory high byte differed");
+        check_cmos(7'h31, 8'h0D, "duplicate extended-memory high byte differed");
         check_cmos(7'h34, 8'h00, "memory above 16 MiB was advertised");
         check_cmos(7'h35, 8'h00, "memory above 16 MiB was advertised");
         check_cmos(7'h2E, 8'h01, "initial CMOS checksum high byte was wrong");
-        check_cmos(7'h2F, 8'h03, "initial CMOS checksum low byte was wrong");
+        check_cmos(7'h2F, 8'h0F, "initial CMOS checksum low byte was wrong");
 
         // Exercise every OSD profile explicitly. The 16 MiB selection must
         // advertise 15232 KiB (3B80h), an integral 238 blocks of 64 KiB.
-        check_ram_profile(3'd1, 16'd1408, 16'h0107);
-        check_ram_profile(3'd2, 16'd3456, 16'h010F);
-        check_ram_profile(3'd3, 16'd7552, 16'h011F);
-        check_ram_profile(3'd4, 16'd15232, 16'h013D);
-        check_ram_profile(3'd0, 16'd384, 16'h0103);
+        check_ram_profile(3'd0, 16'd3456, 16'h010F);
+        check_ram_profile(3'd1, 16'd7552, 16'h011F);
+        check_ram_profile(3'd2, 16'd15232, 16'h013D);
+        check_ram_profile(3'd3, 16'd384, 16'h0103);
+        check_ram_profile(3'd4, 16'd1408, 16'h0107);
+        // The remaining RAM/checksum fixtures use the 1 MiB profile.
+        check_ram_profile(3'd3, 16'd384, 16'h0103);
 
         // Exact Landmark CMOS RAM algorithm (F000:A26C): save 10h-3Fh,
         // write/read 55h, write/read AAh, then restore all 48 bytes. This
@@ -349,6 +440,7 @@ module spk286_at_rtc_cmos_tb;
         pulse_second();
         check_cmos(7'h09, 8'h00, "year 2099 did not roll to 00");
         check_cmos(7'h32, 8'h21, "century did not roll from 20 to 21");
+        check_cmos(7'h37, 8'h00, "calendar rollover changed CMOS 37h");
         mgmt_write_byte(16'hF400, 8'h59);
         mgmt_write_byte(16'hF402, 8'h59);
         mgmt_write_byte(16'hF404, 8'h23);

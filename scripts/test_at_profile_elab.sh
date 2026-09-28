@@ -11,8 +11,8 @@ if ! grep -q '`ifdef AT_PROFILE' "$ROOT_DIR/sys/sys_top.v" || \
   exit 1
 fi
 
-if ! grep -q 'assign hdmi_tx_clk = hdmi_clk_out;' "$ROOT_DIR/sys/sys_top.v"; then
-  echo "AT_PROFILE HDMI clock must use the HDMI PLL" >&2
+if ! grep -q 'wire clk_hdmi  = hdmi_clk_out;' "$ROOT_DIR/sys/sys_top.v"; then
+  echo "AT_PROFILE HDMI output must use the HDMI PLL" >&2
   exit 1
 fi
 
@@ -50,7 +50,7 @@ if ! grep -q '"P1O7,Boot Splash Screen,Yes,No;"' \
      "$ROOT_DIR/PCAT-286.sv" || \
    ! grep -q '"P1FC0,ROM,PCAT BIOS:;"' \
      "$ROOT_DIR/PCAT-286.sv" || \
-   ! grep -q '"P1FC2,ROM,C800 BIOS:;"' \
+   grep -q '"P1FC2,ROM,C800 BIOS:;"' \
      "$ROOT_DIR/PCAT-286.sv" || \
    ! grep -q '"P1FC3,ROM,EGA BIOS:;"' \
      "$ROOT_DIR/PCAT-286.sv" || \
@@ -102,6 +102,7 @@ SOURCE_FILES=(
   "$ROOT_DIR/rtl/common/simple_fifo.v"
   "$ROOT_DIR/rtl/common/floppy.v"
   "$ROOT_DIR/rtl/common/ide.v"
+  "$ROOT_DIR/rtl/common/MSMouseWrapper.v"
   "$ROOT_DIR/sim/spk286_integration/dpram_model.sv"
   "$ROOT_DIR/rtl/hps_ext.v"
   "$KF8253_DIR/KF8253.sv"
@@ -113,6 +114,8 @@ SOURCE_FILES=(
   "$ROOT_DIR/rtl/common/tandy_pcjr_joy.sv"
   "$ROOT_DIR/rtl/common/spk286_debug_min_overlay.sv"
   "$ROOT_DIR/sys/mt32pi.sv"
+  "$ROOT_DIR/sys/at_cdc_snapshot.sv"
+  "$ROOT_DIR/sim/spk286_integration/video_mixer_elab_stub.sv"
   "$ROOT_DIR/rtl/KFPC-XT/HDL/ega_vram_bram_frontend.sv"
   "$ROOT_DIR/rtl/KFPC-XT/HDL/KFSDRAM/HDL/KFSDRAM.sv"
   "$KF8259_DIR/KF8259_Common_Package.svh"
@@ -124,6 +127,11 @@ SOURCE_FILES=(
   "$KF8259_DIR/KF8259.sv"
 )
 SOUND_FILES=(
+  "$ROOT_DIR/rtl/sound/soundblaster.sv"
+  "$ROOT_DIR/rtl/sound/sb_dsp.sv"
+  "$ROOT_DIR/rtl/sound/sb_mixer.sv"
+  "$ROOT_DIR/rtl/sound/sb_volume.sv"
+  "$ROOT_DIR/rtl/sound/sb_dma_glue.sv"
   "$ROOT_DIR/rtl/sound/saa1099.sv"
   "$ROOT_DIR/rtl/sound/jtopl/hdl/jtopl2.v"
   "$ROOT_DIR/rtl/sound/jtopl/hdl/jtopl_acc.v"
@@ -169,13 +177,18 @@ done
 
 # Match the Quartus source closure for the real EGA raster.
 for source in "$ROOT_DIR"/rtl/video/*.v "$ROOT_DIR"/rtl/video/*.sv; do
+  if [[ "$source" == */video_monochrome_converter.sv ]]; then
+    continue
+  fi
   SOURCE_FILES+=("$source")
 done
+SOURCE_FILES+=("$ROOT_DIR/sim/spk286_integration/video_monochrome_elab_stub.sv")
 
 iverilog -g2012 -I"$KF8253_DIR" -Wall -Wno-timescale \
     -DENABLE_OPL2=1 \
     -DENABLE_CMS=1 \
     -DENABLE_TANDY_AUDIO=1 \
+    -DENABLE_SB=1 \
     -DENABLE_MIDI=1 \
     -DENABLE_EMS=1 \
     -DENABLE_UMB=1 \

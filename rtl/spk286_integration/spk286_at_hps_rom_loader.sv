@@ -30,14 +30,12 @@ module spk286_at_hps_rom_loader (
     output logic [2:0]  bios_protect_flag,
     output logic        main_rom_loaded,
     output logic        ega_rom_loaded,
-    output logic        xtide_rom_loaded,
     output logic        load_active,
     output logic        protocol_error
 );
 
     localparam logic [1:0] TARGET_MAIN  = 2'd0;
     localparam logic [1:0] TARGET_EGA   = 2'd1;
-    localparam logic [1:0] TARGET_XTIDE = 2'd2;
 
     localparam logic [1:0] STATE_IDLE       = 2'd0;
     localparam logic [1:0] STATE_WAIT_ACCEPT = 2'd1;
@@ -49,16 +47,14 @@ module spk286_at_hps_rom_loader (
     logic [15:0] data_q;
     logic        main_seen_q;
     logic        ega_seen_q;
-    logic        xtide_seen_q;
-    logic        xtide_overflow_q;
-    logic [2:0]  download_active;
-    logic [2:0]  download_active_q;
+    logic        ega_overflow_q;
+    logic [1:0]  download_active;
+    logic [1:0]  download_active_q;
 
     logic        select_main;
     logic        select_ega;
-    logic        select_xtide;
     logic        selected_download;
-    logic        oversized_option_rom_write;
+    logic        oversized_ega_write;
     logic [1:0]  selected_target;
     logic [23:0] selected_address;
 
@@ -66,22 +62,21 @@ module spk286_at_hps_rom_loader (
     // present the previous file's final address when download rises.
     assign download_active[0] = ioctl_download && (ioctl_index[5:0] == 6'd0);
     assign download_active[1] = ioctl_download && (ioctl_index[5:0] == 6'd3);
-    assign download_active[2] = ioctl_download && (ioctl_index == 8'd2);
 
     always_comb begin
         select_main = (ioctl_index[5:0] == 6'd0) &&
                       (ioctl_addr[24:16] == 9'b000000000);
+        // The EGA option ROM occupies C0000-C7FFF so its image must fit
+        // below the always-on UMB beginning at C8000.
         select_ega = (ioctl_index[5:0] == 6'd3) &&
-                     (ioctl_addr[24:16] == 9'b000000000);
-        select_xtide = (ioctl_index == 8'd2) &&
-                       (ioctl_addr[24:13] == 12'b000000000000) &&
-                       !ioctl_addr[0];
+                     (ioctl_addr[24:15] == 10'b0000000000) &&
+                     !ioctl_addr[0];
         selected_download = ioctl_download &&
-                            (select_main || select_ega || select_xtide);
-        oversized_option_rom_write = ioctl_download && ioctl_wr &&
-                                     (((ioctl_index == 8'd2) &&
-                                       ((ioctl_addr[24:13] != 12'b000000000000) ||
-                                        ioctl_addr[0])));
+                            (select_main || select_ega);
+        oversized_ega_write = ioctl_download && ioctl_wr &&
+                              (ioctl_index[5:0] == 6'd3) &&
+                              ((ioctl_addr[24:15] != 10'b0000000000) ||
+                               ioctl_addr[0]);
 
         if (select_main) begin
             selected_target = TARGET_MAIN;
@@ -89,12 +84,9 @@ module spk286_at_hps_rom_loader (
         end else if (select_ega) begin
             selected_target = TARGET_EGA;
             selected_address = 24'h0C0000 + {8'h00, ioctl_addr[15:0]};
-        end else if (select_xtide) begin
-            selected_target = TARGET_XTIDE;
-            selected_address = 24'h0C8000 + {8'h00, ioctl_addr[15:0]};
         end else begin
-            selected_target = TARGET_XTIDE;
-            selected_address = 24'h0C8000 + {8'h00, ioctl_addr[15:0]};
+            selected_target = TARGET_MAIN;
+            selected_address = 24'h000000;
         end
 
         loader_valid      = (state_q != STATE_IDLE);
@@ -122,27 +114,23 @@ module spk286_at_hps_rom_loader (
             address_q        <= 24'h000000;
             data_q           <= 16'h0000;
             main_seen_q      <= 1'b0;
-            download_active_q <= 3'b000;
+            download_active_q <= 2'b00;
             ega_seen_q       <= 1'b0;
-            xtide_seen_q     <= 1'b0;
-            xtide_overflow_q <= 1'b0;
+            ega_overflow_q   <= 1'b0;
             main_rom_loaded  <= 1'b0;
             ega_rom_loaded   <= 1'b0;
-            xtide_rom_loaded <= 1'b0;
             protocol_error   <= 1'b0;
         end else if (!sdram_initialized) begin
             state_q          <= STATE_IDLE;
             main_seen_q      <= 1'b0;
-            download_active_q <= 3'b000;
+            download_active_q <= 2'b00;
             ega_seen_q       <= 1'b0;
-            xtide_seen_q     <= 1'b0;
-            xtide_overflow_q <= 1'b0;
+            ega_overflow_q   <= 1'b0;
             main_rom_loaded  <= 1'b0;
             ega_rom_loaded   <= 1'b0;
-            xtide_rom_loaded <= 1'b0;
         end else begin
             download_active_q <= download_active;
-            // Match XT: replacing a file invalidates its previous presence.
+            // Replacing a file invalidates its previous presence.
             // A word captured on this same edge sets seen again below.
             if (download_active[0] && !download_active_q[0]) begin
                 main_seen_q <= 1'b0;
@@ -151,15 +139,10 @@ module spk286_at_hps_rom_loader (
             if (download_active[1] && !download_active_q[1]) begin
                 ega_seen_q <= 1'b0;
                 ega_rom_loaded <= 1'b0;
+                ega_overflow_q <= 1'b0;
             end
-            if (download_active[2] && !download_active_q[2]) begin
-                xtide_seen_q <= 1'b0;
-                xtide_rom_loaded <= 1'b0;
-                xtide_overflow_q <= 1'b0;
-            end
-            if (oversized_option_rom_write) begin
-                if (ioctl_index == 8'd2)
-                    xtide_overflow_q <= 1'b1;
+            if (oversized_ega_write) begin
+                ega_overflow_q <= 1'b1;
                 protocol_error <= 1'b1;
             end
             if (state_q == STATE_IDLE && selected_download && ioctl_wr) begin
@@ -171,8 +154,6 @@ module spk286_at_hps_rom_loader (
                     main_seen_q <= 1'b1;
                 else if (selected_target == TARGET_EGA)
                     ega_seen_q <= 1'b1;
-                else if (selected_target == TARGET_XTIDE)
-                    xtide_seen_q <= 1'b1;
             end else if (state_q == STATE_WAIT_ACCEPT) begin
                 if (loader_accept)
                     state_q <= STATE_WAIT_READY;
@@ -181,11 +162,9 @@ module spk286_at_hps_rom_loader (
                     state_q <= STATE_IDLE;
                     if (target_q == TARGET_MAIN && !ioctl_download)
                         main_rom_loaded <= 1'b1;
-                    else if (target_q == TARGET_EGA && !ioctl_download)
+                    else if (target_q == TARGET_EGA && !ioctl_download &&
+                             !ega_overflow_q)
                         ega_rom_loaded <= 1'b1;
-                    else if (target_q == TARGET_XTIDE && !ioctl_download &&
-                             !xtide_overflow_q)
-                        xtide_rom_loaded <= 1'b1;
                 end
             end
 
@@ -195,10 +174,8 @@ module spk286_at_hps_rom_loader (
             if (!ioctl_download && (state_q == STATE_IDLE)) begin
                 if (main_seen_q)
                     main_rom_loaded <= 1'b1;
-                if (ega_seen_q)
+                if (ega_seen_q && !ega_overflow_q)
                     ega_rom_loaded <= 1'b1;
-                if (xtide_seen_q && !xtide_overflow_q)
-                    xtide_rom_loaded <= 1'b1;
             end
 
             if (loader_ready && state_q != STATE_WAIT_READY)

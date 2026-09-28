@@ -2,22 +2,29 @@
 
 module vga_unchained256_ctrl_tb;
     reg mode13_active = 1'b0;
+    reg mode12_tweak_pending = 1'b0;
     reg chain4 = 1'b1;
     reg shift256 = 1'b0;
     reg graphics_mode = 1'b0;
     reg [1:0] mem_map_sel = 2'b00;
     reg [7:0] crtc_h_displayed = 8'd79;
     reg [9:0] crtc_v_displayed = 10'd400;
+    reg [7:0] crtc_offset = 8'd40;
+    reg [7:0] crtc_underline_loc = 8'h40;
+    reg [7:0] crtc_mode_control = 8'hA3;
     wire packed_active;
     wire unchained_active;
     wire [1:0] unchained_profile;
     integer errors = 0;
 
     vga_unchained256_ctrl dut (
-        .mode13_active(mode13_active), .chain4(chain4),
+        .mode13_active(mode13_active),
+        .mode12_tweak_pending(mode12_tweak_pending), .chain4(chain4),
         .shift256(shift256), .graphics_mode(graphics_mode),
         .mem_map_sel(mem_map_sel), .crtc_h_displayed(crtc_h_displayed),
-        .crtc_v_displayed(crtc_v_displayed),
+        .crtc_v_displayed(crtc_v_displayed), .crtc_offset(crtc_offset),
+        .crtc_underline_loc(crtc_underline_loc),
+        .crtc_mode_control(crtc_mode_control),
         .packed_active(packed_active),
         .unchained_active(unchained_active), .unchained_profile(unchained_profile)
     );
@@ -52,6 +59,8 @@ module vga_unchained256_ctrl_tb;
         crtc_h_displayed = 8'd79; crtc_v_displayed = 10'd480;
         check(1'b0, 1'b1, 2'd2, "480 physical scanlines select 320x240");
         check(1'b0, 1'b1, 2'd2, "320x240 profile ignores maximum scanline changes");
+        crtc_h_displayed = 8'd63; crtc_v_displayed = 10'd464;
+        check(1'b0, 1'b1, 2'd3, "256x232 CRTC selects Dyna profile");
         crtc_v_displayed = 10'd400;
         shift256 = 1'b0;
         check(1'b1, 1'b0, 2'd0, "Shift256 is required");
@@ -63,6 +72,22 @@ module vga_unchained256_ctrl_tb;
         check(1'b1, 1'b0, 2'd0, "B000 aperture is not Mode X");
         mode13_active = 1'b0; mem_map_sel = 2'b01;
         check(1'b0, 1'b0, 2'd0, "leaving mode 13h restores EGA route");
+
+        mode12_tweak_pending = 1'b1;
+        crtc_h_displayed = 8'd63; crtc_v_displayed = 10'd464;
+        crtc_offset = 8'd64; crtc_underline_loc = 8'h00;
+        crtc_mode_control = 8'hE3;
+        check(1'b0, 1'b1, 2'd3, "mode 12h Dyna signature enables VGA route");
+        crtc_offset = 8'd32;
+        check(1'b0, 1'b1, 2'd3, "direct-width Dyna stride also enables route");
+        crtc_offset = 8'd45;
+        check(1'b0, 1'b0, 2'd0, "partial mode 12h table stays on EGA route");
+        crtc_offset = 8'd64; crtc_underline_loc = 8'h40;
+        check(1'b0, 1'b0, 2'd0, "dword addressing rejects mode 12h tweak");
+        crtc_underline_loc = 8'h00; crtc_mode_control = 8'hA3;
+        check(1'b0, 1'b0, 2'd0, "non-byte addressing rejects mode 12h tweak");
+        crtc_mode_control = 8'hE3; mode12_tweak_pending = 1'b0;
+        check(1'b0, 1'b0, 2'd0, "leaving mode 12h restores EGA route");
 
         if (errors == 0) $display("RESULT: PASS");
         else $display("RESULT: FAIL (%0d errors)", errors);

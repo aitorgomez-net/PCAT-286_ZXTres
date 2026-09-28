@@ -69,10 +69,10 @@ def main() -> None:
     require(common_qip, "ide.v", "rtl/common/common.qip")
     require(common_qip, "spk286_debug_min_overlay.sv", "rtl/common/common.qip")
     reject(common_qip, "sound", "rtl/common/common.qip")
-    reject(common_qip, "MSMouseWrapper", "rtl/common/common.qip")
+    require(common_qip, "MSMouseWrapper.v", "rtl/common/common.qip")
 
     require(top, "module emu_at", "PCAT-286.sv")
-    require(top, "spk286_at_machine u_at_machine", "PCAT-286.sv")
+    require(top, "u_at_machine (", "PCAT-286.sv")
     require(top, "spk286_at_mister_sdram_owner u_at_sdram_owner", "PCAT-286.sv")
     require(top, "spk286_at_hps_rom_loader u_at_hps_rom_loader", "PCAT-286.sv")
     require(top, '"PCAT-286;"', "PCAT-286.sv")
@@ -85,7 +85,7 @@ def main() -> None:
     require(overlay, "video_sequence", "spk286_debug_min_overlay.sv")
     require(overlay, "fallback_raster", "spk286_debug_min_overlay.sv")
     require(overlay, 'text_at("RASTER:N"', "spk286_debug_min_overlay.sv")
-    require(overlay, 'text_at("SNAP:00"', "spk286_debug_min_overlay.sv")
+    require(overlay, 'SNAP:00"', "spk286_debug_min_overlay.sv")
 
     for required_test in (
         "scripts/test_at_profile_elab.sh",

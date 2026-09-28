@@ -5,9 +5,9 @@ module spk286_at_memory_decode_tb;
     logic request_write = 1'b0;
     logic [3:0] cycle_class = 4'hF;
     logic [23:0] address = 24'd0;
-    logic ems_enabled = 1'b0;
+    logic ems_enabled = 1'b1;
     logic ems_window_enabled [0:3];
-    logic umb_enabled = 1'b0;
+    logic umb_enabled = 1'b1;
     logic [2:0] installed_ram_size = 3'd0;
     wire memory_cycle, conventional_ram_select, video_aperture_select;
     wire option_region_select, system_bios_select, extended_ram_select;
@@ -54,6 +54,10 @@ module spk286_at_memory_decode_tb;
     endtask
 
     initial begin
+        ems_window_enabled[0] = 1'b0;
+        ems_window_enabled[1] = 1'b0;
+        ems_window_enabled[2] = 1'b0;
+        ems_window_enabled[3] = 1'b0;
         classify(24'h000000, 4'h5, 1'b0);
         check(word_capable && conventional_ram_select && memory_cycle && !extended_ram_select,
               "conventional RAM base was not decoded");
@@ -69,9 +73,9 @@ module spk286_at_memory_decode_tb;
         classify(24'h0C0000, 4'h5, 1'b0);
         check(word_capable && option_region_select && !write_allowed,
               "option region start was not protected");
-        classify(24'h0EFFFF, 4'h6, 1'b1);
+        classify(24'h0C7FFF, 4'h6, 1'b1);
         check(word_capable && option_region_select && rom_write_blocked,
-              "option region write protection was missing");
+              "EGA BIOS write protection was missing");
         classify(24'h0F0000, 4'hD, 1'b0);
         check(word_capable && system_bios_select && memory_cycle && !unmapped_request,
               "BIOS code fetch was not decoded");
@@ -90,32 +94,22 @@ module spk286_at_memory_decode_tb;
               "extended RAM start lost the 24-bit boundary");
         classify(24'h15FFFF, 4'h6, 1'b1);
         check(word_capable && extended_ram_select && write_allowed,
-              "extended RAM upper limit was not decoded");
+              "default 4 MiB profile lost its first extended-RAM block");
         classify(24'h160000, 4'h5, 1'b0);
+        check(word_capable && extended_ram_select && memory_cycle,
+              "default 4 MiB profile did not expose memory above 1 MiB");
+        classify(24'h45FFFF, 4'h6, 1'b1);
+        check(word_capable && extended_ram_select && write_allowed,
+              "default 4 MiB profile upper limit was not decoded");
+        classify(24'h460000, 4'h5, 1'b0);
         check(!word_capable && !extended_ram_select && !memory_cycle && unmapped_request,
-              "memory above the installed 1 MiB profile was decoded as RAM");
+              "default 4 MiB profile exposed memory above its limit");
         classify(24'hFEFFFF, 4'h6, 1'b1);
         check(!word_capable && !extended_ram_select && !write_allowed && unmapped_request,
               "high unmapped memory was exposed as SDRAM");
 
-        // Every selectable profile has an explicit, finite upper boundary.
+        // The 8 MiB profile is OSD code 001.
         installed_ram_size = 3'd1;
-        classify(24'h25FFFF, 4'h6, 1'b1);
-        check(extended_ram_select && write_allowed,
-              "2 MiB profile upper limit was not decoded");
-        classify(24'h260000, 4'h5, 1'b0);
-        check(!memory_cycle && unmapped_request,
-              "2 MiB profile exposed memory above its limit");
-
-        installed_ram_size = 3'd2;
-        classify(24'h45FFFF, 4'h6, 1'b1);
-        check(extended_ram_select && write_allowed,
-              "4 MiB profile upper limit was not decoded");
-        classify(24'h460000, 4'h5, 1'b0);
-        check(!memory_cycle && unmapped_request,
-              "4 MiB profile exposed memory above its limit");
-
-        installed_ram_size = 3'd3;
         classify(24'h85FFFF, 4'h6, 1'b1);
         check(extended_ram_select && write_allowed,
               "8 MiB profile upper limit was not decoded");
@@ -123,7 +117,8 @@ module spk286_at_memory_decode_tb;
         check(!memory_cycle && unmapped_request,
               "8 MiB profile exposed memory above its limit");
 
-        installed_ram_size = 3'd4;
+        // The 16 MiB profile is OSD code 010.
+        installed_ram_size = 3'd2;
         classify(24'hFDFFFF, 4'h6, 1'b1);
         check(extended_ram_select && write_allowed,
               "16 MiB profile upper limit was not decoded");
@@ -137,49 +132,60 @@ module spk286_at_memory_decode_tb;
         check(memory_cycle && system_bios_select && !extended_ram_select &&
               !unmapped_request,
               "64 KiB high BIOS alias did not start at FF0000h");
+
+        // The remaining small profiles are still selectable after the default.
+        installed_ram_size = 3'd3;
+        classify(24'h15FFFF, 4'h6, 1'b1);
+        check(extended_ram_select && write_allowed,
+              "1 MiB profile upper limit was not decoded");
+        classify(24'h160000, 4'h5, 1'b0);
+        check(!memory_cycle && unmapped_request,
+              "1 MiB profile exposed memory above its limit");
+
+        installed_ram_size = 3'd4;
+        classify(24'h25FFFF, 4'h6, 1'b1);
+        check(extended_ram_select && write_allowed,
+              "2 MiB profile upper limit was not decoded");
+        classify(24'h260000, 4'h5, 1'b0);
+        check(!memory_cycle && unmapped_request,
+              "2 MiB profile exposed memory above its limit");
         installed_ram_size = 3'd0;
 
-        ems_enabled = 1'b1;
         ems_window_enabled[0] = 1'b1;
-        classify(24'h0D0000, 4'h6, 1'b1);
+        classify(24'h0E0000, 4'h6, 1'b1);
         check(word_capable && ems_aperture_select && !option_region_select &&
               write_allowed && !rom_write_blocked,
-              "EMS D000 window was not writable expanded memory");
-        classify(24'h0D3FFF, 4'h5, 1'b0);
+              "EMS E000 window was not writable expanded memory");
+        classify(24'h0E3FFF, 4'h5, 1'b0);
         check(memory_cycle && ems_aperture_select && !option_region_select,
               "EMS first 16 KiB window limit was not decoded");
-        classify(24'h0D4000, 4'h6, 1'b1);
+        classify(24'h0E4000, 4'h6, 1'b1);
         check(!memory_cycle && !option_region_select && !ems_aperture_select &&
               !write_allowed && unmapped_request,
               "unmapped EMS window did not remain an unmapped page frame");
-        ems_enabled = 1'b0;
 
-        umb_enabled = 1'b1;
         classify(24'h0C4000, 4'h6, 1'b1);
         check(memory_cycle && option_region_select && !umb_region_select &&
               word_capable && !write_allowed && rom_write_blocked,
-              "C400 option-ROM space was incorrectly exposed as UMB");
+              "EGA BIOS window was incorrectly exposed as UMB");
         classify(24'h0C8000, 4'h5, 1'b0);
-        check(memory_cycle && option_region_select && !umb_region_select,
-              "XTIDE C800 window was not decoded as option ROM");
+        check(memory_cycle && umb_region_select && !option_region_select &&
+              word_capable && !write_allowed,
+              "UMB did not begin at C8000h");
         classify(24'h0CFFFF, 4'h5, 1'b0);
-        check(memory_cycle && option_region_select && !umb_region_select,
-              "CC000-CFFFF option-ROM space was not decoded");
-        classify(24'h0E0000, 4'h6, 1'b1);
+        check(memory_cycle && umb_region_select && !option_region_select,
+              "UMB C8000-CFFFF range was not decoded");
+        classify(24'h0D0000, 4'h6, 1'b1);
         check(memory_cycle && umb_region_select && !option_region_select &&
               word_capable && write_allowed && !rom_write_blocked,
-              "UMB E000 window was not writable RAM");
-        classify(24'h0EFFFF, 4'h5, 1'b0);
+              "UMB D000 range was not writable RAM");
+        classify(24'h0DFFFF, 4'h5, 1'b0);
         check(memory_cycle && umb_region_select && !option_region_select,
-              "UMB E000-EFFF limit was not decoded");
+              "UMB upper limit DFFFFh was not decoded");
         classify(24'h0C0000, 4'h6, 1'b1);
         check(option_region_select && !umb_region_select &&
               !write_allowed && rom_write_blocked,
-              "EGA BIOS C000-C3FFF was incorrectly exposed as UMB");
-        umb_enabled = 1'b0;
-        classify(24'h0E0000, 4'h5, 1'b0);
-        check(memory_cycle && option_region_select && !umb_region_select,
-              "E000 option-ROM region disappeared with UMB disabled");
+              "EGA BIOS C0000h was incorrectly exposed as UMB");
 
         classify(24'h0F0000, 4'h9, 1'b0);
         check(!word_capable && !memory_cycle && unmapped_request && !system_bios_select,

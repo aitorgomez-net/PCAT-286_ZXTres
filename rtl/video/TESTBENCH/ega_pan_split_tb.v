@@ -167,6 +167,7 @@ module ega_pan_split_tb;
         .ega_dot_toggle_out(),
         .ega_dot_clock_sel_out(),
         .ega_scandouble_active_out(),
+        .prebios_video(1'b0),
         .splashscreen(1'b0),
         .thin_font(1'b0),
         .scandouble_en(1'b0),
