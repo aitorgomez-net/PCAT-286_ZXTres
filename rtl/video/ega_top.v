@@ -4,6 +4,9 @@
 //
 //============================================================================
 
+// PCAT_EGA_ONLY builds the EGA device for external simulation, excluding
+// the optional VGA renderers/DAC and the MiSTer splash ROM. Keep vga_enabled
+// and splashscreen low when using this build. The normal FPGA build is unchanged.
 `default_nettype wire
 
 module ega_top(
@@ -603,6 +606,7 @@ module ega_top(
     wire       ega_blink_advance = ega_crtc_fetch_tick & ega_vert_blank_active_crtc & ~ega_vblank_crtc_q;
     wire       ega_blink_state = ega_blink_counter[4];
 
+`ifndef PCAT_EGA_ONLY
     vga_mode13_ctrl vga_mode13_state (
         .clk(clk),
         .reset(reset),
@@ -611,10 +615,14 @@ module ega_top(
         .mode13_clear(vga_mode13_exit),
         .vga_mode13_active(vga_mode13_active)
     );
+`else
+    assign vga_mode13_active = '0;
+`endif
 
     // Mode 12h is only a staging mode for Dyna Blaster's direct-register
     // 256x232 tweak. Keep the ordinary EGA path until its full signature is
     // present; the private port does not claim general 640x480 VGA support.
+`ifndef PCAT_EGA_ONLY
     vga_mode13_ctrl vga_mode12_tweak_state (
         .clk(clk),
         .reset(reset),
@@ -623,10 +631,14 @@ module ega_top(
         .mode13_clear(vga_mode12_exit),
         .vga_mode13_active(vga_mode12_tweak_pending)
     );
+`else
+    assign vga_mode12_tweak_pending = '0;
+`endif
 
     // The same small state gate selects a private fixed VGA mode 0Dh raster.
     // The EGA BIOS and planar VRAM remain responsible for register state and
     // memory semantics; only the VGA-rate display fetch is replaced.
+`ifndef PCAT_EGA_ONLY
     vga_mode13_ctrl vga_planar16_state (
         .clk(clk),
         .reset(reset),
@@ -635,7 +647,11 @@ module ega_top(
         .mode13_clear(vga_planar16_exit),
         .vga_mode13_active(vga_planar16_active)
     );
+`else
+    assign vga_planar16_active = '0;
+`endif
 
+`ifndef PCAT_EGA_ONLY
     vga_unchained256_ctrl vga_route_state (
         .mode13_active    (vga_mode13_active),
         .mode12_tweak_pending(vga_mode12_tweak_pending),
@@ -652,6 +668,11 @@ module ega_top(
         .unchained_active (vga_unchained256_active),
         .unchained_profile(vga_unchained_profile)
     );
+`else
+    assign vga_mode13_packed_active = '0;
+    assign vga_unchained256_active = '0;
+    assign vga_unchained_profile = '0;
+`endif
     assign vga_mode12_tweaked_active = vga_mode12_tweak_pending &
                                        vga_unchained256_active;
 
@@ -831,6 +852,7 @@ module ega_top(
         .pixel_valid(ega_text_pixel_valid)
     );
 
+`ifndef PCAT_EGA_ONLY
     ega_splash_renderer ega_splash_renderer_inst (
         .clk            (clk),
         .reset          (reset),
@@ -841,6 +863,10 @@ module ega_top(
         .pixel_index    (ega_splash_pixel_index),
         .pixel_valid    (ega_splash_pixel_valid)
     );
+`else
+    assign ega_splash_pixel_index = '0;
+    assign ega_splash_pixel_valid = '0;
+`endif
 
     wire [15:0] vga_planar16_vram_addr;
     wire        vga_planar16_vram_read_en;
@@ -882,6 +908,7 @@ module ega_top(
         .video_enable_out(ega_attr_video_enable)
     );
 
+`ifndef PCAT_EGA_ONLY
     vga_dac_io vga_dac_io_inst (
         .clock              (clk),
         .reset              (reset),
@@ -905,6 +932,16 @@ module ega_top(
         .sample_blue_8      (vga_dac_sample_blue_8),
         .sample_valid       (vga_dac_sample_valid)
     );
+`else
+    assign vga_dac_io_data_out = '0;
+    assign vga_dac_sample_red = '0;
+    assign vga_dac_sample_green = '0;
+    assign vga_dac_sample_blue = '0;
+    assign vga_dac_sample_red_8 = '0;
+    assign vga_dac_sample_green_8 = '0;
+    assign vga_dac_sample_blue_8 = '0;
+    assign vga_dac_sample_valid = '0;
+`endif
 
     // VGA mode 13h renders through its own dedicated index into the shared
     // DAC; every other mode reuses the same 256-entry DAC to let a VGA-aware
@@ -944,6 +981,7 @@ module ega_top(
                                    vga_unchained_pixel_toggle :
                                    vga_packed_pixel_toggle;
 
+`ifndef PCAT_EGA_ONLY
     vga_mode13_renderer vga_renderer (
         .clock                  (clk),
         .reset                  (reset),
@@ -969,7 +1007,22 @@ module ega_top(
         .vblank                 (vga_packed_vblank),
         .pixel_toggle           (vga_packed_pixel_toggle)
     );
+`else
+    assign vga_framebuffer_addr = '0;
+    assign vga_framebuffer_read_en = '0;
+    assign vga_packed_dac_index = '0;
+    assign vga_packed_red = '0;
+    assign vga_packed_green = '0;
+    assign vga_packed_blue = '0;
+    assign vga_packed_de = '0;
+    assign vga_packed_hsync = '0;
+    assign vga_packed_vsync = '0;
+    assign vga_packed_hblank = '0;
+    assign vga_packed_vblank = '0;
+    assign vga_packed_pixel_toggle = '0;
+`endif
 
+`ifndef PCAT_EGA_ONLY
     vga_unchained256_renderer vga_unchained_renderer (
         .clock              (clk),
         .reset              (reset),
@@ -1005,7 +1058,22 @@ module ega_top(
         .vblank             (vga_unchained_vblank),
         .pixel_toggle       (vga_unchained_pixel_toggle)
     );
+`else
+    assign vga_unchained_vram_addr = '0;
+    assign vga_unchained_vram_read_en = '0;
+    assign vga_unchained_dac_index = '0;
+    assign vga_unchained_red = '0;
+    assign vga_unchained_green = '0;
+    assign vga_unchained_blue = '0;
+    assign vga_unchained_de = '0;
+    assign vga_unchained_hsync = '0;
+    assign vga_unchained_vsync = '0;
+    assign vga_unchained_hblank = '0;
+    assign vga_unchained_vblank = '0;
+    assign vga_unchained_pixel_toggle = '0;
+`endif
 
+`ifndef PCAT_EGA_ONLY
     vga_planar16_renderer vga_planar16_renderer_inst (
         .clock              (clk),
         .reset              (reset),
@@ -1034,6 +1102,18 @@ module ega_top(
         .vblank             (vga_planar16_vblank),
         .pixel_toggle       (vga_planar16_pixel_toggle)
     );
+`else
+    assign vga_planar16_vram_addr = '0;
+    assign vga_planar16_vram_read_en = '0;
+    assign vga_planar16_plane_index = '0;
+    assign vga_planar16_pixel_valid = '0;
+    assign vga_planar16_de = '0;
+    assign vga_planar16_hsync = '0;
+    assign vga_planar16_vsync = '0;
+    assign vga_planar16_hblank = '0;
+    assign vga_planar16_vblank = '0;
+    assign vga_planar16_pixel_toggle = '0;
+`endif
 
     assign vga_renderer_dac_index = vga_unchained256_active ?
                                     vga_unchained_dac_index : vga_packed_dac_index;
@@ -1127,36 +1207,45 @@ module ega_top(
     );
 
     reg [7:0] ega_bus_out_mux;
+    // IBM EGA only reads status, display start/cursor and light-pen registers.
+    // Sequencer, attributes, graphics and miscellaneous output are write-only.
+    // Keep extended readback available to the optional VGA implementation.
+    wire ega_crtc_readable = vga_enabled ||
+                            (ega_crtc_index_shadow >= 5'h0C && ega_crtc_index_shadow <= 5'h11);
+    wire ega_crtc_read_cs = ega_crtc_cs & ~bus_ior_l & bus_a[0] & ega_crtc_readable;
     wire ega_bus_dir_sel = (ega_status_cs & ~bus_ior_l)
-                         | (ega_seq_data_cs & ~bus_ior_l)
-                         | (ega_attr_read_cs & ~bus_ior_l)
-                         | (ega_misc_read_cs & ~bus_ior_l)
-                         | (ega_gfx_data_cs & ~bus_ior_l)
+                         | (ega_seq_data_cs & ~bus_ior_l & vga_enabled)
+                         | (ega_attr_read_cs & ~bus_ior_l & vga_enabled)
+                         | (ega_misc_read_cs & ~bus_ior_l & vga_enabled)
+                         | (ega_gfx_data_cs & ~bus_ior_l & vga_enabled)
                          | (ega_dac_read_index_cs & ~bus_ior_l)
                          | (ega_dac_write_index_cs & ~bus_ior_l)
                          | (ega_dac_data_cs & ~bus_ior_l)
-                         | (vga_mode13_bios_ctrl_cs & ~bus_ior_l)
-                         | (ega_crtc_cs & ~bus_ior_l & bus_a[0]);
+                         | (vga_mode13_bios_ctrl_cs & ~bus_ior_l & vga_enabled)
+                         | ega_crtc_read_cs;
 
     always @(*) begin
         if (ega_status_cs & ~bus_ior_l)
             ega_bus_out_mux = ega_status_reg;
-        else if (ega_seq_data_cs & ~bus_ior_l)
+        else if (ega_seq_data_cs & ~bus_ior_l & vga_enabled)
             ega_bus_out_mux = ega_seq_data_out;
-        else if (ega_attr_read_cs & ~bus_ior_l)
+        else if (ega_attr_read_cs & ~bus_ior_l & vga_enabled)
             ega_bus_out_mux = ega_attr_data_out;
-        else if (ega_misc_read_cs & ~bus_ior_l)
+        else if (ega_misc_read_cs & ~bus_ior_l & vga_enabled)
             ega_bus_out_mux = ega_misc_output_reg;
-        else if (ega_gfx_data_cs & ~bus_ior_l)
+        else if (ega_gfx_data_cs & ~bus_ior_l & vga_enabled)
             ega_bus_out_mux = ega_gfx_data_out;
         else if ((ega_dac_read_index_cs | ega_dac_write_index_cs | ega_dac_data_cs) & ~bus_ior_l)
             ega_bus_out_mux = vga_dac_io_data_out;
-        else if (vga_mode13_bios_ctrl_cs & ~bus_ior_l)
+        else if (vga_mode13_bios_ctrl_cs & ~bus_ior_l & vga_enabled)
             ega_bus_out_mux = vga_mode13_status;
-        else if (ega_crtc_cs & ~bus_ior_l & bus_a[0])
-            ega_bus_out_mux = ega_crtc_data_out;
+        else if (ega_crtc_read_cs)
+            // No light pen is connected. EGA reads 10h/11h as the light-pen
+            // position, not the retrace registers written at those indices.
+            ega_bus_out_mux = (!vga_enabled && ega_crtc_index_shadow >= 5'h10) ?
+                              8'h00 : ega_crtc_data_out;
         else
-            ega_bus_out_mux = 8'h00;
+            ega_bus_out_mux = 8'hFF;
     end
 
     always @(posedge clk or posedge reset) begin

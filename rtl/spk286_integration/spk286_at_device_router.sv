@@ -92,7 +92,7 @@ module spk286_at_device_router (
     output logic        a20_enable,
     output logic        cpu_reset_request,
 
-    input  logic        periodic_tick,
+    input  logic        periodic_tick, // 32768 Hz RTC reference enable
     input  logic        second_tick,
     output logic        irq8,
     output logic        nmi_mask,

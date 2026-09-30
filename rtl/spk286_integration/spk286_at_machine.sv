@@ -79,7 +79,7 @@ module spk286_at_machine #(
     output logic         keyboard_byte_ready,
     output logic         keyboard_translate_set1,
     output logic         keyboard_num_lock,
-    input  logic         periodic_tick,
+    input  logic         periodic_tick, // 32768 Hz RTC reference enable
     input  logic         second_tick,
     input  logic         parity_event,
     input  logic         channel_check_event,

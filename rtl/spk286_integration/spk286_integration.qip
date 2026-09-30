@@ -49,6 +49,7 @@ set_global_assignment -name SYSTEMVERILOG_FILE "rtl/spk286_integration/spk286_at
 set_global_assignment -name SYSTEMVERILOG_FILE "rtl/spk286_integration/spk286_at_8042.sv"
 set_global_assignment -name SYSTEMVERILOG_FILE "rtl/spk286_integration/spk286_at_keyboard.sv"
 set_global_assignment -name SYSTEMVERILOG_FILE "rtl/spk286_integration/spk286_at_rtc_cmos.sv"
+set_global_assignment -name SYSTEMVERILOG_FILE "rtl/spk286_integration/spk286_at_rtc_clock.sv"
 set_global_assignment -name SYSTEMVERILOG_FILE "rtl/spk286_integration/spk286_at_fdc.sv"
 set_global_assignment -name SYSTEMVERILOG_FILE "rtl/spk286_integration/spk286_at_xtide.sv"
 set_global_assignment -name SYSTEMVERILOG_FILE "rtl/spk286_integration/spk286_at_storage_video.sv"

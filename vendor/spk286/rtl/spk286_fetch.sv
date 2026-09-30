@@ -9,6 +9,7 @@ module spk286_fetch (
     input  logic [15:0] data_in,
     input  logic [23:0] code_base,
     input  logic [15:0] code_limit,
+    input  logic        wrap_ip,
     input  logic        restart,
     input  logic [15:0] restart_ip,
     input  logic        request,
@@ -43,7 +44,7 @@ module spk286_fetch (
                                    (FETCH_CHAINING && response_fire);
 
     assign cursor = cursor_q;
-    assign blocked = cursor_q[16] || (cursor_q[15:0] > code_limit);
+    assign blocked = (cursor_q[16] && !wrap_ip) || (cursor_q[15:0] > code_limit);
     assign next_address = code_base + {8'h00, cursor_q[15:0]};
     assign single_byte = next_address[0] || (cursor_q[15:0] == code_limit);
     assign request_ready = !reset && !restart && !restart_pending_q &&
@@ -89,8 +90,13 @@ module spk286_fetch (
                         if (request_count_q == 2'd2) response_data <= data_in;
                         else if (address_q[0]) response_data <= {8'h00, data_in[15:8]};
                         else response_data <= {8'h00, data_in[7:0]};
-                        // Preserve overflow so the next request cannot wrap to zero.
-                        cursor_q <= {1'b0, request_ip_q} + {15'h0000, request_count_q};
+                        // Real-mode IP is a 16-bit register and wraps after FFFF.
+                        // Protected fetches retain the 17th bit so an over-limit
+                        // stream is reported instead of silently restarting.
+                        if (wrap_ip)
+                            cursor_q <= {1'b0, request_ip_q + {14'h0000, request_count_q}};
+                        else
+                            cursor_q <= {1'b0, request_ip_q} + {15'h0000, request_count_q};
                     end
                 end
             end else if (!suspend && response_slot_available && !blocked &&

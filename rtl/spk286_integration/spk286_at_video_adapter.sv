@@ -148,6 +148,52 @@ module spk286_at_video_adapter (
     wire [7:0] request_byte = request_byte_enable[1] ?
                               request_data_out[15:8] : request_data_out[7:0];
 
+    // Decode the CPU aperture before remapping offsets inside VRAM. Keep
+    // these write-only register fields in the AT domain, updated by the
+    // accepted I/O transaction (as for switch sense below). The mailbox
+    // completes that OUT before allowing a following memory transaction, so
+    // no asynchronous multi-bit GDC value enters the address decoder.
+    logic [3:0] ega_gfx_index_host_q;
+    logic [1:0] ega_mem_map_host_q;
+    logic       ega_ram_enable_host_q;
+    (* altera_attribute = "-name SYNCHRONIZER_IDENTIFICATION FORCED_IF_ASYNCHRONOUS" *)
+    logic video_reset_at_sync1_q;
+    (* altera_attribute = "-name SYNCHRONIZER_IDENTIFICATION FORCED_IF_ASYNCHRONOUS" *)
+    logic video_reset_at_sync2_q;
+    always_ff @(posedge clk or posedge video_reset_in) begin
+        if (video_reset_in) begin
+            video_reset_at_sync1_q <= 1'b1;
+            video_reset_at_sync2_q <= 1'b1;
+        end else begin
+            video_reset_at_sync1_q <= 1'b0;
+            video_reset_at_sync2_q <= video_reset_at_sync1_q;
+        end
+    end
+    wire ega_aperture_hit = (ega_mem_map_host_q == 2'b00) ||
+                           ((ega_mem_map_host_q == 2'b01) && !request_address[16]) ||
+                           ((ega_mem_map_host_q == 2'b10) && request_address[16:15] == 2'b10) ||
+                           ((ega_mem_map_host_q == 2'b11) && request_address[16:15] == 2'b11);
+    // The optional VGA path retains its existing packed/planar selection.
+    wire memory_selected = vga_enabled || (ega_ram_enable_host_q && ega_aperture_hit);
+
+    // A CPU/machine-only reset leaves the live EGA registers intact. Only
+    // video reset may restore these architectural decode fields to defaults.
+    always_ff @(posedge clk) begin
+        if (video_reset_at_sync2_q) begin
+            ega_gfx_index_host_q <= 4'h0;
+            ega_mem_map_host_q <= 2'b00;
+            ega_ram_enable_host_q <= 1'b1; // ega_top reset Misc Output = 63h.
+        end else if (!reset && request_accept && video_io_request && request_write) begin
+            case (request_address[15:0])
+                16'h03C2: ega_ram_enable_host_q <= request_byte[1];
+                16'h03CE: ega_gfx_index_host_q <= request_byte[3:0];
+                16'h03CF: if (ega_gfx_index_host_q == 4'h6)
+                             ega_mem_map_host_q <= request_byte[3:2];
+                default: begin end
+            endcase
+        end
+    end
+
     // EGA Input Status Register 0 is read at 3C2h.  Its selector is the
     // value most recently written to Miscellaneous Output, so it must be
     // sampled in this ISA-clock domain rather than inferred from the posted
@@ -189,6 +235,7 @@ module spk286_at_video_adapter (
     logic       memory_busy_q;
     logic       memory_write_q;
     logic       memory_read_q;
+    logic       memory_selected_q;
     logic [15:0] memory_address_q;
     logic        memory_a16_q;
     logic [7:0]  memory_data_q;
@@ -241,6 +288,7 @@ module spk286_at_video_adapter (
             memory_busy_q <= 1'b0;
             memory_write_q <= 1'b0;
             memory_read_q <= 1'b0;
+            memory_selected_q <= 1'b0;
             memory_address_q <= 16'h0000;
             memory_a16_q <= 1'b0;
             memory_data_q <= 8'h00;
@@ -269,6 +317,7 @@ module spk286_at_video_adapter (
                 memory_busy_q <= 1'b1;
                 memory_write_q <= request_write;
                 memory_read_q <= !request_write;
+                memory_selected_q <= memory_selected;
                 memory_address_q <= request_address[15:0];
                 memory_a16_q <= request_address[16];
                 memory_data_q <= request_byte;
@@ -335,13 +384,18 @@ module spk286_at_video_adapter (
     (* altera_attribute = "-name SYNCHRONIZER_IDENTIFICATION FORCED_IF_ASYNCHRONOUS; -name DONT_MERGE_REGISTER ON" *)
     logic vga_packed_memory_sync2_q;
     wire  vga_packed_memory_active = vga_packed_memory_sync2_q;
-    wire  vga_packed_memory_request = memory_busy_q &&
+    wire  vga_packed_memory_request = memory_busy_q && memory_selected_q &&
                                        vga_packed_memory_active &&
                                        !memory_a16_q;
 
-    assign memory_read_data = vga_packed_memory_request ?
+    // The AT router owns the whole A0000-BFFFF region. An unselected EGA
+    // access must still complete there: reads float high, writes do nothing.
+    // In particular neither an outside read nor write may update VRAM latches.
+    assign memory_read_data = !memory_selected_q ? 8'hFF :
+                              vga_packed_memory_request ?
                                vga_framebuffer_cpu_dout : vram_cpu_dout;
-    assign memory_ready = vga_packed_memory_request ?
+    assign memory_ready = !memory_selected_q ? 1'b1 :
+                          vga_packed_memory_request ?
                           vga_framebuffer_cpu_ready : vram_cpu_ready;
 
     always_ff @(posedge clk_video) begin
@@ -375,7 +429,7 @@ module spk286_at_video_adapter (
             memory_write_video1_q <= 1'b0;
             memory_write_video2_q <= 1'b0;
         end else begin
-            memory_select_video1_q <= memory_busy_q;
+            memory_select_video1_q <= memory_busy_q && memory_selected_q;
             memory_select_video2_q <= memory_select_video1_q;
             memory_write_video1_q <= memory_write_q;
             memory_write_video2_q <= memory_write_video1_q;
@@ -390,9 +444,9 @@ module spk286_at_video_adapter (
         .cpu_addr           (memory_address_q),
         .cpu_a16            (memory_a16_q),
         .cpu_din            (memory_data_q),
-        .cpu_read           (memory_busy_q && memory_read_q &&
+        .cpu_read           (memory_busy_q && memory_selected_q && memory_read_q &&
                              !vga_packed_memory_request),
-        .cpu_write          (memory_busy_q && memory_write_q &&
+        .cpu_write          (memory_busy_q && memory_selected_q && memory_write_q &&
                              !vga_packed_memory_request),
         .cpu_dout           (vram_cpu_dout),
         .cpu_ready          (vram_cpu_ready),
@@ -431,6 +485,7 @@ module spk286_at_video_adapter (
         .rotate_count       (ega_rotate_count)
     );
 
+`ifndef PCAT_EGA_ONLY
     vga_framebuffer u_vga_framebuffer (
         .clk_cpu            (clk),
         .reset_cpu          (reset),
@@ -448,6 +503,12 @@ module spk286_at_video_adapter (
         .video_pixel        (vga_framebuffer_pixel),
         .video_data_valid   (vga_framebuffer_data_valid)
     );
+`else
+    assign vga_framebuffer_cpu_dout = 8'h00;
+    assign vga_framebuffer_cpu_ready = 1'b0;
+    assign vga_framebuffer_pixel = 8'h00;
+    assign vga_framebuffer_data_valid = 1'b0;
+`endif
 
     // Video-domain request mailbox.  The command fields are held constant by
     // the source until the acknowledgement returns, so two synchronizer
@@ -523,7 +584,9 @@ module spk286_at_video_adapter (
                     if (video_io_ticks_q != 5'd0)
                         video_io_ticks_q <= video_io_ticks_q - 1'b1;
                     else begin
-                        video_io_read_data <= ega_bus_out;
+                        // An undecoded/write-only port leaves the ISA bus
+                        // undriven. Do not turn an inactive mono port into 00h.
+                        video_io_read_data <= ega_bus_dir ? ega_bus_out : 8'hFF;
                         video_bus_ior_q <= 1'b1;
                         video_bus_iow_q <= 1'b1;
                         video_bus_aen_q <= 1'b1;

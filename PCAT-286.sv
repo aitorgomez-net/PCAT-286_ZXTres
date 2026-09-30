@@ -799,23 +799,12 @@ module emu_at
 
     logic counter_clock;
     spk286_at_pit_clock u_pit_clock(.clk(CLK_50M), .reset(RESET), .counter_clock(counter_clock));
-    logic periodic_tick;
+    logic rtc_tick_32768;
     logic second_tick;
-    logic [25:0] tick_counter;
-    always_ff @(posedge CLK_50M or posedge RESET) begin
-        if (RESET) begin
-            periodic_tick <= 1'b0;
-            second_tick   <= 1'b0;
-            tick_counter  <= 26'd0;
-        end else begin
-            periodic_tick <= (tick_counter[11:0] == 12'h000);
-            second_tick   <= (tick_counter == 26'd49_999_999);
-            if (tick_counter == 26'd49_999_999)
-                tick_counter <= 26'd0;
-            else
-                tick_counter <= tick_counter + 1'b1;
-        end
-    end
+    spk286_at_rtc_clock u_rtc_clock (
+        .clk(CLK_50M), .reset(RESET),
+        .tick_32768(rtc_tick_32768), .second_tick(second_tick)
+    );
 
     wire keyboard_byte_valid;
     wire [7:0] keyboard_byte;
@@ -1095,7 +1084,7 @@ module emu_at
         .keyboard_byte_ready    (keyboard_byte_ready),
         .keyboard_translate_set1(keyboard_translate_set1),
         .keyboard_num_lock      (keyboard_num_lock),
-        .periodic_tick          (periodic_tick),
+        .periodic_tick          (rtc_tick_32768),
         .second_tick             (second_tick),
         .parity_event           (1'b0),
         .channel_check_event    (1'b0),

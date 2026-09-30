@@ -35,7 +35,7 @@ module spk286_at_rtc_cmos (
     input  logic        mgmt_write,
     output logic [15:0] mgmt_readdata,
 
-    input  logic        periodic_tick,
+    input  logic        periodic_tick, // One clk enable per 32768 Hz base tick
     input  logic        second_tick,
     output logic        irq8,
     output logic        nmi_mask,
@@ -58,7 +58,8 @@ module spk286_at_rtc_cmos (
     logic       io_read_data_valid_q;
     logic [6:0] index_q;
     logic       nmi_mask_q;
-    logic       irq8_q;
+    wire        irq8_q;
+    logic [13:0] periodic_count_q;
     logic       status_c_periodic_q;
     logic       status_c_alarm_q;
     logic       status_c_update_q;
@@ -254,8 +255,56 @@ module spk286_at_rtc_cmos (
 
     wire binary_mode = cmos_q[7'h0B][2];
     wire mode_24_hour = cmos_q[7'h0B][1];
-    wire rtc_clock_running = !cmos_q[7'h0B][7] &&
-                             (cmos_q[7'h0A][6:5] != 2'b11);
+    // The AT RTC uses the 32.768 kHz oscillator mode (DV=010). Other DV
+    // values stop this divider; in particular 11x holds it in reset.
+    wire rtc_divider_running = (cmos_q[7'h0A][6:4] == 3'b010);
+    wire rtc_clock_running = !cmos_q[7'h0B][7] && rtc_divider_running;
+    wire [3:0] periodic_rate = cmos_q[7'h0A][3:0];
+    wire rate_write = mgmt_rtc_write ? (mgmt_address[6:0] == 7'h0A) :
+                      (cpu_data_write && (index_q == 7'h0A));
+    logic [13:0] periodic_limit;
+
+    // Register A RS=1/2 alias 8/9. RS=0 disables periodic events only;
+    // it does not stop calendar updates. Limits count 32768 Hz enables.
+    always_comb begin
+        case (periodic_rate)
+            4'h1, 4'h8: periodic_limit = 14'd127;   // 256 Hz
+            4'h2, 4'h9: periodic_limit = 14'd255;   // 128 Hz
+            4'h3: periodic_limit = 14'd3;          // 8192 Hz
+            4'h4: periodic_limit = 14'd7;
+            4'h5: periodic_limit = 14'd15;
+            4'h6: periodic_limit = 14'd31;         // 1024 Hz (BIOS default)
+            4'h7: periodic_limit = 14'd63;
+            4'hA: periodic_limit = 14'd511;
+            4'hB: periodic_limit = 14'd1023;       // 32 Hz (OS/2)
+            4'hC: periodic_limit = 14'd2047;
+            4'hD: periodic_limit = 14'd4095;
+            4'hE: periodic_limit = 14'd8191;
+            4'hF: periodic_limit = 14'd16383;      // 2 Hz
+            default: periodic_limit = 14'd0;
+        endcase
+    end
+
+    wire periodic_event = periodic_tick && rtc_divider_running &&
+                          (periodic_rate != 4'h0) && !rate_write &&
+                          (periodic_count_q == periodic_limit);
+
+    always_ff @(posedge clk) begin
+        if (reset || rate_write || !rtc_divider_running ||
+            (periodic_rate == 4'h0))
+            periodic_count_q <= 14'd0;
+        else if (periodic_tick)
+            periodic_count_q <= periodic_event ? 14'd0 :
+                                                periodic_count_q + 1'b1;
+    end
+
+    // PF/AF/UF latch even with their interrupt enable clear. Deriving IRQ
+    // from the flags and register B also handles enabling an already pending
+    // event and masking an asserted interrupt without discarding its flag.
+    assign irq8_q = !reset &&
+                   ((status_c_periodic_q && cmos_q[7'h0B][6]) ||
+                    (status_c_alarm_q && cmos_q[7'h0B][5]) ||
+                    (status_c_update_q && cmos_q[7'h0B][4]));
     wire [7:0] second_binary = decode_number(cmos_q[7'h00], binary_mode);
     wire [7:0] minute_binary = decode_number(cmos_q[7'h02], binary_mode);
     wire [7:0] hour_binary = decode_hour(cmos_q[7'h04], binary_mode,
@@ -408,7 +457,6 @@ module spk286_at_rtc_cmos (
             protocol_error <= 1'b0;
             index_q <= 7'h00;
             nmi_mask_q <= 1'b1;
-            irq8_q <= 1'b0;
             status_c_periodic_q <= 1'b0;
             status_c_alarm_q <= 1'b0;
             status_c_update_q <= 1'b0;
@@ -430,7 +478,6 @@ module spk286_at_rtc_cmos (
                         status_c_periodic_q <= 1'b0;
                         status_c_alarm_q <= 1'b0;
                         status_c_update_q <= 1'b0;
-                        irq8_q <= 1'b0;
                     end
                 end else if (request_address[15:0] == 16'h0070) begin
                     index_q <= request_byte[6:0];
@@ -438,21 +485,17 @@ module spk286_at_rtc_cmos (
                 end
             end
 
-            if (periodic_tick && cmos_q[7'h0B][6]) begin
+            // A coincident new event survives a status-C acknowledgement.
+            if (periodic_event) begin
                 status_c_periodic_q <= 1'b1;
-                irq8_q <= 1'b1;
             end
 
             if (second_tick && rtc_clock_running) begin
                 cmos_q[7'h00] <= next_second_clock;
                 status_c_update_q <= 1'b1;
-                if (cmos_q[7'h0B][4])
-                    irq8_q <= 1'b1;
 
                 if (alarm_match_next_second) begin
                     status_c_alarm_q <= 1'b1;
-                    if (cmos_q[7'h0B][5])
-                        irq8_q <= 1'b1;
                 end
 
                 if (second_rollover) begin

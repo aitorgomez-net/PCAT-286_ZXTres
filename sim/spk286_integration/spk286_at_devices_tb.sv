@@ -722,6 +722,9 @@ module spk286_at_devices_tb;
         router_write(16'h0070, 8'h0B);
         router_write(16'h0071, 8'h42);
         check(!nmi_mask, "RTC NMI mask did not clear");
+        // Register A defaults to 26h: 32 base ticks per 1024 Hz event.
+        repeat (31) pulse_periodic_tick();
+        check(!irq8, "RTC periodic divider fired before its selected rate");
         pulse_periodic_tick();
         #1;
         check(irq8 && irq_request[8], "RTC periodic tick did not assert IRQ8");
