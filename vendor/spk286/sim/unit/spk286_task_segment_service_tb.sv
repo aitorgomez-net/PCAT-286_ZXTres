@@ -10,6 +10,7 @@ module spk286_task_segment_service_tb;
     logic memory_done = 1'b0;
     logic [15:0] memory_read_data = 16'h0000;
     wire memory_request, memory_write, memory_byte, busy, complete, fault, commit_valid;
+    wire [1:0] commit_index;
     wire [23:0] memory_address;
     wire [15:0] memory_write_data, fault_error_code;
     wire [7:0] fault_vector;
@@ -21,6 +22,8 @@ module spk286_task_segment_service_tb;
     wire [7:0] cache_dpl, cache_rpl;
     logic [7:0] memory [0:1023];
     integer checks = 0;
+    logic [3:0] published_mask=0;
+    integer publish_count=0;
 
     spk286_task_segment_service dut (.*);
 
@@ -43,6 +46,14 @@ module spk286_task_segment_service_tb;
     task automatic tick(input logic respond);
         begin
             #1; memory_done = 1'b0;
+            if (reset || cancel || start) begin published_mask=0; publish_count=0; end
+            else if (commit_valid) begin
+                check(!published_mask[commit_index], "each task cache publishes once");
+                check(commit_index==(publish_count==0 ? 2'd2 : publish_count==1 ? 2'd1 : publish_count==2 ? 2'd0 : 2'd3),
+                      "task cache publication follows SS/CS/ES/DS stages");
+                published_mask[commit_index]=1;
+                publish_count++;
+            end
             if (respond && memory_request) begin
                 if (memory_write) begin
                     memory[memory_address[9:0]] = memory_write_data[7:0];
@@ -73,11 +84,11 @@ module spk286_task_segment_service_tb;
         reset = 1'b1; tick(1'b0); reset = 1'b0;
         start = 1'b1; tick(1'b0); start = 1'b0;
         tick(1'b0);
-        check(memory_request && memory_address == 24'h000118, "task segment read starts at ES");
+        check(memory_request && memory_address == 24'h000138, "Intel B-13 task segment read starts at SS");
         tick(1'b0);
-        check(memory_request && memory_address == 24'h000118, "task segment read holds under READY stall");
+        check(memory_request && memory_address == 24'h000138, "task segment read holds under READY stall");
         run_to_end();
-        check(complete && commit_valid && cache_selectors == task_segments, "all task selectors commit together");
+        check(complete && cache_selectors == task_segments, "completed task retains all visible selectors");
         check(cache_bases[23:0] == 24'h110000 && cache_bases[47:24] == 24'h220000 &&
               cache_bases[71:48] == 24'h330000 && cache_bases[95:72] == 24'h440000,
               "all hidden bases are constructed");
@@ -107,7 +118,7 @@ module spk286_task_segment_service_tb;
             write_descriptor(32'h00000138, 24'h330000, 16'hFFFF, 8'h92 | (8'(rpl) << 5));
             task_segments = {16'h0000, (16'h0038 | 16'(rpl)), (16'h0004 | 16'(rpl)), 16'h0000};
             reset = 1'b1; tick(1'b0); reset = 1'b0; start = 1'b1; tick(1'b0); start = 1'b0; tick(1'b0); run_to_end();
-            check(complete && commit_valid && cache_selectors == task_segments &&
+            check(complete && published_mask == 4'hF && cache_selectors == task_segments &&
                   cache_bases[47:24] == 24'h550000 && cache_tables[1] && cache_present[1],
                   "incoming CS resolves LDT entry zero for each CPL/RPL/DPL");
             check(memory[10'h205] == (8'h9B | (8'(rpl) << 5)),
@@ -119,7 +130,7 @@ module spk286_task_segment_service_tb;
             task_segments = {(16'h0004 | 16'(rpl)), (16'h0004 | 16'(rpl)),
                              (16'h0028 | 16'(rpl)), (16'h0004 | 16'(rpl))};
             reset = 1'b1; tick(1'b0); reset = 1'b0; start = 1'b1; tick(1'b0); start = 1'b0; tick(1'b0); run_to_end();
-            check(complete && commit_valid && cache_selectors == task_segments &&
+            check(complete && published_mask == 4'hF && cache_selectors == task_segments &&
                   cache_tables == 4'b1101 && cache_present == 4'b1111 &&
                   cache_bases[23:0] == 24'h660000 && cache_bases[71:48] == 24'h660000 &&
                   cache_bases[95:72] == 24'h660000,
@@ -171,7 +182,7 @@ module spk286_task_segment_service_tb;
                     reset = 1'b1; tick(1'b0); reset = 1'b0;
                     start = 1'b1; tick(1'b0); start = 1'b0; tick(1'b0);
                     run_to_end();
-                    check(complete && commit_valid && !fault && cache_selectors == task_segments &&
+                    check(complete && published_mask == 4'hF && !fault && cache_selectors == task_segments &&
                           cache_access[7:0] == (8'h9F | (8'(dpl) << 5)) &&
                           cache_access[31:24] == (8'h9F | (8'(dpl) << 5)) &&
                           cache_dpl[1:0] == 2'(dpl) && cache_dpl[7:6] == 2'(dpl) &&
@@ -197,6 +208,60 @@ module spk286_task_segment_service_tb;
         start = 1'b1; tick(1'b0); start = 1'b0; tick(1'b0); run_to_end();
         check(fault && fault_vector == 8'd11 && fault_error_code == 16'h0018 && !commit_valid,
               "task absent readable conforming ES raises #NP");
+        // H13: within each segment, access/type/privilege precedes presence.
+        // The segment order remains SS, CS, ES, DS. Presence of CS must not
+        // be folded into its privilege predicate (valid absent CS is #NP).
+        for (integer cpl=0; cpl<4; cpl++)
+            for (integer slot=0; slot<4; slot++)
+                for (integer bad=0; bad<3; bad++)
+                    for (integer p=0; p<2; p++)
+                        if (bad!=2 || p==0) begin
+                            task_segments={16'h0048 | 16'(cpl),16'h0038 | 16'(cpl),
+                                           16'h0028 | 16'(cpl),16'h0018 | 16'(cpl)};
+                            write_descriptor('h118,0,16'hFFFF,8'h92 | (8'(cpl)<<5));
+                            write_descriptor('h128,0,16'hFFFF,8'h9A | (8'(cpl)<<5));
+                            write_descriptor('h138,0,16'hFFFF,8'h92 | (8'(cpl)<<5));
+                            write_descriptor('h148,0,16'hFFFF,8'h92 | (8'(cpl)<<5));
+                            if (bad==0)
+                                write_descriptor('h118+slot*16,0,16'hFFFF,
+                                                 (slot==1 ? 8'h12 : slot==2 ? 8'h10 : 8'h18) |
+                                                 (8'(cpl)<<5) | (p!=0 ? 8'h80 : 0));
+                            else if (bad==1) begin
+                                if (slot==1 || slot==2)
+                                    write_descriptor('h118+slot*16,0,16'hFFFF,
+                                                     (slot==1 ? 8'h1A : 8'h12) |
+                                                     ((8'(cpl)^8'd1)<<5) | (p!=0 ? 8'h80 : 0));
+                                else begin
+                                    if (cpl==0) task_segments[slot*16 +: 2]=2'd1;
+                                    write_descriptor('h118+slot*16,0,16'hFFFF,
+                                                     8'h12 | ((cpl==0 ? 8'd0 : 8'(cpl-1))<<5) | (p!=0 ? 8'h80 : 0));
+                                end
+                            end else
+                                write_descriptor('h118+slot*16,0,16'hFFFF,
+                                                 (slot==1 ? 8'h1A : 8'h12) | (8'(cpl)<<5));
+                            reset=1; tick(0); reset=0; start=1; tick(0); start=0; run_to_end();
+                            check(fault && !commit_valid && fault_vector==(bad==2 ? (slot==2 ? 8'd12 : 8'd11) : 8'd10) &&
+                                  // This service publishes the raw selector;
+                                  // the CPU executor normalizes RPL/EXT (H12).
+                                  fault_error_code==((16'h0018+16'(slot*16)) |
+                                                    (bad==1 && slot!=1 && slot!=2 && cpl==0 ? 16'd1 : 16'(cpl))),
+                                  $sformatf("H13 task fault priority CPL=%0d slot=%0d bad=%0d P=%0d",cpl,slot,bad,p));
+                            check({memory['h14D][0],memory['h13D][0],memory['h12D][0],memory['h11D][0]} ==
+                                  (slot==2 ? 4'b0000 : slot==1 ? 4'b0100 : slot==0 ? 4'b0110 : 4'b0111),
+                                  "late fault retains Accessed bits of completed task stages only");
+                            check(published_mask == (slot==2 ? 4'b0000 : slot==1 ? 4'b0100 : slot==0 ? 4'b0110 : 4'b0111),
+                                  "late fault retains cache publications of completed stages only");
+                        end
+        task_segments=64'h0048003800280018;
+        write_descriptor('h118,0,16'hFFFF,8'h12); // Absent ES.
+        write_descriptor('h128,0,16'hFFFF,8'h12); // Invalid absent CS.
+        write_descriptor('h138,0,16'hFFFF,8'h12); // Valid absent SS wins.
+        write_descriptor('h148,0,16'hFFFF,8'h12);
+        reset=1; tick(0); reset=0; start=1; tick(0); start=0; run_to_end();
+        check(fault && fault_vector==12 && fault_error_code==16'h0038,"SS-before-CS priority survives mixed invalidity");
+        write_descriptor('h138,0,16'hFFFF,8'h92);
+        reset=1; tick(0); reset=0; start=1; tick(0); start=0; run_to_end();
+        check(fault && fault_vector==10 && fault_error_code==16'h0028,"invalid CS beats later absent ES/DS");
         $display("TASK_SEGMENT_SERVICE PASS: %0d checks", checks);
         $finish;
     end

@@ -1,9 +1,9 @@
 # PCAT-286 for MiSTer
 
-Integrate restartable protected transfers, descriptor and stack corrections; fix RTC periodic interrupts and IBM EGA decoding for the OS/2 compatibility checkpoint.
+Integrate protected HLT, FLAGS, gate and privilege corrections, double faults, no-NPX/ESC handling, task-state publication and null-LDTR behavior.
 
 This development snapshot is part of the consolidated chronological
-history. Its source state comes from 2026-09-30.
+history. Its source state comes from 2026-10-01.
 The latest revision contains the common technical reference and current
 validation instructions. Historical reports and compiled candidates are
 kept in the original development archive, outside this branch.

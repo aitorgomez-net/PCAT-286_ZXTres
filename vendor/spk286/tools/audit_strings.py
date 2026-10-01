@@ -76,7 +76,7 @@ PROBES = (('word-stride',
  ('iteration-restart-ip',
   'spk286_events',
   'spk286_string_lifecycle',
-  '(repeat_boundary || (selected_kind == KIND_FAULT && instruction_active)) ? instruction_ip : ip',
+  '(repeat_boundary || (selected_kind == KIND_FAULT && instruction_active && !fault_new_task)) ? instruction_ip : ip',
   '(selected_kind == KIND_FAULT && instruction_active) ? instruction_ip : ip',
   'full unmasked REP event frame'),
  ('tf-after-element',
@@ -124,8 +124,10 @@ def main():
     subprocess.run([sys.executable, '-m', 'tools.microcode.compile_microcode', '--check'], check=True)
     output = args.build_dir.resolve()/'string-audit'
     output.mkdir(parents=True, exist_ok=True)
+    rtl_sources = sorted((ROOT/'rtl').glob('*.sv'))
+    protected_pkg = ROOT/'rtl/spk286_protected_pkg.sv'
     sources = [ROOT/'microcode/generated/spk286_microcode_pkg.sv', ROOT/'microcode/generated/spk286_microcode_rom.sv',
-               *sorted((ROOT/'rtl').glob('*.sv'))]
+               protected_pkg, *(p for p in rtl_sources if p != protected_pkg)]
     originals = {p: p.read_bytes() for p in sources}
     (output/'source.sha256').write_text(''.join(f'{hashlib.sha256(data).hexdigest()}  {p.relative_to(ROOT).as_posix()}\n'
                                               for p,data in originals.items()), encoding='utf-8')

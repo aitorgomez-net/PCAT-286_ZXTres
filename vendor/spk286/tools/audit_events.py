@@ -13,11 +13,11 @@ PROBES=(
     ('owed-trap-priority','spk286_events','spk286_event_lifecycle',
      'fault_request && instruction_active && !shutdown','fault_request && !shutdown','complete selected event'),
     ('fault-start','spk286_events','spk286_event_lifecycle',
-     '(repeat_boundary || (selected_kind == KIND_FAULT && instruction_active)) ? instruction_ip : ip','ip','precise source fault'),
+     '(repeat_boundary || (selected_kind == KIND_FAULT && instruction_active && !fault_new_task)) ? instruction_ip : ip','ip','precise source fault'),
     ('next-ip','spk286_events','spk286_event_lifecycle',
      'instruction_ip : ip;','instruction_ip : ip + 16\'d1;','INTR boundary frame'),
     ('frame-flags','spk286_events','spk286_event_instructions',
-     'event_flags <= flags;','event_flags <= flags & 16\'hFCFF;','physical lane'),
+     '                event_flags <= flags;\n','                event_flags <= flags & 16\'hFCFF;\n','physical lane'),
     ('frame-cs','spk286_micro_executor','spk286_event_instructions',
      'read_event_cs ? event_cs : event_ip','read_event_cs ? event_ip : event_cs','physical lane'),
     ('ivt-stride','spk286_micro_executor','spk286_event_instructions',
@@ -45,7 +45,7 @@ PROBES=(
     ('fault-retirement','spk286','spk286_event_instructions',
      '(event_completed && event_software)','event_completed','fault versus instruction retirement'),
     ('restore-system-bits','spk286_micro_executor','spk286_event_instructions',
-     "iret_commit ? 16'h0FD5 :","iret_commit ? 16'h7FD5 :",'exact CS IP FLAGS'),
+     "iret_commit ? stack_flags_write_mask :","iret_commit ? 16'h7FD5 :",'exact CS IP FLAGS'),
     ('iret-cache','spk286','spk286_event_instructions',
      '.load_selector(context_commit ? context_cs : internal_segment_write ? internal_segment_data : segment_load_selector)',
      '.load_selector(internal_segment_write ? internal_segment_data : segment_load_selector)','exact CS IP FLAGS'),
@@ -66,7 +66,9 @@ def main():
     output=args.build_dir.resolve()/'event-audit';output.mkdir(parents=True,exist_ok=True)
     vectors=output/'event-vectors.txt';rows=list(records())
     vectors.write_text(f'{len(rows):x}\n'+''.join(' '.join(f'{v:x}' for v in row)+'\n' for row in rows))
-    sources=[ROOT/'microcode/generated/spk286_microcode_pkg.sv',ROOT/'microcode/generated/spk286_microcode_rom.sv',*sorted((ROOT/'rtl').glob('*.sv'))]
+    packages=[ROOT/'rtl/spk286_protected_pkg.sv',ROOT/'rtl/spk286_tss_pkg.sv']
+    sources=[ROOT/'microcode/generated/spk286_microcode_pkg.sv',ROOT/'microcode/generated/spk286_microcode_rom.sv',*packages,
+             *sorted(p for p in (ROOT/'rtl').glob('*.sv') if p not in packages)]
     originals={p:p.read_bytes() for p in sources}
     results=[]
     def execute(name,bench,mutation=None,reason=None):
