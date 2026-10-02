@@ -18,6 +18,11 @@ module spk286_checkit_workload_tb #(
 
     integer native_width = 1;
     integer p03_enable = 0;
+`ifdef SPK286_AT_RAM_READ_BUFFER
+    integer data_buffer_enable = 1;
+`else
+    integer data_buffer_enable = 0;
+`endif
     string workload_name = "unknown";
 
     wire [23:0] address;
@@ -66,6 +71,14 @@ module spk286_checkit_workload_tb #(
     wire [15:0] physical_read_data;
     wire [31:0] p03_hits, p03_misses, p03_fills, p03_physical_reads;
     wire [31:0] p03_invalidations;
+    wire memory_out_valid, memory_out_command, memory_out_write, memory_out_refresh;
+    wire memory_out_code, memory_out_burst, memory_out_accept, memory_out_ready;
+    wire memory_out_read_valid;
+    wire [1:0] memory_out_owner, memory_out_lanes;
+    wire [3:0] memory_out_class;
+    wire [24:0] memory_out_address;
+    wire [15:0] memory_out_data, memory_out_read_data;
+    wire [31:0] data_buffer_hits, data_buffer_misses, data_buffer_fills, data_buffer_updates;
 
     wire [12:0] dram_address;
     wire dram_cke, dram_cs, dram_ras, dram_cas, dram_we, dram_oe;
@@ -163,13 +176,31 @@ module spk286_checkit_workload_tb #(
         .debug_invalidation_count(p03_invalidations)
     );
 
+    spk286_at_sdram_data_buffer data_buffer (
+        .clk(clk), .reset(reset), .cancel_cpu(cpu_reset), .enable(data_buffer_enable != 0),
+        .in_valid(p03_out_valid), .in_command_valid(p03_out_command),
+        .in_owner(p03_out_owner), .in_write(p03_out_write), .in_refresh(p03_out_refresh),
+        .in_code_fetch(p03_out_code), .in_burst(p03_out_burst), .in_cycle_class(p03_out_class),
+        .in_address(p03_out_address), .in_byte_enable(p03_out_lanes), .in_data_out(p03_out_data),
+        .in_accept(p03_out_accept), .in_ready(p03_out_ready), .in_read_data(p03_out_read_data),
+        .in_read_data_valid(p03_out_read_valid),
+        .out_valid(memory_out_valid), .out_command_valid(memory_out_command),
+        .out_owner(memory_out_owner), .out_write(memory_out_write), .out_refresh(memory_out_refresh),
+        .out_code_fetch(memory_out_code), .out_burst(memory_out_burst), .out_cycle_class(memory_out_class),
+        .out_address(memory_out_address), .out_byte_enable(memory_out_lanes), .out_data_out(memory_out_data),
+        .out_accept(memory_out_accept), .out_ready(memory_out_ready), .out_read_data(memory_out_read_data),
+        .out_read_data_valid(memory_out_read_valid), .debug_hit_count(data_buffer_hits),
+        .debug_miss_count(data_buffer_misses), .debug_fill_count(data_buffer_fills),
+        .debug_write_update_count(data_buffer_updates), .debug_state()
+    );
+
     spk286_at_mister_sdram_owner #(.SDRAM_INIT_WAIT(16'd8)) owner (
-        .clk(clk), .reset(reset), .request_valid(p03_out_valid && !ideal_selected),
-        .request_command_valid(p03_out_command && !ideal_selected),
-        .request_owner_refresh(p03_out_refresh), .request_write(p03_out_write),
-        .request_code_fetch(p03_out_code), .request_burst(p03_out_burst),
-        .request_cycle_class(p03_out_class), .request_address(p03_out_address),
-        .request_byte_enable(p03_out_lanes), .request_data_out(p03_out_data),
+        .clk(clk), .reset(reset), .request_valid(memory_out_valid && !ideal_selected),
+        .request_command_valid(memory_out_command && !ideal_selected),
+        .request_owner_refresh(memory_out_refresh), .request_write(memory_out_write),
+        .request_code_fetch(memory_out_code), .request_burst(memory_out_burst),
+        .request_cycle_class(memory_out_class), .request_address(memory_out_address),
+        .request_byte_enable(memory_out_lanes), .request_data_out(memory_out_data),
         .request_accept(physical_accept), .request_ready(physical_ready),
         .request_read_data(physical_read_data),
         .request_read_data_valid(physical_read_valid),
@@ -270,6 +301,9 @@ module spk286_checkit_workload_tb #(
                             workload_name, i);
                 report_stage();
                 if (profile_enable != 0) profile_report();
+                $display("RAM_BUFFER_RESULT enabled=%0d hits=%0d misses=%0d fills=%0d updates=%0d",
+                    data_buffer_enable, data_buffer_hits, data_buffer_misses,
+                    data_buffer_fills, data_buffer_updates);
                 $display("CHECKIT_DIRECTED_PASS workload=%s p03=%0d cycles=%0d retired=%0d reads=%0d writes=%0d code_fetches=%0d external_wait=%0d queue_empty=%0d sdram_reads=%0d sdram_writes=%0d hits=%0d misses=%0d fills=%0d physical_reads=%0d invalidations=%0d",
                     workload_name, p03_enable, cycles, instructions, reads,
                     writes, code_fetches, external_wait, queue_empty,
@@ -291,6 +325,7 @@ module spk286_checkit_workload_tb #(
             $fatal(1, "ROM path required");
         if ($value$plusargs("NATIVE=%d", native_width)) begin end
         if ($value$plusargs("P03=%d", p03_enable)) begin end
+        if ($value$plusargs("DATA_BUFFER=%d", data_buffer_enable)) begin end
         if ($value$plusargs("NAME=%s", workload_name)) begin end
         if ($value$plusargs("PROFILE=%d", profile_enable)) begin end
         if ($value$plusargs("IDEAL_OWNER=%d", ideal_owner_mode)) begin end

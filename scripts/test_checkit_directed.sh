@@ -21,6 +21,7 @@ sources+=(
   rtl/spk286_integration/spk286_at_memory_decode.sv
   rtl/spk286_integration/spk286_at_mister_memory_port.sv
   rtl/spk286_integration/spk286_at_sdram_read_buffer.sv
+  rtl/spk286_integration/spk286_at_sdram_data_buffer.sv
   rtl/spk286_integration/spk286_at_mister_sdram_owner.sv
   rtl/KFPC-XT/HDL/KFSDRAM/HDL/KFSDRAM.sv
   sim/spk286_integration/spk286_sdram_pin_model.sv
@@ -40,7 +41,7 @@ sha256sum "${sources[@]}" config.tcl \
   sim/spk286_integration/spk286_checkit_ideal_owner.svh \
   scripts/test_checkit_directed.sh scripts/at_performance_flags.sh \
   tests/firmware/checkit_*.asm > "$build_dir/compiled-sources.sha256"
-verilator --binary --timing -j 4 -Wno-fatal \
+verilator --binary --timing --assert -j 4 -Wno-fatal \
   "${performance_flags[@]}" "${buffer_parameters[@]}" \
   --top-module spk286_checkit_workload_tb \
   --Mdir "$build_dir/obj" -o checkit_workload "${sources[@]}" \

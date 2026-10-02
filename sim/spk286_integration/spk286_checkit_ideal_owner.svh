@@ -19,24 +19,24 @@ logic [15:0] ideal_cached_data = 0;
 integer data_cache_hits = 0;
 integer data_cache_misses = 0;
 integer data_cache_write_updates = 0;
-wire [8:0] data_cache_index = p03_out_address[9:1];
-wire data_cache_candidate = !p03_out_code && !p03_out_refresh &&
-    p03_out_address < 25'h00A0000 && !p03_out_burst;
+wire [8:0] data_cache_index = memory_out_address[9:1];
+wire data_cache_candidate = !memory_out_code && !memory_out_refresh &&
+    memory_out_address < 25'h00A0000 && !memory_out_burst;
 wire data_cache_hit = data_cache_candidate && data_cache_valid[data_cache_index] &&
-    data_cache_tag[data_cache_index] == p03_out_address[24:1];
+    data_cache_tag[data_cache_index] == memory_out_address[24:1];
 wire ideal_selected = ideal_owner_mode == 1 ||
-    (ideal_owner_mode == 2 && p03_out_code) ||
-    (ideal_owner_mode == 3 && !p03_out_code) ||
-    (ideal_owner_mode == 4 && !p03_out_code && !p03_out_write) ||
-    (ideal_owner_mode == 5 && p03_out_write) ||
-    (ideal_owner_mode == 6 && data_cache_hit && !p03_out_write);
+    (ideal_owner_mode == 2 && memory_out_code) ||
+    (ideal_owner_mode == 3 && !memory_out_code) ||
+    (ideal_owner_mode == 4 && !memory_out_code && !memory_out_write) ||
+    (ideal_owner_mode == 5 && memory_out_write) ||
+    (ideal_owner_mode == 6 && data_cache_hit && !memory_out_write);
 wire ideal_accept = ideal_selected && !ideal_active &&
-    p03_out_valid && p03_out_command;
+    memory_out_valid && memory_out_command;
 wire ideal_ready = ideal_active && (ideal_beat == ideal_length-1);
-assign p03_out_accept = ideal_selected ? ideal_accept : physical_accept;
-assign p03_out_ready = ideal_selected ? ideal_ready : physical_ready;
-assign p03_out_read_valid = ideal_selected ? ideal_active && !ideal_write : physical_read_valid;
-assign p03_out_read_data = ideal_selected ?
+assign memory_out_accept = ideal_selected ? ideal_accept : physical_accept;
+assign memory_out_ready = ideal_selected ? ideal_ready : physical_ready;
+assign memory_out_read_valid = ideal_selected ? ideal_active && !ideal_write : physical_read_valid;
+assign memory_out_read_data = ideal_selected ?
     (ideal_owner_mode == 6 ? ideal_cached_data : dram.mem[ideal_word + ideal_beat]) : physical_read_data;
 
 always @(posedge clk) begin
@@ -45,36 +45,36 @@ always @(posedge clk) begin
         ideal_beat <= 0;
         for (integer i = 0; i < 512; i++) data_cache_valid[i] = 0;
     end else begin
-        if (ideal_owner_mode == 6 && p03_out_command && p03_out_accept &&
-            data_cache_candidate && !p03_out_write) begin
+        if (ideal_owner_mode == 6 && memory_out_command && memory_out_accept &&
+            data_cache_candidate && !memory_out_write) begin
             if (data_cache_hit) data_cache_hits++;
             else data_cache_misses++;
         end
         if (ideal_owner_mode == 6 && physical_ready && data_cache_candidate) begin
-            if (!p03_out_write && physical_read_valid) begin
+            if (!memory_out_write && physical_read_valid) begin
                 data_cache_valid[data_cache_index] <= 1;
-                data_cache_tag[data_cache_index] <= p03_out_address[24:1];
+                data_cache_tag[data_cache_index] <= memory_out_address[24:1];
                 data_cache_data[data_cache_index] <= physical_read_data;
-            end else if (p03_out_write && data_cache_hit) begin
-                if (p03_out_lanes[0]) data_cache_data[data_cache_index][7:0] <= p03_out_data[7:0];
-                if (p03_out_lanes[1]) data_cache_data[data_cache_index][15:8] <= p03_out_data[15:8];
+            end else if (memory_out_write && data_cache_hit) begin
+                if (memory_out_lanes[0]) data_cache_data[data_cache_index][7:0] <= memory_out_data[7:0];
+                if (memory_out_lanes[1]) data_cache_data[data_cache_index][15:8] <= memory_out_data[15:8];
                 data_cache_write_updates++;
             end
         end
         if (ideal_accept) begin
-            if (p03_out_refresh || p03_out_lanes == 0 ||
-                int'(p03_out_address[24:1]) + (p03_out_burst ? 4 : 1) > dram.MEM_WORDS)
+            if (memory_out_refresh || memory_out_lanes == 0 ||
+                int'(memory_out_address[24:1]) + (memory_out_burst ? 4 : 1) > dram.MEM_WORDS)
                 $fatal(1, "Ideal owner request outside supported backing memory");
-            ideal_word <= int'(p03_out_address[24:1]);
-            ideal_length <= p03_out_burst ? 4 : 1;
+            ideal_word <= int'(memory_out_address[24:1]);
+            ideal_length <= memory_out_burst ? 4 : 1;
             ideal_beat <= 0;
-            ideal_write <= p03_out_write;
+            ideal_write <= memory_out_write;
             ideal_cached_data <= data_cache_data[data_cache_index];
             ideal_active <= 1;
-            if (p03_out_write) begin
-                if (p03_out_burst) $fatal(1, "Unexpected burst write");
-                if (p03_out_lanes[0]) dram.mem[int'(p03_out_address[24:1])][7:0] <= p03_out_data[7:0];
-                if (p03_out_lanes[1]) dram.mem[int'(p03_out_address[24:1])][15:8] <= p03_out_data[15:8];
+            if (memory_out_write) begin
+                if (memory_out_burst) $fatal(1, "Unexpected burst write");
+                if (memory_out_lanes[0]) dram.mem[int'(memory_out_address[24:1])][7:0] <= memory_out_data[7:0];
+                if (memory_out_lanes[1]) dram.mem[int'(memory_out_address[24:1])][15:8] <= memory_out_data[15:8];
             end
         end else if (ideal_active) begin
             if (!ideal_selected) $fatal(1, "Ideal selection changed before completion");

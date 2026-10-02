@@ -4,7 +4,7 @@
 performance_config=${PCAT_PERF_CONFIG:-$root/config.tcl}
 [[ -r "$performance_config" ]] || { echo "Missing performance config: $performance_config" >&2; return 1; }
 mapfile -t project_macros < <(sed -n \
-  's/^[[:space:]]*set_global_assignment -name VERILOG_MACRO "\(SPK286_P[0-9][0-9]_[A-Z0-9_]*\)".*/\1/p' \
+  's/^[[:space:]]*set_global_assignment -name VERILOG_MACRO "\(SPK286_P[0-9][0-9]_[A-Z0-9_]*\|SPK286_AT_RAM_READ_BUFFER\)".*/\1/p' \
   "$performance_config")
 performance_flags=()
 for macro in "${project_macros[@]}"; do performance_flags+=("-D$macro"); done

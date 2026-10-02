@@ -68,12 +68,18 @@ set AT_HDMI [at_clock {pll_hdmi|pll_hdmi_inst|altera_pll_i|cyclonev_pll|counter[
 
 create_generated_clock -name SDRAM_CLK -source [get_ports FPGA_CLK2_50] -divide_by 1 [get_ports SDRAM_CLK]
 create_clock -name VCLK_SDIO -period 20.000
-set_input_delay -clock SDRAM_CLK -max 6 [get_ports {SDRAM_DQ[*]}]
+set_input_delay -clock SDRAM_CLK -max 8 [get_ports {SDRAM_DQ[*]}]
 set_input_delay -clock SDRAM_CLK -min 3 [get_ports {SDRAM_DQ[*]}]
-# Preserve the inherited external budget pending identification of the SDRAM
-# module. Do not change phase, delay signs or target frequency to obtain PASS.
-set_output_delay -clock SDRAM_CLK -max 2 [get_ports {SDRAM_DQ[*] SDRAM_DQM* SDRAM_A[*] SDRAM_n* SDRAM_BA[*] SDRAM_CKE}]
-set_output_delay -clock SDRAM_CLK -min 1.5 [get_ports {SDRAM_DQ[*] SDRAM_DQM* SDRAM_A[*] SDRAM_n* SDRAM_BA[*] SDRAM_CKE}]
+# Conditional Winbond W9825G6KH/JH CL2 budget: tAC <= 6 ns, tOH >= 3 ns,
+# input setup <= 1.5 ns and hold <= 1 ns. Bound each external one-way clock
+# and data flight to [0, 1] ns. The board bounds and full chip suffix require
+# physical confirmation; see docs/optimization/P05_SDRAM_BUDGET_20261001.md.
+# Read max = clock flight + tAC + data flight = 8 ns.
+# Write max = tSU + max(data flight) - min(clock flight) = 2.5 ns.
+# Write min = min(data flight) - max(clock flight) - tH = -2 ns.
+# A positive minimum would permit data to change BEFORE the chip clock edge.
+set_output_delay -clock SDRAM_CLK -max 2.5 [get_ports {SDRAM_DQ[*] SDRAM_DQM* SDRAM_A[*] SDRAM_n* SDRAM_BA[*] SDRAM_CKE}]
+set_output_delay -clock SDRAM_CLK -min -2 [get_ports {SDRAM_DQ[*] SDRAM_DQM* SDRAM_A[*] SDRAM_n* SDRAM_BA[*] SDRAM_CKE}]
 set_input_delay -clock VCLK_SDIO -max 10 [get_ports {SDIO_DAT[*] SDIO_CMD}]
 set_input_delay -clock VCLK_SDIO -min 5 [get_ports {SDIO_DAT[*] SDIO_CMD}]
 set_output_delay -clock VCLK_SDIO -max 5 [get_ports {SDIO_DAT[*] SDIO_CMD SDIO_CLK}]
@@ -90,6 +96,13 @@ at_sync ega_ack $AT_VIDEO {*u_video|io_ack_sync1_q}
 at_mailbox ega_request_payload $AT_CPU {*u_video|video_bus_address_q[*] *u_video|video_bus_data_q[*] *u_video|video_bus_ior_q *u_video|video_bus_iow_q} 10.0
 at_mailbox ega_reply_payload $AT_VIDEO {*u_video|io_read_data_sync1_q[*]} 10.0
 at_sync ega_memory_select $AT_CPU {*u_video|memory_select_video1_q *u_video|memory_write_video1_q}
+
+# The machine-reset/ROM-hold level is generated in the 50 MHz system domain,
+# including when the optional CPU /2 observer is selected. The video adapter
+# uses prebios_video_sync1_q -> prebios_video_sync2_q and consumes stage two
+# only. Cut its asynchronous arrival at stage one; keep stage one -> stage
+# two and every other CPU/video path timed.
+at_sync prebios_video [at_clock FPGA_CLK2_50] {*u_video|prebios_video_sync1_q}
 
 # VRAM mode registers are held by the acknowledged EGA I/O transaction.
 # The frontend samples the payload only on its synchronized cfg_toggle edge.

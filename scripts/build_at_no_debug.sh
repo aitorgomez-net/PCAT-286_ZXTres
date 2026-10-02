@@ -15,6 +15,13 @@ fi
 
 root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 image=${QUARTUS_IMAGE:-raetro/quartus:mister}
+timing_script=scripts/report_p05_at_timing.tcl
+if [[ ${AT_DETAILED_TIMING:-0} == 1 ]]; then
+  timing_script=scripts/report_at_50mhz_timing.tcl
+elif [[ ${AT_DETAILED_TIMING:-0} != 0 ]]; then
+  echo 'AT_DETAILED_TIMING must be 0 or 1' >&2
+  exit 2
+fi
 run_dir=$(realpath -m "${1:-$root/build/at-no-debug/$(date -u +%Y%m%dT%H%M%S)-$$}")
 [[ ! -e "$run_dir" ]] || { echo "Run directory already exists: $run_dir" >&2; exit 2; }
 
@@ -53,7 +60,7 @@ docker run --rm -v "$work:/build" -w /build "$image" \
 sha256sum "$rbf" "$out/PCAT-286.sof" > "$run_dir/bitstreams.sha256"
 stat -c '%n | %s bytes | %y' "$rbf" | tee "$run_dir/rbf-info.txt"
 docker run --rm -v "$work:/build" -v "$run_dir:/run-output" -w /build "$image" \
-  quartus_sta -t scripts/report_p05_at_timing.tcl PCAT-286 /run-output/timing \
+  quartus_sta -t "$timing_script" PCAT-286 /run-output/timing \
   > "$run_dir/timing.log" 2>&1 || {
     cat "$run_dir/timing.log"
     exit 1

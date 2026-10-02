@@ -35,5 +35,25 @@ if {$output_dir ne "output_files"} {
     error "PCAT-286 selected wrong output directory: $output_dir"
 }
 
+# QSF parsing does not remove Tcl-style braces from a -to token. A braced
+# vector pattern silently names different pins and leaves the generic fast
+# output assignment active. Require the intended literal vector names.
+foreach {name targets} {
+    FAST_OUTPUT_REGISTER {SDRAM_A[*] SDRAM_BA[*] SDRAM_DQ[*]}
+    FAST_OUTPUT_ENABLE_REGISTER {SDRAM_DQ[*]}
+} {
+    foreach target $targets {
+        set found 0
+        foreach_in_collection a [get_all_instance_assignments -name $name] {
+            set assigned_to [lindex $a 2]
+            if {[string first "\{SDRAM_" $assigned_to] >= 0} {
+                error "Literal braces in $name pin assignment: $assigned_to"
+            }
+            if {$assigned_to eq $target && [lindex $a 4] eq "OFF"} { set found 1 }
+        }
+        if {!$found} { error "Missing explicit $name OFF for $target" }
+    }
+}
+
 puts "PCAT_AT_PROJECT_PASS revision=PCAT-286 sdc=$sdc_files output=$output_dir macros=$macros"
 project_close -dont_export_assignments

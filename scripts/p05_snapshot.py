@@ -33,7 +33,14 @@ def main():
     work = dest / 'work'
     work.mkdir()
     def git(*argv):
-        return subprocess.check_output(['git', '-C', str(root), *argv])
+        result = subprocess.run(['git', '-C', str(root), *argv], capture_output=True)
+        if result.stderr:
+            with (dest / 'git-diagnostics.log').open('ab') as log:
+                log.write(result.stderr)
+        if result.returncode:
+            raise subprocess.CalledProcessError(result.returncode, result.args,
+                                                result.stdout, result.stderr)
+        return result.stdout
     (dest / 'tracked.patch').write_bytes(git('diff', 'HEAD', '--binary'))
     (dest / 'git-status.txt').write_bytes(git('status', '--short', '--branch'))
     # Capture whole source directories, including generated PLL/Qsys inputs.

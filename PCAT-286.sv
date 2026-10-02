@@ -456,7 +456,19 @@ module emu_at
 
     assign sdram_dq_in = SDRAM_DQ;
     assign SDRAM_DQ = ~sdram_dq_io ? sdram_dq_out : 16'hzzzz;
-    assign SDRAM_CLK = CLK_50M;
+    // Forward the real 50 MHz clock through the dedicated DDR output cells.
+    // High on rising edges, low on falling edges: no divide or phase shift.
+    // A global clock routed as ordinary output data adds avoidable pin skew.
+    altddio_out #(
+        .extend_oe_disable("OFF"), .intended_device_family("Cyclone V"),
+        .invert_output("OFF"), .lpm_hint("UNUSED"),
+        .lpm_type("altddio_out"), .oe_reg("UNREGISTERED"),
+        .power_up_high("OFF"), .width(1)
+    ) sdram_clock_ddr (
+        .datain_h(1'b1), .datain_l(1'b0), .outclock(CLK_50M),
+        .dataout(SDRAM_CLK), .aclr(1'b0), .aset(1'b0), .oe(1'b1),
+        .outclocken(1'b1), .sclr(1'b0), .sset(1'b0)
+    );
     assign SDRAM_A   = sdram_address;
     assign SDRAM_CKE = sdram_cke;
     assign SDRAM_BA  = sdram_ba;
@@ -763,23 +775,60 @@ module emu_at
 
     wire        sdram_owner_protocol_error;
     wire [7:0]  sdram_owner_debug_state;
+    wire        ram_out_valid, ram_out_command, ram_out_write, ram_out_refresh;
+    wire        ram_out_code, ram_out_burst, ram_out_accept, ram_out_ready;
+    wire        ram_out_read_valid;
+    wire [1:0]  ram_out_owner, ram_out_lanes;
+    wire [3:0]  ram_out_class;
+    wire [24:0] ram_out_address;
+    wire [15:0] ram_out_data, ram_out_read_data;
+`ifdef SPK286_AT_RAM_READ_BUFFER
+    localparam logic RAM_READ_BUFFER_ENABLED = 1'b1;
+`else
+    localparam logic RAM_READ_BUFFER_ENABLED = 1'b0;
+`endif
+    // Both buffers observe canonical addresses and every accepted CPU/DMA/HPS
+    // write. RAM data hits do not change physical write completion or P03's
+    // instruction-line invalidation. SDRAM remains the final memory owner.
+    spk286_at_sdram_data_buffer #(.ENABLE(RAM_READ_BUFFER_ENABLED)) u_at_ram_read_buffer (
+        .clk(CLK_50M), .reset(RESET),
+        .cancel_cpu(at_machine_reset | at_cpu_reset_request), .enable(1'b1),
+        .in_valid(p03_out_valid), .in_command_valid(p03_out_command_valid),
+        .in_owner(p03_out_owner), .in_write(p03_out_write),
+        .in_refresh(p03_out_refresh), .in_code_fetch(p03_out_code_fetch),
+        .in_burst(p03_out_burst), .in_cycle_class(p03_out_cycle_class),
+        .in_address(p03_out_address), .in_byte_enable(p03_out_byte_enable),
+        .in_data_out(p03_out_data_out), .in_accept(p03_out_accept),
+        .in_ready(p03_out_ready), .in_read_data(p03_out_read_data),
+        .in_read_data_valid(p03_out_read_data_valid),
+        .out_valid(ram_out_valid), .out_command_valid(ram_out_command),
+        .out_owner(ram_out_owner), .out_write(ram_out_write),
+        .out_refresh(ram_out_refresh), .out_code_fetch(ram_out_code),
+        .out_burst(ram_out_burst), .out_cycle_class(ram_out_class),
+        .out_address(ram_out_address), .out_byte_enable(ram_out_lanes),
+        .out_data_out(ram_out_data), .out_accept(ram_out_accept),
+        .out_ready(ram_out_ready), .out_read_data(ram_out_read_data),
+        .out_read_data_valid(ram_out_read_valid),
+        .debug_hit_count(), .debug_miss_count(), .debug_fill_count(),
+        .debug_write_update_count(), .debug_state()
+    );
     spk286_at_mister_sdram_owner u_at_sdram_owner (
         .clk                    (CLK_50M),
         .reset                  (RESET),
-        .request_valid          (p03_out_valid),
-        .request_command_valid  (p03_out_command_valid),
-        .request_owner_refresh  (p03_out_refresh),
-        .request_write          (p03_out_write),
-        .request_code_fetch     (p03_out_code_fetch),
-        .request_burst          (p03_out_burst),
-        .request_cycle_class    (p03_out_cycle_class),
-        .request_address        (p03_out_address),
-        .request_byte_enable    (p03_out_byte_enable),
-        .request_data_out       (p03_out_data_out),
-        .request_accept         (p03_out_accept),
-        .request_ready          (p03_out_ready),
-        .request_read_data      (p03_out_read_data),
-        .request_read_data_valid(p03_out_read_data_valid),
+        .request_valid          (ram_out_valid),
+        .request_command_valid  (ram_out_command),
+        .request_owner_refresh  (ram_out_refresh),
+        .request_write          (ram_out_write),
+        .request_code_fetch     (ram_out_code),
+        .request_burst          (ram_out_burst),
+        .request_cycle_class    (ram_out_class),
+        .request_address        (ram_out_address),
+        .request_byte_enable    (ram_out_lanes),
+        .request_data_out       (ram_out_data),
+        .request_accept         (ram_out_accept),
+        .request_ready          (ram_out_ready),
+        .request_read_data      (ram_out_read_data),
+        .request_read_data_valid(ram_out_read_valid),
         .physical_idle          (physical_idle),
         .debug_state            (sdram_owner_debug_state),
         .protocol_error         (sdram_owner_protocol_error),

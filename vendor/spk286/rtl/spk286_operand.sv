@@ -2,18 +2,18 @@
 // encoding selects AL..BL/AH..BH independently of word-register encoding.
 // Register access completes locally; memory completes through the BIU response.
 `timescale 1ns/1ps
-module spk286_operand (
+module spk286_operand #(parameter bit USE_PARALLEL_RANGE = 1'b0) (
     input  logic clk, reset, cancel,
     input  logic request_valid, request_write, request_check, request_byte, select_rm,
     input  logic [15:0] write_data,
-    output logic done,
+    output logic done, unlimited_memory_done,
     output logic [15:0] read_data,
     input  logic [127:0] register_state,
     input  logic [2:0] reg_index, rm_index,
     input  logic register_direct,
     input  logic [23:0] physical_address,
     input  logic [15:0] offset, segment_limit,
-    input  logic segment_expand_down,
+    input  logic segment_expand_down, parallel_within_limit,
     output logic blocked,
     output logic gpr_write_en, gpr_write_byte,
     output logic [2:0] gpr_write_index,
@@ -33,10 +33,11 @@ module spk286_operand (
     logic [15:0] register_word;
     assign register_index = select_rm ? rm_index : reg_index;
     assign is_memory = select_rm && !register_direct;
-    assign within_limit = segment_expand_down ?
-                          ({1'b0, offset} > {1'b0, segment_limit} &&
-                           ({1'b0, offset} + (request_byte ? 17'd0 : 17'd1) <= 17'h0FFFF)) :
-                          (({1'b0, offset} + (request_byte ? 17'd0 : 17'd1)) <= {1'b0, segment_limit});
+    assign within_limit = USE_PARALLEL_RANGE ? parallel_within_limit : segment_expand_down ?
+                          (offset > segment_limit &&
+                           (request_byte || offset != 16'hFFFF)) :
+                          (offset < segment_limit ||
+                           (request_byte && offset == segment_limit));
     assign allowed = request_valid && !reset && !cancel && !blocked;
     assign memory_request = allowed && is_memory && !pending_q && within_limit && !request_check;
     assign memory_write = request_write;
@@ -51,6 +52,12 @@ module spk286_operand (
                          ((!pending_q && !request_check && within_limit && !memory_request_ready) ||
                           (pending_q && !memory_response_valid));
     assign done = allowed && ((request_check && (!is_memory || within_limit) && !pending_q) || (!is_memory && !pending_q) || (pending_q && memory_response_valid));
+    // Completion predicate for a valid memory request with unlimited range.
+    // The caller must establish request_valid, is_memory and within_limit.
+    // Retain cancellation, blocking and the existing pending/response handshake.
+    assign unlimited_memory_done = !reset && !cancel && !blocked &&
+                                   ((request_check && !pending_q) ||
+                                    (pending_q && memory_response_valid));
     assign word_index = request_byte ? {1'b0, register_index[1:0]} : register_index;
     assign register_word = register_state[word_index * 16 +: 16];
     assign read_data = is_memory ? memory_read_data : (request_byte ?

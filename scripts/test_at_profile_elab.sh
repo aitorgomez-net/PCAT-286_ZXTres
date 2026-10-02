@@ -110,6 +110,7 @@ SOURCE_FILES=(
   "$KF8253_DIR/KF8253_Control_Logic.sv"
   "$ROOT_DIR/sim/spk286_integration/hps_io_elab_stub.sv"
   "$ROOT_DIR/sim/spk286_integration/pll_system_elab_stub.sv"
+  "$ROOT_DIR/sim/spk286_integration/altddio_out_elab_stub.sv"
   "$ROOT_DIR/rtl/common/jtframe_ram.v"
   "$ROOT_DIR/rtl/common/tandy_pcjr_joy.sv"
   "$ROOT_DIR/rtl/common/spk286_debug_min_overlay.sv"

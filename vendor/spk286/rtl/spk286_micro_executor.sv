@@ -1,7 +1,7 @@
 // Functional micro-operation service. Physical fetch/READY belongs to the BIU.
 `timescale 1ns/1ps
 
-module spk286_micro_executor (
+module spk286_micro_executor #(parameter bit USE_PARALLEL_SYSTEM_LIMIT = 1'b0) (
     input  logic clk,
     input  logic reset,
     input  logic cancel,
@@ -17,7 +17,7 @@ module spk286_micro_executor (
     input  logic lock_prefix,
     input logic [15:0] target_read_data, effective_offset, address_base,
     input logic [15:0] segment_limit,
-    input logic segment_expand_down,
+    input logic segment_expand_down, parallel_system_limit_fault,
     input logic [15:0] stack_segment_limit,
     /* Only the expand-down bit is consumed by the current stack-range
        predicate; the remaining access bits stay in the segment cache. */
@@ -285,9 +285,18 @@ module spk286_micro_executor (
     assign decrement_frame_address = allowed && operation == spk286_microcode_pkg::MC_DECREMENT_STACK_ADDRESS && frame_address_valid_q;
     assign allocate_stack = allowed && operation == spk286_microcode_pkg::MC_ALLOCATE_STACK && allocation_valid_q && stack_cursor_valid_q;
     assign set_ea_plus2 = allowed && operation == spk286_microcode_pkg::MC_SET_EA_PLUS2;
+    // Finish the independent arithmetic before the late operation selector.
+    // Keep these combinational boundaries to prevent an arithmetic-sharing
+    // rewrite from moving the selector back into the carry path.
+    (* keep *) logic [15:0] call_parameter_write_offset;
+    (* keep *) logic [15:0] iret_parameter_bytes;
+    (* keep *) logic [15:0] iret_outer_stack_offset;
+    assign call_parameter_write_offset = stack_cursor_q - 16'd2;
+    assign iret_parameter_bytes = allocation_valid_q ? allocation_q : 16'd0;
+    assign iret_outer_stack_offset = return_stack_pointer + iret_parameter_bytes;
     assign stack_offset = call_parameter_read ? call_parameter_source_sp_q :
-                          call_parameter_write ? (stack_cursor_q - 16'd2) :
-                          iret_outer_pop ? (return_stack_pointer + (allocation_valid_q ? allocation_q : 16'd0)) :
+                          call_parameter_write ? call_parameter_write_offset :
+                          iret_outer_pop ? iret_outer_stack_offset :
                           read_frame_address ? frame_address_q : stack_native_offset;
 
     logic [15:0] tmp0_q, tmp1_q, tmp2_q, flags_q, flags_mask_q;
@@ -384,7 +393,7 @@ module spk286_micro_executor (
     // Table operands span six bytes. Expand-down segments admit offsets
     // above their limit, with the same non-wrapping 16-bit upper boundary.
     assign system_limit_fault = system_table_operation && !operand_register_direct &&
-                                (segment_expand_down ?
+                                (USE_PARALLEL_SYSTEM_LIMIT ? parallel_system_limit_fault : segment_expand_down ?
                                  (effective_offset <= segment_limit ||
                                   {1'b0, effective_offset} + 17'd5 > 17'h0FFFF) :
                                  ({1'b0, effective_offset} + 17'd5 > {1'b0, segment_limit}));
@@ -428,7 +437,7 @@ module spk286_micro_executor (
     logic descriptor_result_write;
     logic [15:0] descriptor_result_data;
     logic descriptor_read_begin, descriptor_pre_fault, descriptor_post_fault;
-    logic [63:0] descriptor_raw_q, descriptor_raw_candidate;
+    logic descriptor_low_valid, descriptor_low_reserved_valid, descriptor_high_word_valid;
     logic [15:0] descriptor_limit;
     logic [23:0] descriptor_base;
     logic [7:0] descriptor_access_rights;
@@ -480,6 +489,9 @@ module spk286_micro_executor (
     logic [1:0] call_ss_dpl_q, call_ss_rpl_q;
     logic call_ss_present_q, call_ss_table_q;
     logic [16:0] call_gate_frame_bytes;
+    logic [5:0] call_gate_frame_words;
+    logic [4:0] call_parameter_last_word;
+    logic [16:0] call_parameter_last_byte;
     logic iret_cs_validation_operation, iret_ss_validation_operation;
     logic iret_outer_frame_operation, iret_outer_required;
     logic iret_outer_pop, iret_outer_pop_done, iret_outer_range_fault;
@@ -510,7 +522,7 @@ module spk286_micro_executor (
     logic [15:0] event_gate_target_selector_q, event_gate_target_offset_q;
     logic [3:0] event_gate_class_q;
     logic [15:0] event_gate_entry_offset;
-    logic [63:0] event_gate_raw_q, event_gate_raw_candidate;
+    logic event_gate_low_valid, event_gate_low_reserved_valid, event_gate_high_word_valid;
     /* verilator lint_off UNUSEDSIGNAL */
     logic [15:0] event_gate_limit;
     logic [7:0] event_gate_access_rights;
@@ -650,13 +662,18 @@ module spk286_micro_executor (
                                            descriptor_selector_null && !descriptor_pre_fault && segment_index != 2'd2;
     assign descriptor_read_begin = descriptor_begin && !descriptor_pre_fault && !system_privilege_fault && !descriptor_verify_negative && !descriptor_inspect_negative &&
                                    !descriptor_segment_null_commit && !descriptor_selector_null;
-    assign descriptor_raw_q = {descriptor_word3_q, descriptor_word2_q, descriptor_word1_q, descriptor_word0_q};
-    assign descriptor_raw_candidate = (descriptor_operand_done && descriptor_phase_q == 3'd3) ?
-                                     {operand_read_data, descriptor_word2_q, descriptor_word1_q, descriptor_word0_q} : descriptor_raw_q;
+    // Only the reserved-form check uses word 3. Reduce both possible words
+    // before the late operand-done select, rather than muxing sixteen bits
+    // and then reducing them. Code/data segments ignore this word on a 286.
+    assign descriptor_high_word_valid = descriptor_unused_segment ||
+                                       ((descriptor_operand_done && descriptor_phase_q == 3'd3) ?
+                                        (operand_read_data == 16'h0000) : (descriptor_word3_q == 16'h0000));
+    assign descriptor_valid = descriptor_low_valid && descriptor_high_word_valid;
+    assign descriptor_reserved_valid = descriptor_low_reserved_valid && descriptor_high_word_valid;
     spk286_descriptor descriptor_parser (
-        .raw_descriptor(descriptor_raw_candidate), .limit(descriptor_limit), .base(descriptor_base),
+        .raw_descriptor({16'h0000, descriptor_word2_q, descriptor_word1_q, descriptor_word0_q}), .limit(descriptor_limit), .base(descriptor_base),
         .access_rights(descriptor_access_rights), .descriptor_class(descriptor_class),
-        .descriptor_valid(descriptor_valid), .reserved_form_valid(descriptor_reserved_valid),
+        .descriptor_valid(descriptor_low_valid), .reserved_form_valid(descriptor_low_reserved_valid),
         .present(descriptor_present), .segment(descriptor_unused_segment), .executable(descriptor_unused_executable),
         .conforming(descriptor_unused_conforming), .expand_down(descriptor_unused_expand_down),
         .readable(descriptor_unused_readable), .writable(descriptor_unused_writable), .accessed(descriptor_unused_accessed),
@@ -832,13 +849,15 @@ module spk286_micro_executor (
                                     ({1'b0, event_gate_entry_offset} + 17'd7 > {1'b0, protected_idtr_limit});
     assign event_gate_pre_fault = event_gate_limit_fault;
     assign event_gate_operand_done = event_gate_active_q && operand_done;
-    assign event_gate_raw_q = {event_gate_word3_q, event_gate_word2_q, event_gate_word1_q, event_gate_word0_q};
-    assign event_gate_raw_candidate = (event_gate_operand_done && event_gate_phase_q == 3'd3) ?
-                                      {operand_read_data, event_gate_word2_q, event_gate_word1_q, event_gate_word0_q} : event_gate_raw_q;
+    assign event_gate_high_word_valid = event_gate_unused_segment ||
+                                       ((event_gate_operand_done && event_gate_phase_q == 3'd3) ?
+                                        (operand_read_data == 16'h0000) : (event_gate_word3_q == 16'h0000));
+    assign event_gate_valid = event_gate_low_valid && event_gate_high_word_valid;
+    assign event_gate_reserved_valid = event_gate_low_reserved_valid && event_gate_high_word_valid;
     spk286_descriptor event_gate_parser (
-        .raw_descriptor(event_gate_raw_candidate), .limit(event_gate_limit), .base(event_gate_unused_base),
+        .raw_descriptor({16'h0000, event_gate_word2_q, event_gate_word1_q, event_gate_word0_q}), .limit(event_gate_limit), .base(event_gate_unused_base),
         .access_rights(event_gate_access_rights), .descriptor_class(event_gate_class),
-        .descriptor_valid(event_gate_valid), .reserved_form_valid(event_gate_reserved_valid),
+        .descriptor_valid(event_gate_low_valid), .reserved_form_valid(event_gate_low_reserved_valid),
         .present(event_gate_present), .segment(event_gate_unused_segment), .executable(event_gate_unused_executable),
         .conforming(event_gate_unused_conforming), .expand_down(event_gate_unused_expand_down),
         .readable(event_gate_unused_readable), .writable(event_gate_unused_writable), .accessed(event_gate_unused_accessed),
@@ -1165,34 +1184,52 @@ module spk286_micro_executor (
                                  temporary_valid_q[1] && (tmp1_q[1:0] > protected_cpl);
     assign iret_outer_pop = iret_outer_frame_operation && iret_outer_required && iret_outer_phase_q < 2'd2;
     assign iret_outer_pop_done = iret_outer_pop && operand_done;
-    assign call_gate_frame_bytes = 17'd8 + {11'd0, call_gate_parameter_count_q, 1'b0} +
-                                   (event_gate_candidate_valid_q ? 17'd2 : 17'd0) +
-                                   ((event_gate_candidate_valid_q && event_error_valid) ? 17'd2 : 17'd0);
+    // Count in words before widening: 4 base words, up to 31 parameters,
+    // and up to 2 event words. Keep the final byte arithmetic at 17 bits.
+    assign call_gate_frame_words = {1'b0, call_gate_parameter_count_q} +
+                                   (event_gate_candidate_valid_q ?
+                                    (event_error_valid ? 6'd6 : 6'd5) : 6'd4);
+    assign call_gate_frame_bytes = {10'd0, call_gate_frame_words, 1'b0};
+    // For N != 0, 2*N-1 is {N-1, 1}. The wrapped N=0 value is unused;
+    // the parameter-range predicate below retains its explicit N!=0 guard.
+    assign call_parameter_last_word = call_gate_parameter_count_q - 5'd1;
+    assign call_parameter_last_byte = {1'b0, stack_pointer} +
+                                      {11'd0, call_parameter_last_word, 1'b1};
+    logic [16:0] iret_outer_sum_bits, iret_outer_carry_bits, iret_outer_last_byte;
+    // Carry-save reduction of SP + allocation + 3, followed by one wide adder.
+    // Keep the original 17-bit wrapping arithmetic, including arbitrary state.
+    assign iret_outer_sum_bits = {1'b0, return_stack_pointer} ^
+                                 {1'b0, allocation_valid_q ? allocation_q : 16'd0} ^ 17'd3;
+    assign iret_outer_carry_bits = (({1'b0, return_stack_pointer} &
+                                    {1'b0, allocation_valid_q ? allocation_q : 16'd0}) |
+                                   (({1'b0, return_stack_pointer} |
+                                     {1'b0, allocation_valid_q ? allocation_q : 16'd0}) & 17'd3)) << 1;
+    assign iret_outer_last_byte = iret_outer_sum_bits + iret_outer_carry_bits;
     assign iret_outer_range_fault = iret_outer_frame_operation && iret_outer_required &&
                                     iret_outer_phase_q == 2'd0 &&
                                     (stack_segment_access[2] ?
                                       ({1'b0, return_stack_pointer} <= {1'b0, stack_segment_limit} ||
-                                       ({1'b0, return_stack_pointer} + {1'b0, allocation_valid_q ? allocation_q : 16'd0} + 17'd3 > 17'h0FFFF)) :
-                                      ({1'b0, return_stack_pointer} + {1'b0, allocation_valid_q ? allocation_q : 16'd0} + 17'd3 >
+                                       (iret_outer_last_byte > 17'h0FFFF)) :
+                                      (iret_outer_last_byte >
                                        {1'b0, stack_segment_limit}));
     // Restoring outer SS:SP does not access the new stack. RETF validates
     // the source frame and target descriptor; a subsequent stack access
     // checks its own range. In particular, an empty stack may have
     // SP=limit+1, and RETF's immediate adjustment wraps at 16 bits.
+    // The explicit SP<frame test handles subtraction underflow. Compare
+    // SP with limit+frame directly; that sum fits in 17 bits (frame<=74).
     assign call_stack_range_fault = check_call_frame && (protected_msw[0] || !event_active) &&
                                    (call_gate_outer_required ?
                                     (!call_stack_ready_q ||
                                      {1'b0, call_stack_sp_q} < call_gate_frame_bytes ||
                                      (call_ss_access_q[2] ?
-                                      ({1'b0, call_stack_sp_q} - call_gate_frame_bytes <= {1'b0, call_ss_limit_q} ||
-                                       ({1'b0, call_stack_sp_q} - call_gate_frame_bytes > 17'h0FFFF)) :
-                                      ({1'b0, call_stack_sp_q} - 17'd2 > {1'b0, call_ss_limit_q})) ||
+                                      ({1'b0, call_stack_sp_q} <= {1'b0, call_ss_limit_q} + call_gate_frame_bytes) :
+                                      ({1'b0, call_stack_sp_q} > {1'b0, call_ss_limit_q} + 17'd2)) ||
                                      (call_gate_parameter_count_q != 5'd0 &&
                                       (stack_segment_access[2] ?
                                        ({1'b0, stack_pointer} <= {1'b0, stack_segment_limit} ||
-                                        ({1'b0, stack_pointer} + {11'd0, call_gate_parameter_count_q, 1'b0} - 17'd1 > 17'h0FFFF)) :
-                                       ({1'b0, stack_pointer} + {11'd0, call_gate_parameter_count_q, 1'b0} - 17'd1 >
-                                        {1'b0, stack_segment_limit}))) ) :
+                                        call_parameter_last_byte[16]) :
+                                       (call_parameter_last_byte > {1'b0, stack_segment_limit}))) ) :
                                     (stack_pointer[0] && stack_pointer < 16'd4));
     assign call_gate_stack_switch_begin = call_gate_stack_switch_operation && call_gate_outer_required &&
                                           !call_gate_stack_switch_active_q;
@@ -1526,7 +1563,53 @@ module spk286_micro_executor (
                                ((move_word && operation == spk286_microcode_pkg::MC_MOVE8) ||
                                 (result_to_dst && operation == spk286_microcode_pkg::MC_WRITE_RESULT_DST8) || operand_gpr_write_byte))));
     assign sequential_gpr_write_index = task_commit_gpr_write ? task_commit_phase_q[2:0] : (iret_outer_sp_commit || retf_outer_sp_commit || return_same_sp_commit || call_gate_sp_commit || segment_pop_sp_commit) ? 3'd4 : descriptor_result_write ? shift_kind : fixed_result_write ? (write_result_dx ? 3'd2 : 3'd0) : string_index_write ? (string_step_source ? 3'd6 : 3'd7) : string_count_write ? 3'd1 : string_write_acc ? 3'd0 : add_allocation_arch ? 3'd4 : frame_write_gpr ? frame_write_index : allocate_stack ? 3'd4 : move_source ? source_index : stack_arch_write ? 3'd4 : (count_operation ? 3'd1 : (move_word || result_to_dst ? destination : operand_gpr_write_index));
-    assign sequential_gpr_write_data = task_commit_gpr_write ? task_loaded_gpr[task_commit_phase_q[2:0] * 16 +: 16] : iret_outer_sp_commit ? iret_outer_sp_q : retf_outer_sp_commit ? iret_outer_sp_q + allocation_q : return_same_sp_commit ? stack_cursor_q + ((commit_context && allocation_valid_q) ? allocation_q : 16'd0) : call_gate_sp_commit ? stack_cursor_q : segment_pop_sp_commit ? stack_cursor_q : descriptor_result_write ? descriptor_result_data : fixed_result_write ? (write_result_dx ? auxiliary_q : tmp2_q) : string_index_write ? (architectural_flags[10] ? string_index-string_delta : string_index+string_delta) : string_count_write ? count_value-16'd1 : string_write_acc ? tmp0_q : add_allocation_arch ? stack_pointer+allocation_q : frame_write_gpr ? tmp0_q : allocate_stack ? stack_cursor_q - allocation_q : move_source ? tmp1_q : stack_arch_write ? stack_next_sp : (count_operation ? count_value - 16'd1 : (result_to_dst ? tmp2_q : (move_word ? tmp0_q : operand_gpr_write_data)));
+    // Preserve the original complete priority, but separate selection from
+    // the 16-bit data reduction so a late completion need not cross a mux chain.
+    logic [19:0] gpr_data_requests;
+    (* keep *) logic [19:0] gpr_data_onehot;
+    logic [319:0] gpr_data_values;
+    function automatic logic [15:0] reduce_gpr_data(
+        input logic [19:0] enables, input logic [319:0] values
+    );
+        reduce_gpr_data = 16'd0;
+        for (integer i = 0; i < 20; i = i + 1)
+            reduce_gpr_data = reduce_gpr_data | ({16{enables[i]}} & values[i*16 +: 16]);
+    endfunction
+    genvar gpr_data_index;
+    generate
+    for (gpr_data_index = 0; gpr_data_index < 20; gpr_data_index = gpr_data_index + 1) begin : g_gpr_data_priority
+        if (gpr_data_index == 0) begin : g_first
+            assign gpr_data_onehot[gpr_data_index] = gpr_data_requests[gpr_data_index];
+        end else begin : g_remaining
+            assign gpr_data_onehot[gpr_data_index] = gpr_data_requests[gpr_data_index] &&
+                                                   !(|gpr_data_requests[gpr_data_index-1:0]);
+        end
+    end
+    endgenerate
+    assign gpr_data_requests = {1'b1, move_word, result_to_dst, count_operation, stack_arch_write, move_source, allocate_stack, frame_write_gpr, add_allocation_arch, string_write_acc, string_count_write, string_index_write, fixed_result_write, descriptor_result_write, segment_pop_sp_commit, call_gate_sp_commit, return_same_sp_commit, retf_outer_sp_commit, iret_outer_sp_commit, task_commit_gpr_write};
+    assign gpr_data_values = {
+        (operand_gpr_write_data),
+        (tmp0_q),
+        (tmp2_q),
+        (count_value - 16'd1),
+        (stack_next_sp),
+        (tmp1_q),
+        (stack_cursor_q - allocation_q),
+        (tmp0_q),
+        (stack_pointer+allocation_q),
+        (tmp0_q),
+        (count_value-16'd1),
+        (architectural_flags[10] ? string_index-string_delta : string_index+string_delta),
+        (write_result_dx ? auxiliary_q : tmp2_q),
+        (descriptor_result_data),
+        (stack_cursor_q),
+        (stack_cursor_q),
+        (stack_cursor_q + ((commit_context && allocation_valid_q) ? allocation_q : 16'd0)),
+        (iret_outer_sp_q + allocation_q),
+        (iret_outer_sp_q),
+        (task_loaded_gpr[task_commit_phase_q[2:0] * 16 +: 16])
+    };
+    assign sequential_gpr_write_data = reduce_gpr_data(gpr_data_onehot, gpr_data_values);
     assign sequential_flags_write_en = !reset && (task_commit_flags_write || arpl_commit || direct_flags || descriptor_verify_flags_write || descriptor_inspect_flags_write || commit_flags || restore_flags || set_if || clear_if_tf || clear_event_flags || iret_commit);
     assign task_flags_write_en = !reset && task_commit_flags_write;
     assign sequential_flags_write_data = task_commit_flags_write ? task_loaded_flags : arpl_commit ? (arpl_adjust ? 16'h0040 : 16'h0000) : direct_flags ? direct_flags_data : descriptor_verify_flags_write ? (descriptor_verify_success_live ? 16'h0040 : 16'h0000) : descriptor_inspect_flags_write ? (descriptor_inspect_success_live ? 16'h0040 : 16'h0000) : restore_flags ? tmp0_q : (iret_commit ? tmp2_q : (set_if ? {6'd0, if_value, 9'd0} : ((clear_if_tf || clear_event_flags) ? 16'd0 : flags_q)));

@@ -232,64 +232,87 @@ module spk286_at_keyboard (
     // with Shift held it cancels that modifier for the cursor operation.
     // 86Box keyboard_at.c/add_data_kbd emits the same E0-prefixed sequences.
     always_comb begin : build_sequence
-        integer index;
-        next_sequence = 64'h0;
-        index = 0;
+        // Navigation make codes occupy two bytes in either set. Break codes
+        // occupy two bytes in set 1 and three in set 2. Select those finite
+        // layouts directly: a running integer index and variable part-selects
+        // would synthesize a serial adder/steering chain through every byte.
+        // This changes no FIFO, load edge, output byte or backpressure timing.
+        next_sequence = base_sequence;
+        next_length = base_length;
 
         if (navigation_key && pressed) begin
             if (num_lock && !left_shift_q && !right_shift_q) begin
-                next_sequence[index*8 +: 8] = 8'hE0; index = index + 1;
-                next_sequence[index*8 +: 8] = translate_set1 ? 8'h2A : 8'h12;
-                index = index + 1;
+                next_sequence = {32'd0, base_sequence[15:0],
+                                 translate_set1 ? 8'h2A : 8'h12, 8'hE0};
+                next_length = 4'd4;
             end else if (!num_lock) begin
-                if (left_shift_q) begin
-                    next_sequence[index*8 +: 8] = 8'hE0; index = index + 1;
-                    if (!translate_set1) begin
-                        next_sequence[index*8 +: 8] = 8'hF0; index = index + 1;
+                case ({translate_set1, left_shift_q, right_shift_q})
+                    3'b001: begin
+                        next_sequence = {24'd0, base_sequence[15:0], 24'h59F0E0};
+                        next_length = 4'd5;
                     end
-                    next_sequence[index*8 +: 8] = translate_set1 ? 8'hAA : 8'h12;
-                    index = index + 1;
-                end
-                if (right_shift_q) begin
-                    next_sequence[index*8 +: 8] = 8'hE0; index = index + 1;
-                    if (!translate_set1) begin
-                        next_sequence[index*8 +: 8] = 8'hF0; index = index + 1;
+                    3'b010: begin
+                        next_sequence = {24'd0, base_sequence[15:0], 24'h12F0E0};
+                        next_length = 4'd5;
                     end
-                    next_sequence[index*8 +: 8] = translate_set1 ? 8'hB6 : 8'h59;
-                    index = index + 1;
-                end
+                    3'b011: begin
+                        next_sequence = {base_sequence[15:0], 24'h59F0E0, 24'h12F0E0};
+                        next_length = 4'd8;
+                    end
+                    3'b101: begin
+                        next_sequence = {32'd0, base_sequence[15:0], 16'hB6E0};
+                        next_length = 4'd4;
+                    end
+                    3'b110: begin
+                        next_sequence = {32'd0, base_sequence[15:0], 16'hAAE0};
+                        next_length = 4'd4;
+                    end
+                    3'b111: begin
+                        next_sequence = {16'd0, base_sequence[15:0], 16'hB6E0, 16'hAAE0};
+                        next_length = 4'd6;
+                    end
+                    default: begin end
+                endcase
             end
-        end
-
-        for (integer i = 0; i < 8; i = i + 1) begin
-            if (i < base_length) begin
-                next_sequence[index*8 +: 8] = base_sequence[i*8 +: 8];
-                index = index + 1;
-            end
-        end
-
-        if (navigation_key && !pressed) begin
+        end else if (navigation_key && !pressed) begin
             if (num_lock && !left_shift_q && !right_shift_q) begin
-                next_sequence[index*8 +: 8] = 8'hE0; index = index + 1;
-                if (!translate_set1) begin
-                    next_sequence[index*8 +: 8] = 8'hF0; index = index + 1;
+                if (translate_set1) begin
+                    next_sequence = {32'd0, 16'hAAE0, base_sequence[15:0]};
+                    next_length = 4'd4;
+                end else begin
+                    next_sequence = {16'd0, 24'h12F0E0, base_sequence[23:0]};
+                    next_length = 4'd6;
                 end
-                next_sequence[index*8 +: 8] = translate_set1 ? 8'hAA : 8'h12;
-                index = index + 1;
             end else if (!num_lock) begin
-                if (left_shift_q) begin
-                    next_sequence[index*8 +: 8] = 8'hE0; index = index + 1;
-                    next_sequence[index*8 +: 8] = translate_set1 ? 8'h2A : 8'h12;
-                    index = index + 1;
-                end
-                if (right_shift_q) begin
-                    next_sequence[index*8 +: 8] = 8'hE0; index = index + 1;
-                    next_sequence[index*8 +: 8] = translate_set1 ? 8'h36 : 8'h59;
-                    index = index + 1;
-                end
+                case ({translate_set1, left_shift_q, right_shift_q})
+                    3'b001: begin
+                        next_sequence = {24'd0, 16'h59E0, base_sequence[23:0]};
+                        next_length = 4'd5;
+                    end
+                    3'b010: begin
+                        next_sequence = {24'd0, 16'h12E0, base_sequence[23:0]};
+                        next_length = 4'd5;
+                    end
+                    3'b011: begin
+                        next_sequence = {8'd0, 16'h59E0, 16'h12E0, base_sequence[23:0]};
+                        next_length = 4'd7;
+                    end
+                    3'b101: begin
+                        next_sequence = {32'd0, 16'h36E0, base_sequence[15:0]};
+                        next_length = 4'd4;
+                    end
+                    3'b110: begin
+                        next_sequence = {32'd0, 16'h2AE0, base_sequence[15:0]};
+                        next_length = 4'd4;
+                    end
+                    3'b111: begin
+                        next_sequence = {16'd0, 16'h36E0, 16'h2AE0, base_sequence[15:0]};
+                        next_length = 4'd6;
+                    end
+                    default: begin end
+                endcase
             end
         end
-        next_length = index[3:0];
     end
 
     assign keyboard_byte = sequence_q[7:0];

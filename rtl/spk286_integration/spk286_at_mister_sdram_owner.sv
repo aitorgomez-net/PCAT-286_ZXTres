@@ -58,6 +58,7 @@ module spk286_at_mister_sdram_owner #(
 );
 
     logic        active_q;
+    logic        issued_q;
     logic        owner_refresh_q;
     logic        write_q;
     logic [24:0] address_q;
@@ -88,26 +89,21 @@ module spk286_at_mister_sdram_owner #(
     logic        launch_request;
     logic        physical_write;
     logic [1:0]  physical_byte_enable;
-    logic [24:0] mapped_address;
     logic [8:0]  kf_access_num;
 
     // The machine has already resolved CPU aliases and the EMS RAM shift.
     // Backend FF0000h-FFFFFFh is RAM, not the CPU's high BIOS alias.
-    assign mapped_address = active_q ? address_q : request_address;
-
     assign physical_idle = kf_idle && !active_q;
-    assign launch_request = !active_q && request_valid &&
+    assign request_accept = !active_q && request_valid &&
                             request_command_valid && kf_idle &&
                             (request_byte_enable != 2'b00);
+    assign launch_request = active_q && !issued_q && !owner_refresh_q && kf_idle;
 
-    // KFSDRAM's controller enters WRITE/READ on the acceptance edge.  The
-    // live request is consequently used for that edge; after it, the latched
-    // record holds all control and data fields stable until completion.
-    assign request_accept = launch_request;
-    assign kf_write_request = launch_request && !request_owner_refresh &&
-                              request_write;
-    assign kf_read_request  = launch_request && !request_owner_refresh &&
-                              !request_write;
+    // Admission captures a request record. KFSDRAM starts from that record
+    // on a later edge, so upstream reset/width/cache qualification cannot
+    // propagate through its launch mux to the physical SDRAM pins.
+    assign kf_write_request = launch_request && write_q;
+    assign kf_read_request  = launch_request && !write_q;
 
     // KFSDRAM presents read_flag/data_out at its internal sampling boundary.
     // Capture that pair first, then expose a stable response to the AT bus.
@@ -115,13 +111,12 @@ module spk286_at_mister_sdram_owner #(
     // same-cycle combinational propagation of the SDRAM controller outputs.
     assign request_ready = active_q &&
                            (owner_refresh_q ? kf_idle :
-                            (write_q ? kf_idle : response_pending_q));
+                            (write_q ? (issued_q && kf_idle) : response_pending_q));
     assign request_read_data = response_data_q;
     assign request_read_data_valid = active_q && !owner_refresh_q &&
                                      !write_q && response_data_valid_q;
 
-    assign kf_access_num = ((active_q ? burst_q :
-                             (request_burst === 1'b1)) ? 9'd4 : 9'd1);
+    assign kf_access_num = burst_q ? 9'd4 : 9'd1;
 
     // KFSDRAM is word-addressed while the AT boundary is byte-addressed.
     // Map the logical byte address to its physical 16-bit word with A >> 1;
@@ -129,8 +124,8 @@ module spk286_at_mister_sdram_owner #(
     // packed word layout.  The old {mapped_address[23:1], 1'b0} expression
     // aligned a byte address down and produced a sparse word layout; it was
     // not a left shift.  Loader and CPU share this mapper in either layout.
-    assign kf_address = mapped_address[24:1];
-    assign kf_data_in = active_q ? data_out_q : request_data_out;
+    assign kf_address = address_q[24:1];
+    assign kf_data_in = data_out_q;
 
     always_comb begin
         physical_write       = 1'b0;
@@ -138,9 +133,6 @@ module spk286_at_mister_sdram_owner #(
         if (active_q) begin
             physical_write       = !owner_refresh_q && write_q;
             physical_byte_enable = byte_enable_q;
-        end else if (launch_request) begin
-            physical_write       = !request_owner_refresh && request_write;
-            physical_byte_enable = request_byte_enable;
         end
 
         // DQM is active high.  Reads leave both lanes enabled; writes mask
@@ -217,6 +209,7 @@ module spk286_at_mister_sdram_owner #(
     always_ff @(posedge clk or posedge reset) begin
         if (reset) begin
             active_q       <= 1'b0;
+            issued_q       <= 1'b0;
             owner_refresh_q <= 1'b0;
             write_q        <= 1'b0;
             address_q      <= 25'h0000000;
@@ -234,18 +227,27 @@ module spk286_at_mister_sdram_owner #(
                 (request_byte_enable == 2'b00))
                 protocol_error <= 1'b1;
 
-            if (!active_q && request_accept) begin
-                active_q        <= 1'b1;
-                owner_refresh_q <= request_owner_refresh;
-                write_q         <= request_write;
+            // Sample payload while idle without the long admission enable.
+            // The accepting edge captures the same fields; active_q then
+            // freezes them until the accepted physical work has drained.
+            if (!active_q) begin
                 address_q       <= request_address;
                 byte_enable_q   <= request_byte_enable;
                 data_out_q      <= request_data_out;
+                burst_q         <= (request_burst === 1'b1);
+            end
+
+            if (request_accept) begin
+                active_q        <= 1'b1;
+                issued_q        <= 1'b0;
+                owner_refresh_q <= request_owner_refresh;
+                write_q         <= request_write;
                 response_pending_q <= 1'b0;
                 response_data_valid_q <= 1'b0;
-                burst_q          <= (request_burst === 1'b1);
                 read_beat_count_q <= 3'd0;
-            end else if (active_q && !owner_refresh_q && !write_q &&
+            end else if (launch_request) begin
+                issued_q <= 1'b1;
+            end else if (active_q && issued_q && !owner_refresh_q && !write_q &&
                          kf_read_flag && !response_pending_q) begin
                 response_data_q <= kf_data_out;
                 response_data_valid_q <= 1'b1;
@@ -254,6 +256,7 @@ module spk286_at_mister_sdram_owner #(
                     response_pending_q <= 1'b1;
             end else if (active_q && request_ready) begin
                 active_q <= 1'b0;
+                issued_q <= 1'b0;
                 response_pending_q <= 1'b0;
                 response_data_valid_q <= 1'b0;
             end
