@@ -20,6 +20,7 @@ sources=(
   rtl/spk286_integration/spk286_at_pit.sv
   rtl/spk286_integration/spk286_at_system_control.sv
   rtl/spk286_integration/spk286_at_8042.sv
+  rtl/spk286_integration/spk286_at_ems.sv
   rtl/spk286_integration/spk286_at_rtc_cmos.sv
   rtl/spk286_integration/spk286_at_fdc.sv
   rtl/spk286_integration/spk286_at_xtide.sv

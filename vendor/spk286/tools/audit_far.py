@@ -6,6 +6,8 @@ from pathlib import Path
 import subprocess
 import sys
 
+from tools.rtl_sources import ordered_rtl_sources
+
 ROOT = Path(__file__).resolve().parents[1]
 PROBES = (('lds-cache-index',
   'spk286_control_decode',
@@ -26,11 +28,11 @@ PROBES = (('lds-cache-index',
   "address_offset <= effective_offset + 16'd4",
   'exact data transaction order, direction and lanes'),
  ('call-stack-precheck',
-  'spk286_micro_executor',
-  'spk286_far_instructions',
-  "stack_pointer<16'd4",
-  "stack_pointer<16'd2",
-  'no extra data transfer'),
+ 'spk286_micro_executor',
+ 'spk286_call_stack_precheck',
+ "stack_pointer[0] && stack_pointer < 16'd4",
+ "stack_pointer[0] && stack_pointer < 16'd2",
+ 'call-frame precheck prevents every stack write'),
  ('return-stack-precheck',
   'spk286_micro_executor',
   'spk286_far_instructions',
@@ -40,8 +42,8 @@ PROBES = (('lds-cache-index',
  ('return-allocation',
   'spk286_micro_executor',
   'spk286_far_instructions',
-  'add_allocation_arch ? stack_pointer+allocation_q',
-  'add_allocation_arch ? stack_pointer-allocation_q',
+  '(stack_pointer+allocation_q)',
+  '(stack_pointer-allocation_q)',
   'all architectural GPR results and preservation'),
  ('far-context-selector',
   'spk286_micro_executor',
@@ -88,8 +90,8 @@ def main():
     subprocess.run([sys.executable, '-m', 'tools.microcode.compile_microcode', '--check'], check=True)
     output = args.build_dir.resolve()/'far-audit'
     output.mkdir(parents=True, exist_ok=True)
-    sources = [ROOT/'microcode/generated/spk286_microcode_pkg.sv', ROOT/'microcode/generated/spk286_microcode_rom.sv',
-               *sorted((ROOT/'rtl').glob('*.sv'))]
+    packages = [ROOT/'rtl/spk286_protected_pkg.sv', ROOT/'rtl/spk286_tss_pkg.sv']
+    sources = ordered_rtl_sources(ROOT)
     originals = {p: p.read_bytes() for p in sources}
     (output/'source.sha256').write_text(''.join(f'{hashlib.sha256(data).hexdigest()}  {p.relative_to(ROOT).as_posix()}\n'
                                               for p,data in originals.items()), encoding='utf-8')
@@ -122,13 +124,13 @@ def main():
         elif run.returncode or 'PASS:' not in run.stdout:
             raise RuntimeError(f'{name}: pristine bench failed')
         print(f'FAR_MUTATION {name}: {"rejected" if reason else "passed"} status={run.returncode}')
-    for bench in ('spk286_far_instructions','spk286_far_lifecycle'):
+    for bench in ('spk286_far_instructions','spk286_far_lifecycle','spk286_call_stack_precheck'):
         execute('pristine-'+bench,bench)
     for name,module,bench,old,new,reason in PROBES:
         execute(name,bench,(module,old,new),reason)
     if any(p.read_bytes()!=data for p,data in originals.items()):
         raise RuntimeError('production source changed during mutation audit')
-    print('FAR_AUDIT PASS: 12 rejected RTL mutants; 2 pristine benches; source bytes unchanged')
+    print('FAR_AUDIT PASS: 12 rejected RTL mutants; 3 pristine benches; source bytes unchanged')
 
 
 if __name__ == '__main__':

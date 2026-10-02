@@ -99,10 +99,15 @@ module spk286_at_mister_sdram_owner #(
                             (request_byte_enable != 2'b00);
     assign launch_request = active_q && !issued_q && !owner_refresh_q && kf_idle;
 
-    // Admission captures a request record. KFSDRAM starts from that record
-    // on a later edge, so upstream reset/width/cache qualification cannot
-    // propagate through its launch mux to the physical SDRAM pins.
-    assign kf_write_request = launch_request && write_q;
+    // An ordinary write starts KFSDRAM on its accepting edge. The first
+    // registered ACTIVE command uses the accepted incoming address; later
+    // column/data commands use the retained transaction. Completion still
+    // follows the full write/recovery/precharge path. Reads and refresh
+    // retain their registered launch, and no write is posted to the AT bus.
+    logic write_admission;
+    assign write_admission = request_accept && request_write &&
+                             !request_owner_refresh;
+    assign kf_write_request = (launch_request && write_q) || write_admission;
     assign kf_read_request  = launch_request && !write_q;
 
     // KFSDRAM presents read_flag/data_out at its internal sampling boundary.
@@ -124,7 +129,7 @@ module spk286_at_mister_sdram_owner #(
     // packed word layout.  The old {mapped_address[23:1], 1'b0} expression
     // aligned a byte address down and produced a sparse word layout; it was
     // not a left shift.  Loader and CPU share this mapper in either layout.
-    assign kf_address = address_q[24:1];
+    assign kf_address = write_admission ? request_address[24:1] : address_q[24:1];
     assign kf_data_in = data_out_q;
 
     always_comb begin
@@ -239,7 +244,7 @@ module spk286_at_mister_sdram_owner #(
 
             if (request_accept) begin
                 active_q        <= 1'b1;
-                issued_q        <= 1'b0;
+                issued_q        <= write_admission;
                 owner_refresh_q <= request_owner_refresh;
                 write_q         <= request_write;
                 response_pending_q <= 1'b0;

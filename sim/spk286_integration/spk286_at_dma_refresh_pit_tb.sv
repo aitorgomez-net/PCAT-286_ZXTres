@@ -92,8 +92,13 @@ module spk286_at_dma_refresh_pit_tb;
     wire refresh_ready = refresh_bus_valid && refresh_endpoint_seen;
     integer refresh_beat_count = 0;
 
-    spk286_at_refresh #(.REFRESH_INTERVAL(4)) refresh (
+    logic [1:0] test_refresh_phase = 0;
+    always @(posedge clk)
+        if(reset || !refresh_enable) test_refresh_phase <= 0;
+        else if(test_refresh_phase != 3) test_refresh_phase <= test_refresh_phase + 1'b1;
+    spk286_at_refresh refresh (
         .clk(clk), .reset(reset), .refresh_enable(refresh_enable),
+        .timer_1_out(test_refresh_phase == 3),
         .refresh_grant(refresh_grant), .refresh_accept(refresh_accept),
         .refresh_ready(refresh_ready), .refresh_request(refresh_request),
         .refresh_bus_valid(refresh_bus_valid),

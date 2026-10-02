@@ -92,6 +92,9 @@ module spk286_at_mister_memory_port (
 
     assign debug_state = {active_q, accepted_q, owner_q, cpu_cancelled_q};
 
+    wire cpu_entry_command = !active_q && !loader_valid &&
+                             cpu_candidate && cpu_command_valid && !reset;
+
     assign selected_accept = active_q && !accepted_q && backend_accept &&
                              backend_command_valid;
     assign response_complete = active_q && accepted_q && backend_ready &&
@@ -125,8 +128,8 @@ module spk286_at_mister_memory_port (
         loader_read_data      = backend_read_data;
 
         if (active_q) begin
-            // CPU has a separate command phase.  DMA and refresh enter the
-            // backend command phase as soon as their request is selected.
+            // A CPU command not accepted at entry retries from this retained
+            // record. DMA/refresh enter command after their record is selected.
             if (owner_q == OWNER_CPU)
                 backend_command_valid = !accepted_q && cpu_command_valid &&
                                         !cancel_cpu && !cpu_cancelled_q;
@@ -155,7 +158,21 @@ module spk286_at_mister_memory_port (
             end else if (owner_q == OWNER_LOADER) begin
                 loader_ready = response_complete;
             end
-        end else begin
+        end else if (cpu_entry_command) begin
+            // Arbitration, address capture and backend
+            // command acceptance share one edge. Completion is still qualified
+            // by the retained active/accepted record on a later edge.
+            backend_valid         = 1'b1;
+            backend_command_valid = 1'b1;
+            backend_owner         = OWNER_CPU;
+            backend_write         = cpu_write;
+            backend_refresh       = 1'b0;
+            backend_code_fetch    = cpu_code_fetch;
+            backend_cycle_class   = cpu_cycle_class;
+            backend_address       = cpu_address;
+            backend_byte_enable   = cpu_byte_enable;
+            backend_data_out      = cpu_data_out;
+            cpu_accept            = backend_accept;
         end
     end
 
@@ -189,6 +206,7 @@ module spk286_at_mister_memory_port (
                     byte_enable_q <= loader_byte_enable;
                     data_out_q    <= loader_data_out;
                 end else if (cpu_candidate) begin
+                    accepted_q    <= cpu_entry_command && backend_accept;
                     active_q      <= 1'b1;
                     owner_q       <= OWNER_CPU;
                     write_q       <= cpu_write;

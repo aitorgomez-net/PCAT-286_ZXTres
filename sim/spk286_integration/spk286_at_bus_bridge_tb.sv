@@ -124,7 +124,7 @@ module spk286_at_bus_bridge_tb;
             if (EXPECT_EARLY_MEMORY_ADDRESS && cpu_memory_word_capable &&
                 !(address_value[0] && bhe_n_value) &&
                 (status_value == 4'hD || status_value == 4'h5 || status_value == 4'h6)) begin
-                check(at_valid && !at_command_valid && !at_accepted && !cpu_ready,
+                check(at_valid && at_command_valid && !at_accepted && !cpu_ready,
                       $sformatf("early address phase missing: addr=%h status=%h state=%0d valid=%b command=%b ready=%b",
                                 address_value, status_value, dut.state_q, at_valid, at_command_valid, cpu_ready));
                 check(at_address == address_value && at_cycle_class == status_value &&
@@ -162,16 +162,11 @@ module spk286_at_bus_bridge_tb;
         input logic [15:0] data_value,
         output logic [15:0] response
     );
-        integer deadline;
         begin
             at_read_data = data_value;
             at_read_data_valid = 1'b1;
             at_ready = 1'b1;
-            for (deadline = 0; deadline < 100 && !cpu_ready;
-                 deadline = deadline + 1)
-                @(negedge clk);
-            check(cpu_ready, "CPU read completion did not arrive");
-            response = cpu_data_in;
+            consume_response(response);
             at_ready = 1'b0;
             at_read_data_valid = 1'b0;
             cpu_bus_valid = 1'b0;
@@ -179,14 +174,28 @@ module spk286_at_bus_bridge_tb;
         end
     endtask
 
-    task automatic complete_write;
+    // The BIU samples READY/data on a rising edge and changes its request
+    // afterwards. Merely observing READY at a falling edge is not consumption.
+    task automatic consume_response(output logic [15:0] response);
         integer deadline;
         begin
+            deadline = 0;
+            @(posedge clk);
+            while (!cpu_ready && deadline < 100) begin
+                deadline = deadline + 1;
+                @(posedge clk);
+            end
+            check(cpu_ready, "CPU completion did not reach a sampling edge");
+            response = cpu_data_in;
+            @(negedge clk);
+        end
+    endtask
+
+    task automatic complete_write;
+        logic [15:0] ignored_response;
+        begin
             at_ready = 1'b1;
-            for (deadline = 0; deadline < 100 && !cpu_ready;
-                 deadline = deadline + 1)
-                @(negedge clk);
-            check(cpu_ready, "CPU write completion did not arrive");
+            consume_response(ignored_response);
             at_ready = 1'b0;
             cpu_bus_valid = 1'b0;
             @(negedge clk);
@@ -260,12 +269,11 @@ module spk286_at_bus_bridge_tb;
         at_read_data = 16'h5600;
         at_read_data_valid = 1'b1;
         at_ready = 1'b1;
-        for (integer deadline = 0; deadline < 100 && !cpu_ready;
-             deadline = deadline + 1)
-            @(negedge clk);
-        check(cpu_ready && cpu_data_in == 16'h5634,
+        while (!cpu_ready) @(negedge clk);
+        check(cpu_data_in == 16'h5634,
               "aligned word read assembly was wrong");
         check(at_lock, "LOCK dropped before CPU observed word completion");
+        consume_response(response);
         at_ready = 1'b0;
         at_read_data_valid = 1'b0;
         cpu_bus_valid = 1'b0;
@@ -277,10 +285,13 @@ module spk286_at_bus_bridge_tb;
         before_accept = accept_count;
         start_request(24'hFFFFF0, 4'hD, 1'b0, 1'b0, 16'd0, 1'b0);
         wait_command();
-        if (EXPECT_EARLY_MEMORY_ADDRESS)
-            check(command_wait_ticks == 1,
-                  "early address capture did not overlap the bridge snapshot");
-        else if (EXPECT_P01_FAST_MEMORY_START)
+        if (EXPECT_EARLY_MEMORY_ADDRESS) begin
+            check(command_wait_ticks == 0,
+                  "early memory command did not overlap the bridge snapshot");
+            // The live width belongs to the initial sampling edge. Change
+            // it only after capture, then prove the retained shape is stable.
+            @(negedge clk);
+        end else if (EXPECT_P01_FAST_MEMORY_START)
             check(command_wait_ticks == 2,
                   "P01 did not remove the two memory-start states");
         else
@@ -351,11 +362,10 @@ module spk286_at_bus_bridge_tb;
         start_request(24'h000080, 4'h6, 1'b1, 1'b1, 16'h005A, 1'b0);
         wait_command();
         accept_command();
-        while (!cpu_ready) @(negedge clk);
-        while (cpu_ready) @(negedge clk);
+        consume_response(response);
         wait_command();
         accept_command();
-        while (!cpu_ready) @(negedge clk);
+        consume_response(response);
         check(accept_count == before_accept + 2,
               "identical back-to-back requests were not both accepted");
         cpu_bus_valid = 1'b0;
@@ -374,8 +384,8 @@ module spk286_at_bus_bridge_tb;
         at_read_data = 16'h00FF;
         at_read_data_valid = 1'b1;
         at_ready = 1'b1;
-        while (!cpu_ready) @(negedge clk);
-        check(cpu_data_in == 16'h00FF, "first INTA response was not returned");
+        consume_response(response);
+        check(response == 16'h00FF, "first INTA response was not returned");
         at_ready = 1'b0;
         at_read_data_valid = 1'b0;
         cpu_bus_valid = 1'b0;
@@ -387,8 +397,8 @@ module spk286_at_bus_bridge_tb;
         at_read_data = 16'h0042;
         at_read_data_valid = 1'b1;
         at_ready = 1'b1;
-        while (!cpu_ready) @(negedge clk);
-        check(cpu_data_in == 16'h0042,
+        consume_response(response);
+        check(response == 16'h0042,
               "second INTA vector was not sampled from D7:0");
         at_ready = 1'b0;
         at_read_data_valid = 1'b0;

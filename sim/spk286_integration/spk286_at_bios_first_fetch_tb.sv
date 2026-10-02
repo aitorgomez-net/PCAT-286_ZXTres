@@ -803,8 +803,8 @@ module spk286_at_bios_first_fetch_tb #(
             $value$plusargs("FORCE_WARM_RESET_STATE=%d",
                             forced_warm_reset_state);
         if (forced_warm_reset_test &&
-            (forced_warm_reset_state < 0 || forced_warm_reset_state > 7))
-            $fatal(1, "FORCE_WARM_RESET_STATE must be 0..7");
+            (forced_warm_reset_state < 0 || forced_warm_reset_state > 8))
+            $fatal(1, "FORCE_WARM_RESET_STATE must be 0..7, or 8 for memory READY");
         if (forced_warm_reset_test)
             $display("FORCE_WARM_RESET_STATE=%0d", forced_warm_reset_state);
         if (CPU_DIV2_TEST)
@@ -1194,27 +1194,44 @@ module spk286_at_bios_first_fetch_tb #(
                          p03_buffer.physical_inflight_q, sdram_owner.active_q);
                 inject_ctrl_alt_delete();
             end
+            // This fixture must keep executing its ROM loop and recurring
+            // IRQ0 handler. An unhandled exception can otherwise run through
+            // zero-filled RAM and accidentally satisfy a reset-state trigger.
+            if ($test$plusargs("CODE_BUFFER_RESET_STRESS") &&
+                !forced_warm_reset_injected) begin
+                if (debug_cs != 16'hF000 || cpu_halted ||
+                    (dut.debug_event_completed && debug_event_vector != 8'h20))
+                    $fatal(1, "CODE_BUFFER_RESET_STRESS execution escaped fixture csip=%04h:%04h vector=%02h halted=%b",
+                           debug_cs, debug_ip, debug_event_vector, cpu_halted);
+            end
             if (forced_warm_reset_test && !forced_warm_reset_injected &&
                 cycles >= 10000 &&
-                dut.u_bridge.state_q == forced_warm_reset_state[3:0]) begin
+                ((forced_warm_reset_state <= 7 &&
+                  dut.u_bridge.state_q == forced_warm_reset_state[3:0]) ||
+                 // Trigger the protocol boundary, regardless of whether the
+                 // bridge holds a registered response or forwards one in WAIT.
+                 (forced_warm_reset_state == 8 && cpu_ready && cpu_bus_valid &&
+                  (cpu_bus_status == 4'h5 || cpu_bus_status == 4'h6 ||
+                   cpu_bus_status == 4'hD)))) begin
                 if ($test$plusargs("CODE_BUFFER_RESET_STRESS")) begin
-                    if (pins.mem['h08300] == 0 || refresh_count == 0 ||
+                    if (pins.mem['h08300] < 2 || pins.mem['h08301] < 2 ||
+                        refresh_count == 0 ||
                         p03_buffer.debug_hit_count == 0 || p03_buffer.debug_miss_count < 2)
-                        $fatal(1, "CODE_BUFFER_RESET_STRESS missing IRQ/refresh/hit/miss evidence");
-                    $display("CODE_BUFFER_RESET_STRESS irq_handlers=%0d refresh=%0d hits=%0d misses=%0d",
-                             pins.mem['h08300], refresh_count,
+                        $fatal(1, "CODE_BUFFER_RESET_STRESS missing repeated IRQ/loop/refresh/hit/miss evidence");
+                    $display("CODE_BUFFER_RESET_STRESS irq_handlers=%0d loop_iterations=%0d refresh=%0d hits=%0d misses=%0d",
+                             pins.mem['h08300], pins.mem['h08301], refresh_count,
                              p03_buffer.debug_hit_count, p03_buffer.debug_miss_count);
                 end
                 forced_warm_reset_injected = 1'b1;
                 warm_reset_pulses_before = cpu_reset_pulses;
                 warm_reset_fetches_before = reset_vector_fetches;
                 warm_reset_cpu_fetches_before = cpu_fetch_returns;
-                $display("FORCE_WARM_RESET_INJECT cycle=%0d csip=%04h:%04h bridge=%0d mem=%b/%b p03=%0d/%b owner=%b",
+                $display("FORCE_WARM_RESET_INJECT cycle=%0d csip=%04h:%04h bridge=%0d mem=%b/%b p03=%0d/%b owner=%b cpu_ready=%b class=%h",
                          cycles, debug_cs, debug_ip, dut.u_bridge.state_q,
                          memory_port.active_q, memory_port.accepted_q,
                          p03_buffer.state_q,
                          p03_buffer.physical_inflight_q,
-                         sdram_owner.active_q);
+                         sdram_owner.active_q, cpu_ready, cpu_bus_status);
                 force dut.u_devices.u_8042.reset_pulse_q = 1'b1;
                 #1;
                 if (!dut.cpu_core_reset || !cpu_reset_request)

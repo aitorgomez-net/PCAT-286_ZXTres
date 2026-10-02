@@ -25,5 +25,11 @@ verilator --binary --timing --assert -j 4 -Wno-fatal -GFULL_PIPELINE=1 \
   --top-module spk286_at_sdram_data_buffer_tb --Mdir "$build/pipeline-obj" -o pipeline_vlt \
   "${sources[@]}" > "$build/pipeline-vlt-build.log" 2>&1
 timeout 30s "$build/pipeline-obj/pipeline_vlt" | tee "$build/pipeline-vlt.log"
+# Production's enlarged instruction buffer uses synchronous tags. Keep the
+# data buffer unchanged while exercising the same CPU/DMA/loader scoreboard.
+verilator --binary --timing --assert -j 4 -Wno-fatal -GFULL_PIPELINE=1 -GCODE_BUFFER_LINES=512 \
+  --top-module spk286_at_sdram_data_buffer_tb --Mdir "$build/code4k-pipeline-obj" -o code4k_pipeline_vlt \
+  "${sources[@]}" > "$build/code4k-pipeline-vlt-build.log" 2>&1
+timeout 30s "$build/code4k-pipeline-obj/code4k_pipeline_vlt" | tee "$build/code4k-pipeline-vlt.log"
 sha256sum --check "$build/sources.sha256" > "$build/sources-verified.log"
 echo RAM_READ_BUFFER_TEST_PASS

@@ -19,6 +19,8 @@ sources+=(
   rtl/spk286_integration/spk286_at_bus_bridge.sv
   rtl/spk286_integration/spk286_at_memory_decode.sv
   rtl/spk286_integration/spk286_at_mister_memory_port.sv
+  rtl/spk286_integration/spk286_at_posted_write_buffer.sv
+  rtl/spk286_integration/spk286_at_sdram_read_buffer.sv
   sim/spk286_integration/spk286_at_multiline_code_buffer_model.sv
   rtl/spk286_integration/spk286_at_sdram_data_buffer.sv
   rtl/spk286_integration/spk286_at_mister_sdram_owner.sv

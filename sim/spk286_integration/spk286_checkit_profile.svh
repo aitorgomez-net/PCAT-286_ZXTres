@@ -155,12 +155,12 @@ task automatic profile_tick;
             end
             profile_transaction_start = -1;
         end
-        if (memory_out_command && memory_out_accept) begin
+        if (posted_out_command && physical_accept) begin
             if (profile_owner_start >= 0) $fatal(1, "PROFILE owner overlap");
             profile_owner_start = cycles;
-            profile_owner_kind = memory_out_write ? 2 : memory_out_burst ? 0 : 1;
+            profile_owner_kind = posted_out_write ? 2 : posted_out_burst ? 0 : 1;
         end
-        if (memory_out_ready) begin
+        if (physical_ready) begin
             if (profile_owner_start < 0) $fatal(1, "PROFILE owner orphan response");
             profile_owner_count[profile_owner_kind]++;
             profile_owner_latency[profile_owner_kind] += cycles-profile_owner_start;

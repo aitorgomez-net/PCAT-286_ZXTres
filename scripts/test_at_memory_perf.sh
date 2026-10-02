@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 root=$(cd "$(dirname "$0")/.." && pwd)
-build_dir="$root/build/at-memory-perf"
+build_dir="${PCAT_BUILD_DIR:-$root/build/at-memory-perf}"
 mkdir -p "$build_dir"
 cd "$root"
 nasm -f bin tests/firmware/at_memory_perf.asm -o "$build_dir/workload.rom"
@@ -29,31 +29,10 @@ for native in 0 1; do
     | tee "$build_dir/native-$native.log"
 done
 
-# Require comparable work and a genuine cycle reduction, not just two passes.
-awk '
-  /^AT_MEMORY_PERF_PASS / {
-    for (i=2; i<=NF; i++) {
-      split($i, pair, "=")
-      value[pair[1]] = pair[2] + 0
-    }
-    mode = value["native"]
-    seen[mode]++
-    cycles[mode] = value["cycles"]
-    retired[mode] = value["retired"]
-    reads[mode] = value["reads"]
-    writes[mode] = value["writes"]
-  }
-  END {
-    if (seen[0] != 1 || seen[1] != 1 || retired[0] != retired[1] ||
-        retired[0] <= 0 || reads[0] != reads[1] || writes[0] != writes[1] ||
-        cycles[1] <= 0 || cycles[1] >= cycles[0]) {
-      print "AT_MEMORY_PERF_COMPARISON_FAIL"
-      exit 1
-    }
-    printf "AT_MEMORY_PERF_COMPARISON_PASS speedup=%.3fx fewer_cycles=%.2f%% retired=%d\n",
-      cycles[0]/cycles[1], 100*(1-cycles[1]/cycles[0]), retired[1]
-  }
-' "$build_dir/native-0.log" "$build_dir/native-1.log"
+# Speculative code reads can change with a faster memory path. Require exact
+# demanded data reads, retirement, writes, CPU state and full backing-memory
+# signature, plus a genuine cycle reduction.
+python3 scripts/compare_at_memory_perf.py "$build_dir/native-0.log" "$build_dir/native-1.log"
 
 # P03 is compared against the native-width baseline. It may legitimately
 # alter the number of CPU-side fetch requests because prefetched bytes are
@@ -61,27 +40,4 @@ awk '
 # identical, while the completed workload must be faster.
 "$build_dir/obj/memory_perf" "+ROM=$build_dir/workload.rom" "+NATIVE=1" "+P03=1" \
   | tee "$build_dir/p03-native-1.log"
-awk '
-  /^AT_MEMORY_PERF_PASS / {
-    for (i=2; i<=NF; i++) {
-      split($i, pair, "=")
-      value[pair[1]] = pair[2] + 0
-    }
-    mode = value["p03"]
-    seen[mode]++
-    cycles[mode] = value["cycles"]
-    retired[mode] = value["retired"]
-    writes[mode] = value["writes"]
-    sdram_writes[mode] = value["sdram_writes"]
-  }
-  END {
-    if (seen[0] != 1 || seen[1] != 1 || retired[0] != retired[1] ||
-        writes[0] != writes[1] || sdram_writes[0] != sdram_writes[1] ||
-        retired[1] <= 0 || cycles[1] >= cycles[0]) {
-      print "AT_MEMORY_PERF_P03_COMPARISON_FAIL"
-      exit 1
-    }
-    printf "AT_MEMORY_PERF_P03_COMPARISON_PASS speedup=%.3fx fewer_cycles=%.2f%% retired=%d\n",
-      cycles[0]/cycles[1], 100*(1-cycles[1]/cycles[0]), retired[1]
-  }
-' "$build_dir/native-1.log" "$build_dir/p03-native-1.log"
+python3 scripts/compare_at_memory_perf.py "$build_dir/native-1.log" "$build_dir/p03-native-1.log" --physical-writes

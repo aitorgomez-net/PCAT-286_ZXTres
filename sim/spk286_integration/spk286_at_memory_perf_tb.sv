@@ -14,6 +14,7 @@ module spk286_at_memory_perf_tb;
     wire halted, shutdown, control_error, unsupported, microcode_fault;
     wire retired;
     wire [15:0] instruction_ip, cs;
+    wire [15:0] next_ip, flags;
     wire [127:0] gpr;
     wire [3:0] prefetch_count;
     wire width_capable;
@@ -61,7 +62,8 @@ module spk286_at_memory_perf_tb;
         .halted(halted), .shutdown(shutdown), .control_error(control_error),
         .unsupported_opcode(unsupported), .microcode_fault(microcode_fault),
         .debug_instruction_retired(retired), .debug_instruction_ip(instruction_ip),
-        .debug_cs(cs), .debug_gpr(gpr), .debug_prefetch_count(prefetch_count)
+        .debug_cs(cs), .debug_gpr(gpr), .debug_prefetch_count(prefetch_count),
+        .debug_ip(next_ip), .debug_flags(flags)
     );
     spk286_at_memory_decode width_decode (
         .request_valid(bus_valid), .request_write(bus_write),
@@ -161,6 +163,8 @@ module spk286_at_memory_perf_tb;
     integer mark_busy = 0, mark_empty = 0, stage = 0;
     integer request_start = 0, read_cycles = 0, read_requests = 0;
     integer write_cycles = 0, write_requests = 0;
+    integer data_reads = 0, code_reads = 0, other_reads = 0;
+    logic [31:0] memory_signature;
     logic bus_pending = 0;
     task automatic report_stage;
         $display("AT_PERF p03=%0d native=%0d stage=%0d cycles=%0d retired=%0d sdram_reads=%0d sdram_writes=%0d bus_busy=%0d queue_empty=%0d",
@@ -185,6 +189,9 @@ module spk286_at_memory_perf_tb;
                 end else begin
                     read_cycles = read_cycles + cycles-request_start+1;
                     read_requests = read_requests+1;
+                    if (bus_status == 4'h5) data_reads = data_reads+1;
+                    else if (bus_status == 4'hD) code_reads = code_reads+1;
+                    else other_reads = other_reads+1;
                 end
                 bus_pending = 0;
             end
@@ -211,9 +218,13 @@ module spk286_at_memory_perf_tb;
                 for (integer i=0; i<1024; i=i+1)
                     if (dram.mem['h2000+i] !== 16'hA55A)
                         $fatal(1, "AT_PERF string mismatch index=%0d", i);
-                $display("AT_MEMORY_PERF_PASS p03=%0d native=%0d cycles=%0d retired=%0d reads=%0d read_cycles=%0d writes=%0d write_cycles=%0d sdram_reads=%0d sdram_writes=%0d",
+                memory_signature = 32'h811C9DC5;
+                for (integer i=0; i<$size(dram.mem); i=i+1)
+                    memory_signature = (memory_signature ^ {16'b0, dram.mem[i]}) * 32'h01000193;
+                $display("AT_MEMORY_PERF_PASS p03=%0d native=%0d cycles=%0d retired=%0d reads=%0d read_cycles=%0d writes=%0d write_cycles=%0d sdram_reads=%0d sdram_writes=%0d data_reads=%0d code_reads=%0d other_reads=%0d gpr=%032h flags=%04h cs=%04h ip=%04h memory=%08h",
                     p03_enable, native_width, cycles, instructions, read_requests, read_cycles,
-                    write_requests, write_cycles, dram_reads, dram_writes);
+                    write_requests, write_cycles, dram_reads, dram_writes,
+                    data_reads, code_reads, other_reads, gpr, flags, cs, next_ip, memory_signature);
                 $finish;
             end
             if (cycles > 2000000) $fatal(1, "AT_PERF timeout cs=%h ip=%h",cs,instruction_ip);
@@ -231,6 +242,7 @@ module spk286_at_memory_perf_tb;
         count = $fread(rom,fd);
         $fclose(fd);
         if (count != 65536) $fatal(1, "ROM must be 64 KiB");
+        for (integer i=0;i<$size(dram.mem);i=i+1) dram.mem[i] = 0;
         for (integer i=0;i<32768;i=i+1)
             dram.mem['h78000+i] = {rom[i*2+1],rom[i*2]};
         repeat (4) @(negedge clk);

@@ -31,8 +31,27 @@ EOF
     cp output_files/ram_buffer.map.summary /results/
     test ! -e output_files/ram_buffer.rbf
   '
-grep 'Analysis & Synthesis was successful' "$output/ram-buffer-map.log"
-# 512 entries * (16 data + 15 tag) bits. Validity is a separate resettable vector.
-grep -E '15,872|15872' "$output/ram_buffer.map.rpt"
+python3 - "$output" <<'PY'
+from pathlib import Path
+import hashlib, json, re, sys
+out=Path(sys.argv[1])
+report=out/'ram_buffer.map.rpt'
+text=report.read_text(encoding='latin1')
+bits=int(re.search(r'Total block memory bits\s*;\s*([\d,]+)',text)[1].replace(',',''))
+registers=int(re.search(r'Total registers\s*;\s*(\d+)',text)[1])
+ram_rows=[line for line in text.splitlines() if '|ALTSYNCRAM' in line and '; M10K block ;' in line]
+assert bits==16384 and len(ram_rows)==2, (bits,ram_rows)
+assert registers<1800, 'Data/tag arrays appear to have become registers'
+for row in ram_rows:
+    fields=[field.strip() for field in row.split(';')]
+    assert fields[3]=='Simple Dual Port',fields
+    assert tuple(map(int,fields[4:9]))==(256,32,256,32,8192),fields
+result={'total_registers':registers,'block_memory_bits':bits,'data_payload_bytes':1024,
+        'sets':256,'ways':2,'ram_rows':ram_rows,
+        'report_sha256':hashlib.sha256(report.read_bytes()).hexdigest(),
+        'scope':'Isolated mapping; no Fitter/timing/whole-design occupancy claim'}
+(out/'mapping.json').write_text(json.dumps(result,indent=2)+'\n')
+print(json.dumps(result,indent=2))
+PY
 sha256sum --check "$output/sources.sha256" > "$output/sources-verified.log"
 echo 'RAM_READ_BUFFER_QUARTUS_MAP_PASS (isolated module, no fitter/timing/RBF)'

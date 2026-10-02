@@ -1,7 +1,8 @@
 `timescale 1ns/1ps
 
 // PCAT RAM data-read buffer, below the common memory owner and the P03 code
-// buffer. 512 physical words = 1 KiB of data. Tags and data share a synchronous
+// buffer. Two ways, 256 sets = 512 physical words = 1 KiB of data. Both ways
+// read their combined tag/data RAM in parallel on local acceptance.
 // RAM lookup; hits return one clock after local acceptance. A miss reads one
 // complete word from SDRAM before allocation. All writes complete physically
 // and update an already cached matching word (no write allocation or posting).
@@ -42,17 +43,19 @@ module spk286_at_sdram_data_buffer #(
     localparam logic [1:0] STATE_IDLE = 2'd0;
     localparam logic [1:0] STATE_LOOKUP = 2'd1;
     localparam logic [1:0] STATE_PHYSICAL = 2'd2;
-    localparam integer INDEX_BITS = $clog2(WORD_COUNT);
-    localparam integer TAG_LOW = INDEX_BITS + 1;
+    localparam integer SET_COUNT = WORD_COUNT / 2;
+    localparam integer INDEX_BITS = (SET_COUNT > 1) ? $clog2(SET_COUNT) : 1;
+    localparam integer TAG_LOW = $clog2(SET_COUNT) + 1;
     localparam integer TAG_BITS = 25 - TAG_LOW;
 
     logic [1:0] state_q;
-    logic [WORD_COUNT-1:0] valid_q;
-    // No data/tag reset: infer block RAM instead of a 512-way combinational
-    // tag/data mux. Validity is separate and is reset/CPU-flush controlled.
-    (* ramstyle = "M10K" *) logic [TAG_BITS+15:0] words_q [0:WORD_COUNT-1];
-    logic [TAG_BITS+15:0] lookup_q;
-    logic lookup_valid_q;
+    logic [SET_COUNT-1:0] valid0_q, valid1_q, replace_q;
+    // No tag/data reset. Production uses two 256 x 32-bit M10K arrays,
+    // with resettable valid bits and one replacement bit per set.
+    (* ramstyle = "M10K" *) logic [TAG_BITS+15:0] words0_q [0:SET_COUNT-1];
+    (* ramstyle = "M10K" *) logic [TAG_BITS+15:0] words1_q [0:SET_COUNT-1];
+    logic [TAG_BITS+15:0] lookup0_q, lookup1_q;
+    logic lookup_valid0_q, lookup_valid1_q, replace_way_q;
     logic [INDEX_BITS-1:0] index_q;
     logic [1:0] owner_q;
     logic write_q, refresh_q, code_q, burst_q, allocate_q, cancelled_q;
@@ -61,7 +64,7 @@ module spk286_at_sdram_data_buffer #(
     logic [1:0] lanes_q;
     logic [15:0] data_q;
 
-    wire [INDEX_BITS-1:0] input_index = in_address[INDEX_BITS:1];
+    wire [INDEX_BITS-1:0] input_index = (SET_COUNT == 1) ? '0 : in_address[INDEX_BITS:1];
     // Only canonical backend RAM addresses. BIOS/option ROM/UMB/video and
     // devices are excluded. Shifted extended RAM and the private EMS store
     // remain physical RAM; the machine resolves aliases/A20 before this port.
@@ -74,11 +77,19 @@ module spk286_at_sdram_data_buffer #(
     wire input_present = in_valid && in_command_valid;
     wire input_cancelled = cancel_cpu && in_owner == OWNER_CPU;
     wire current_cancelled = cancelled_q || (cancel_cpu && owner_q == OWNER_CPU);
-    wire tag_hit = lookup_valid_q && lookup_q[TAG_BITS+15:16] == address_q[24:TAG_LOW];
+    wire tag_hit0 = lookup_valid0_q && lookup0_q[TAG_BITS+15:16] == address_q[24:TAG_LOW];
+    wire tag_hit1 = lookup_valid1_q && lookup1_q[TAG_BITS+15:16] == address_q[24:TAG_LOW];
+    wire tag_hit = tag_hit0 || tag_hit1;
+    wire hit_way = tag_hit1 && !tag_hit0;
+    wire [15:0] hit_word = hit_way ? lookup1_q[15:0] : lookup0_q[15:0];
+    // Invalid ways precede LRU replacement. Writes update data without
+    // changing read recency; hits/fills make their way most recently used.
+    wire fill_way = !lookup_valid0_q ? 1'b0 : !lookup_valid1_q ? 1'b1 : replace_way_q;
     wire physical_complete = state_q == STATE_PHYSICAL && out_ready &&
                              (write_q || refresh_q || out_read_data_valid);
     wire update_word = physical_complete && write_q && !refresh_q &&
-                       tag_hit && valid_q[index_q] && ENABLE && enable &&
+                       ((tag_hit0 && valid0_q[index_q]) ||
+                        (tag_hit1 && valid1_q[index_q])) && ENABLE && enable &&
                        !cancel_cpu && !current_cancelled;
     wire fill_word = physical_complete && allocate_q && !write_q &&
                      out_read_data_valid && ENABLE && enable &&
@@ -86,7 +97,7 @@ module spk286_at_sdram_data_buffer #(
     logic [15:0] merged_write;
 
     always_comb begin
-        merged_write = lookup_q[15:0];
+        merged_write = hit_word;
         if (lanes_q[0]) merged_write[7:0] = data_q[7:0];
         if (lanes_q[1]) merged_write[15:8] = data_q[15:8];
     end
@@ -96,12 +107,18 @@ module spk286_at_sdram_data_buffer #(
     // A nonmatching tag is left intact; CPU/DMA/loader writes all use this rule.
     always_ff @(posedge clk) begin
         if (!reset) begin
-            if (state_q == STATE_IDLE && in_accept)
-                lookup_q <= words_q[input_index];
-            if (fill_word)
-                words_q[index_q] <= {address_q[24:TAG_LOW], out_read_data};
-            else if (update_word)
-                words_q[index_q] <= {address_q[24:TAG_LOW], merged_write};
+            if (state_q == STATE_IDLE && in_accept) begin
+                lookup0_q <= words0_q[input_index];
+                lookup1_q <= words1_q[input_index];
+            end
+            if (fill_word && !fill_way)
+                words0_q[index_q] <= {address_q[24:TAG_LOW], out_read_data};
+            else if (update_word && !hit_way)
+                words0_q[index_q] <= {address_q[24:TAG_LOW], merged_write};
+            if (fill_word && fill_way)
+                words1_q[index_q] <= {address_q[24:TAG_LOW], out_read_data};
+            else if (update_word && hit_way)
+                words1_q[index_q] <= {address_q[24:TAG_LOW], merged_write};
         end
     end
 
@@ -146,7 +163,7 @@ module spk286_at_sdram_data_buffer #(
                 if (current_cancelled || tag_hit) begin
                     in_ready = 1'b1;
                     in_read_data_valid = 1'b1;
-                    in_read_data = current_cancelled ? 16'hFFFF : lookup_q[15:0];
+                    in_read_data = current_cancelled ? 16'hFFFF : hit_word;
                 end else begin
                     out_valid = 1'b1;
                     out_command_valid = 1'b1;
@@ -175,8 +192,12 @@ module spk286_at_sdram_data_buffer #(
     always_ff @(posedge clk or posedge reset) begin
         if (reset) begin
             state_q <= STATE_IDLE;
-            valid_q <= '0;
-            lookup_valid_q <= 1'b0;
+            valid0_q <= '0;
+            valid1_q <= '0;
+            replace_q <= '0;
+            lookup_valid0_q <= 1'b0;
+            lookup_valid1_q <= 1'b0;
+            replace_way_q <= 1'b0;
             index_q <= '0;
             owner_q <= OWNER_CPU;
             write_q <= 1'b0;
@@ -209,7 +230,9 @@ module spk286_at_sdram_data_buffer #(
                         lanes_q <= in_byte_enable;
                         data_q <= in_data_out;
                         index_q <= input_index;
-                        lookup_valid_q <= valid_q[input_index];
+                        lookup_valid0_q <= valid0_q[input_index];
+                        lookup_valid1_q <= valid1_q[input_index];
+                        replace_way_q <= replace_q[input_index];
                         allocate_q <= candidate;
                         cancelled_q <= 1'b0;
                         state_q <= candidate ? STATE_LOOKUP : STATE_PHYSICAL;
@@ -218,8 +241,10 @@ module spk286_at_sdram_data_buffer #(
                 STATE_LOOKUP: begin
                     if (in_ready) begin
                         state_q <= STATE_IDLE;
-                        if (!current_cancelled)
+                        if (!current_cancelled) begin
+                            replace_q[index_q] <= !hit_way;
                             debug_hit_count <= debug_hit_count + 1;
+                        end
                     end else if (out_accept) begin
                         state_q <= STATE_PHYSICAL;
                         debug_miss_count <= debug_miss_count + 1;
@@ -229,7 +254,9 @@ module spk286_at_sdram_data_buffer #(
                     if (physical_complete) begin
                         state_q <= STATE_IDLE;
                         if (fill_word) begin
-                            valid_q[index_q] <= 1'b1;
+                            if (fill_way) valid1_q[index_q] <= 1'b1;
+                            else valid0_q[index_q] <= 1'b1;
+                            replace_q[index_q] <= !fill_way;
                             debug_fill_count <= debug_fill_count + 1;
                         end
                         if (update_word)
@@ -241,8 +268,11 @@ module spk286_at_sdram_data_buffer #(
             // CPU reset also flushes an idle buffer and a non-CPU transfer.
             // Non-CPU ownership continues; its old lookup cannot resurrect a
             // flushed line. Disabling also prevents stale re-enable hits.
-            if (cancel_cpu || !ENABLE || !enable)
-                valid_q <= '0;
+            if (cancel_cpu || !ENABLE || !enable) begin
+                valid0_q <= '0;
+                valid1_q <= '0;
+                replace_q <= '0;
+            end
         end
     end
 
@@ -262,6 +292,8 @@ module spk286_at_sdram_data_buffer #(
                 else $error("RAM buffer launched a cancelled CPU miss");
             assert (!fill_word || !burst_q)
                 else $error("RAM buffer allocated a burst/device request");
+            assert (!(tag_hit0 && tag_hit1))
+                else $error("RAM buffer has duplicate physical tags in both ways");
         end
     end
 `endif

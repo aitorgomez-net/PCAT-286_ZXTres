@@ -10,7 +10,7 @@ module spk286_at_mister_memory_port_tb;
     logic        cpu_write;
     logic        cpu_code_fetch;
     logic [3:0]  cpu_cycle_class;
-    logic [23:0] cpu_address;
+    logic [24:0] cpu_address;
     logic [1:0]  cpu_byte_enable;
     logic [15:0] cpu_data_out;
     logic        cpu_accept;
@@ -29,7 +29,7 @@ module spk286_at_mister_memory_port_tb;
 
     logic        dma_valid;
     logic        dma_write;
-    logic [23:0] dma_address;
+    logic [24:0] dma_address;
     logic [1:0]  dma_byte_enable;
     logic [15:0] dma_data_out;
     logic        dma_accept;
@@ -48,7 +48,7 @@ module spk286_at_mister_memory_port_tb;
     logic        backend_refresh;
     logic        backend_code_fetch;
     logic [3:0]  backend_cycle_class;
-    logic [23:0] backend_address;
+    logic [24:0] backend_address;
     logic [1:0]  backend_byte_enable;
     logic [15:0] backend_data_out;
     logic        backend_accept;
@@ -61,6 +61,11 @@ module spk286_at_mister_memory_port_tb;
     localparam logic [1:0] OWNER_DMA      = 2'd1;
     localparam logic [1:0] OWNER_REFRESH  = 2'd2;
     localparam logic [1:0] OWNER_LOADER   = 2'd3;
+    integer accepted_commands = 0;
+    integer checks = 0;
+    always @(posedge clk)
+        if (!reset && backend_command_valid && backend_accept)
+            accepted_commands <= accepted_commands + 1;
 
     always #5 clk = ~clk;
 
@@ -117,6 +122,7 @@ module spk286_at_mister_memory_port_tb;
 
     task automatic check(input logic condition, input string message);
         begin
+            checks = checks + 1;
             if (condition !== 1'b1) begin
                 $display("AT_MISTER_MEMORY_PORT_FAIL %s", message);
                 $fatal(1);
@@ -408,6 +414,84 @@ module spk286_at_mister_memory_port_tb;
         cpu_command_valid=0;
         cancel_cpu=0;
         $display("AT_MISTER_MEMORY_PORT_CPU_RESET_PASS preaccept_cancel accepted_drain loader_preserved");
+
+        // Offer code, data and byte-write commands on the initial edge.
+        // READY/data left high at idle must not acknowledge an uncaptured beat.
+        for (integer kind = 0; kind < 3; kind = kind + 1) begin : entry_cases
+            integer before_accept;
+            @(negedge clk);
+            before_accept = accepted_commands;
+            cpu_valid=1;
+            cpu_command_valid=1;
+            cpu_write=(kind == 2);
+            cpu_code_fetch=(kind == 0);
+            cpu_cycle_class=(kind == 0) ? 4'hD : (kind == 2) ? 4'h6 : 4'h5;
+            cpu_address=25'h1201234;
+            cpu_byte_enable=(kind == 2) ? 2'b10 : 2'b11;
+            cpu_data_out=16'hCA00;
+            backend_accept=1;
+            backend_ready=1;
+            backend_read_data_valid=1;
+            #1;
+            check(cpu_accept && backend_command_valid && !cpu_ready &&
+                  backend_address == 25'h1201234 && backend_data_out == 16'hCA00 &&
+                  backend_cycle_class == cpu_cycle_class &&
+                  backend_code_fetch == cpu_code_fetch && backend_write == cpu_write &&
+                  backend_byte_enable == cpu_byte_enable,
+                  "initial command lost metadata or inherited idle READY");
+            @(posedge clk); #1;
+            backend_accept=0;
+            backend_ready=0;
+            cpu_address=25'h0BAD000;
+            cpu_data_out=16'hDEAD;
+            cpu_command_valid=0;
+            #1;
+            check(accepted_commands == before_accept + 1 && !backend_command_valid &&
+                  backend_address == 25'h1201234 && backend_data_out == 16'hCA00 &&
+                  !cpu_ready, "entry command not retained exactly once");
+            @(negedge clk);
+            backend_ready=1;
+            backend_read_data=16'hFACE;
+            #1;
+            check(cpu_ready && (cpu_read_data_valid == (kind != 2)) &&
+                  cpu_read_data == 16'hFACE, "entry command response invalid");
+            @(posedge clk); #1;
+            cpu_valid=0;
+            backend_ready=0;
+            backend_read_data_valid=0;
+            check(!backend_valid && accepted_commands == before_accept + 1,
+                  "entry command was repeated at completion");
+        end
+
+        // Backpressure snapshots all fields even if live inputs later change.
+        @(negedge clk);
+        cpu_valid=1; cpu_command_valid=1; cpu_write=0; cpu_code_fetch=0;
+        cpu_cycle_class=4'h5; cpu_address=25'h1105678; cpu_byte_enable=2'b01;
+        backend_accept=0;
+        #1;
+        check(backend_command_valid && !cpu_accept && !cpu_ready,
+              "backpressured entry was not offered");
+        @(posedge clk); #1;
+        cpu_address=25'h0BAD000; cpu_byte_enable=2'b10; cpu_cycle_class=4'hD;
+        repeat (3) @(negedge clk);
+        check(backend_address == 25'h1105678 && backend_byte_enable == 2'b01 &&
+              backend_cycle_class == 4'h5 && backend_command_valid && !cpu_ready,
+              "backpressured entry metadata changed");
+        backend_accept=1;
+        @(posedge clk); #1;
+        backend_accept=0;
+        // CPU reset after entry acceptance drains its physical record.
+        cancel_cpu=1; cpu_valid=0; cpu_command_valid=0;
+        @(posedge clk); @(negedge clk);
+        cancel_cpu=0;
+        backend_ready=1; backend_read_data_valid=1;
+        #1;
+        check(backend_valid && backend_address == 25'h1105678 && !cpu_ready &&
+              !cpu_read_data_valid && !cpu_accept, "cancelled entry response leaked");
+        @(posedge clk); #1;
+        backend_ready=0; backend_read_data_valid=0;
+        check(!backend_valid && !protocol_error, "cancelled entry did not drain");
+        $display("AT_MISTER_MEMORY_PORT_ENTRY_PASS checks=%0d accepted=%0d", checks, accepted_commands);
         $display("AT_MISTER_MEMORY_PORT_PASS");
         $finish;
     end

@@ -5,7 +5,8 @@
 // inserts gaps between burst words so READY cannot stand in for data-valid.
 module spk286_at_multiline_code_buffer_tb #(
     parameter logic ENABLE = 1'b1,
-    parameter integer LINE_COUNT = 64
+    parameter integer LINE_COUNT = 64,
+    parameter logic SYNC_TAGS = (LINE_COUNT > 128)
 );
     logic clk = 0;
     always #5 clk = ~clk;
@@ -31,7 +32,7 @@ module spk286_at_multiline_code_buffer_tb #(
     wire [31:0] debug_physical_read_count, debug_invalidation_count;
     wire [4:0] debug_state;
 `ifdef PCAT_PRODUCTION_CODE_BUFFER
-    spk286_at_sdram_read_buffer #(.ENABLE(ENABLE), .LINE_COUNT(LINE_COUNT)) dut (.*);
+    spk286_at_sdram_read_buffer #(.ENABLE(ENABLE), .LINE_COUNT(LINE_COUNT), .SYNC_TAGS(SYNC_TAGS)) dut (.*);
 `else
     spk286_at_multiline_code_buffer_model #(.ENABLE(ENABLE)) dut (.*);
 `endif
@@ -452,6 +453,23 @@ module spk286_at_multiline_code_buffer_tb #(
 
         // Cancel before each of the four physically accepted fill beats.
         if (ENABLE) begin
+`ifdef PCAT_PRODUCTION_CODE_BUFFER
+            if (SYNC_TAGS) begin
+                // Cancellation after local lookup acceptance, before any
+                // physical command is accepted, must never launch a fill.
+                invalidate_all();
+                commands_before = commands;
+                beats_before = read_beats;
+                begin_request(0, 0, 0, 1, 25'h0C006, 3, 0);
+                cancel_cpu = 1;
+                finish_request(1, 16'hFFFF);
+                check(commands == commands_before && read_beats == beats_before,
+                      "cancelled tag lookup launched a physical command");
+                cancel_cpu = 0;
+                fetch(25'h0C006, 0);
+                fetch(25'h0C000, 1);
+            end
+`endif
             for (integer cancel_beat = 0; cancel_beat < 4; cancel_beat = cancel_beat + 1) begin
                 invalidate_all();
                 fetch(25'h08000, 0);

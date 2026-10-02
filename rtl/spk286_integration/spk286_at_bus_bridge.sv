@@ -25,6 +25,7 @@ module spk286_at_bus_bridge #(
     input  logic         cpu_bus_bhe_n,
     input  logic [3:0]   cpu_bus_status,
     input  logic         cpu_bus_lock,
+    input  logic         memory_drain_pending,
     // Board address decode, sampled with the CPU request. Memory width and
     // selected ISA16 I/O width are separate so ordinary ISA peripherals
     // retain byte-wide sequencing.
@@ -37,8 +38,8 @@ module spk286_at_bus_bridge #(
     output logic [15:0]  cpu_data_in,
 
     // Normalized AT-side transaction record. P06 exposes the initial memory
-    // address while both ends capture it; COMMAND and WAIT use retained
-    // metadata. The consumer decodes/captures before command acceptance.
+    // address while both ends capture it. Common-clock native memory can
+    // accept its command on that edge; later COMMAND/WAIT use retained data.
     output logic         at_valid,
     output logic         at_command_valid,
     output logic [2:0]   at_owner,
@@ -104,9 +105,11 @@ module spk286_at_bus_bridge #(
     logic        request_lock_q;
     logic        request_two_beats_q;
     logic        request_native_word_q;
+    logic        request_native_memory_q;
     logic        beat_high_q;
     logic [7:0]  read_low_byte_q;
     logic        complete_sampled_q;
+    logic [15:0] cpu_data_in_q;
 
     logic request_status_valid;
     logic request_lane_valid;
@@ -136,15 +139,21 @@ module spk286_at_bus_bridge #(
                                 io_native_word_request) &&
                                !cpu_address[0] && !cpu_bus_bhe_n;
 
+    wire drain_pending = memory_drain_pending === 1'b1;
+    wire drain_barrier = drain_pending &&
+                         (cpu_bus_lock || !memory_native_word_request);
+
     logic [23:0] beat_address;
     logic [1:0]   beat_byte_enable;
     // Let the downstream memory owner capture its address record on the same
-    // edge as this bridge. Only decoded x16 memory targets qualify. COMMAND
-    // remains registered and starts on the following edge; no backend command
-    // or READY/data response bypasses a retained transaction record.
+    // edge as this bridge. Only decoded x16 memory targets qualify. In the
+    // common clock, command acceptance may share that edge; synchronous RAM
+    // and all completions still use the retained accepted record afterwards.
     wire early_memory_address = EARLY_MEMORY_ADDRESS && !reset &&
                                 (state_q == STATE_IDLE) && cpu_bus_valid &&
-                                memory_native_word_request && live_request_valid;
+                                memory_native_word_request && live_request_valid && !drain_barrier;
+    // Related slower CPU clocks keep the registered command sequence.
+    wire early_memory_command = early_memory_address && !COMPLETE_ON_CPU_SAMPLE;
     wire [1:0] early_byte_enable = native_word_request ? 2'b11 :
                                   cpu_address[0] ? 2'b10 : 2'b01;
     wire [15:0] early_data = native_word_request ? cpu_data_out :
@@ -208,10 +217,24 @@ module spk286_at_bus_bridge #(
                               (!request_is_read || request_is_inta ||
                                at_read_data_valid);
 
+    // RAM/ROM responses already come from a retained backend transaction.
+    // In the common clock domain, let the CPU consume that response on the
+    // same edge as the bridge. Byte requests still select their retained
+    // lane; split and peripheral cycles keep the registered completion path.
+    // The divided CPU clock keeps its explicit READY alignment/hold interval.
+    wire direct_memory_wait = !COMPLETE_ON_CPU_SAMPLE && !reset &&
+                              request_native_memory_q && !request_two_beats_q &&
+                              (state_q == STATE_WAIT);
+    wire direct_memory_response = direct_memory_wait && completion_valid;
+    wire [15:0] direct_memory_data = request_native_word_q ? at_read_data :
+                                     beat_byte_enable[1] ?
+                                     {at_read_data[15:8], 8'h00} :
+                                     {8'h00, at_read_data[7:0]};
+
     assign at_valid          = early_memory_address || (state_q == STATE_ADDRESS) ||
                                (state_q == STATE_COMMAND) ||
                                (state_q == STATE_WAIT);
-    assign at_command_valid  = (state_q == STATE_COMMAND);
+    assign at_command_valid  = early_memory_command || (state_q == STATE_COMMAND);
     assign at_owner          = OWNER_CPU;
     assign at_cycle_class    = early_memory_address ? cpu_bus_status : request_status_q;
     assign at_address        = early_memory_address ? cpu_address : beat_address;
@@ -222,7 +245,8 @@ module spk286_at_bus_bridge #(
                                beat_byte_enable[1] ?
                                {request_data_q[15:8], 8'h00} :
                                {8'h00, request_data_q[7:0]};
-    assign at_data_oe        = at_valid && request_write_q &&
+    assign at_data_oe        = early_memory_command ? cpu_data_oe :
+                               at_valid && request_write_q &&
                                ((state_q == STATE_COMMAND) ||
                                 (state_q == STATE_WAIT));
     assign at_write          = at_valid && (early_memory_address ? cpu_bus_write : request_write_q);
@@ -233,11 +257,16 @@ module spk286_at_bus_bridge #(
     // released only when the CPU has observed cpu_ready and the bridge returns
     // to IDLE on the following edge.
     assign at_lock           = early_memory_address ? cpu_bus_lock : (state_q != STATE_IDLE) && request_lock_q;
-    assign at_accepted       = (state_q == STATE_COMMAND) && at_accept;
+    assign at_accepted       = at_command_valid && at_accept;
     assign at_completed      = completion_valid;
-    assign at_response_valid = (state_q == STATE_COMPLETE);
-    assign cpu_ready         = (state_q == STATE_COMPLETE);
-    assign bridge_idle       = (state_q == STATE_IDLE) && !early_memory_address;
+    assign at_response_valid = (state_q == STATE_COMPLETE) || direct_memory_response;
+    assign cpu_ready         = (state_q == STATE_COMPLETE) || direct_memory_response;
+    // Select the retained lane path independently of READY/data-valid. The
+    // CPU consumes it only with cpu_ready, keeping completion qualification
+    // out of the 16-bit response-data mux.
+    assign cpu_data_in       = direct_memory_wait && request_is_read ?
+                               direct_memory_data : cpu_data_in_q;
+    assign bridge_idle       = (state_q == STATE_IDLE) && !early_memory_address && !drain_pending;
     assign debug_state       = state_q;
 
     always_ff @(posedge clk) begin
@@ -250,17 +279,18 @@ module spk286_at_bus_bridge #(
             request_lock_q     <= 1'b0;
             request_two_beats_q <= 1'b0;
             request_native_word_q <= 1'b0;
+            request_native_memory_q <= 1'b0;
             beat_high_q        <= 1'b0;
             read_low_byte_q    <= 8'd0;
             complete_sampled_q <= 1'b0;
-            cpu_data_in        <= 16'd0;
+            cpu_data_in_q      <= 16'd0;
             protocol_error     <= 1'b0;
         end else begin
             if (state_q != STATE_COMPLETE)
                 complete_sampled_q <= 1'b0;
             case (state_q)
                 STATE_IDLE: begin
-                    if (cpu_bus_valid) begin
+                    if (cpu_bus_valid && !drain_barrier) begin
                         // Snapshot is performed once per request.  No edge or
                         // payload comparison is used as a delimiter, so an
                         // identical request held back-to-back is accepted.
@@ -276,15 +306,18 @@ module spk286_at_bus_bridge #(
                                                 !cpu_bus_bhe_n;
                         request_native_word_q <= live_request_valid &&
                                                  native_word_request;
+                        request_native_memory_q <= live_request_valid &&
+                                                   memory_native_word_request;
                         beat_high_q          <= 1'b0;
                         read_low_byte_q      <= 8'd0;
-                        cpu_data_in          <= 16'd0;
+                         cpu_data_in_q        <= 16'd0;
                         if (live_request_valid)
                             // P01 removes two bookkeeping-only states for
                             // decoded RAM/ROM. The complete request is already
                             // retained above; I/O, INTA, EGA and unmapped
                             // accesses preserve the reference sequence.
-                            state_q <= early_memory_address ? STATE_COMMAND :
+                            state_q <= early_memory_command && at_accept ? STATE_WAIT :
+                                       early_memory_address ? STATE_COMMAND :
                                        fast_memory_request ? STATE_ADDRESS :
                                        STATE_SNAPSHOT;
                         else begin
@@ -315,26 +348,32 @@ module spk286_at_bus_bridge #(
                     if (completion_valid) begin
                         if (request_is_read) begin
                             if (request_is_inta)
-                                cpu_data_in <= {8'h00, at_read_data[7:0]};
+                                cpu_data_in_q <= {8'h00, at_read_data[7:0]};
                             else if (request_native_word_q)
-                                cpu_data_in <= at_read_data;
+                                cpu_data_in_q <= at_read_data;
                             else if (beat_byte_enable[1]) begin
                                 if (request_two_beats_q)
-                                    cpu_data_in <= {at_read_data[15:8],
+                                    cpu_data_in_q <= {at_read_data[15:8],
                                                     read_low_byte_q};
                                 else
-                                    cpu_data_in <= {at_read_data[15:8], 8'h00};
+                                    cpu_data_in_q <= {at_read_data[15:8], 8'h00};
                             end else begin
                                 if (request_two_beats_q)
                                     read_low_byte_q <= at_read_data[7:0];
                                 else
-                                    cpu_data_in <= {8'h00, at_read_data[7:0]};
+                                    cpu_data_in_q <= {8'h00, at_read_data[7:0]};
                             end
                         end
 
                         if (request_two_beats_q && !beat_high_q) begin
                             beat_high_q <= 1'b1;
                             state_q <= STATE_ADDRESS;
+                        end else if (direct_memory_response) begin
+                            // READY is sampled now. The BIU presents its next
+                            // request after this edge, so only IDLE may capture
+                            // it on the next edge; recapturing here would replay
+                            // the request that just completed.
+                            state_q <= STATE_IDLE;
                         end else begin
                             // Never launch READY on the same parent edge that
                             // launches the divided CPU clock. Align it to the

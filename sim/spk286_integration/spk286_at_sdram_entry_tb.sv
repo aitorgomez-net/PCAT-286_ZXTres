@@ -1,5 +1,5 @@
 `timescale 1ns/1ps
-// Registered SDRAM admission: stable payload, burst ordering and reset/drain.
+// SDRAM admission: early writes, retained payload, burst ordering and reset.
 module spk286_at_sdram_entry_tb #(
     parameter integer CHIP_CLK_ADVANCE_NS = 0
 );
@@ -70,10 +70,17 @@ module spk286_at_sdram_entry_tb #(
         while (!request_accept && guard < 400) begin @(negedge clk); #1; guard++; end
         check(request_accept, "admission timeout");
         @(posedge clk); #1;
-        check(dut.active_q && !dut.issued_q, "request did not stop at entry record");
+        check(dut.active_q && dut.issued_q == (wr && !refresh),
+              "admission did not retain the expected launch state");
+        if (wr && !refresh)
+            check(!dut.kf_idle && !dut.launch_request,
+                  "write did not enter KFSDRAM on its accepting edge");
+        else
+            check(dut.kf_idle, "read/refresh launched before its retained entry");
         if (!refresh) check(!request_ready && !request_read_data_valid, "premature completion");
         // Withdraw the upstream request and corrupt every live payload field
-        // before KFSDRAM's launch edge. Accepted physical work must still drain.
+        // before KFSDRAM's registered row/column commands. Accepted physical
+        // work must still drain, including a write launched on admission.
         request_valid = 0; request_command_valid = 0;
         request_owner_refresh = !refresh; request_write = !wr; request_burst = !burst;
         request_address = 25'h1FFFFFF; request_byte_enable = 0; request_data_out = 16'hDEAD;
@@ -118,8 +125,8 @@ module spk286_at_sdram_entry_tb #(
         check(refresh_cycles > 0, "periodic refresh was not exercised");
         check(!protocol_error, "protocol error on valid transactions");
 
-        // Reset after admission but before physical launch discards the entry
-        // atomically; the SDRAM contents survive and the pending write cannot leak.
+        // Reset after early launch, before its registered ACTIVE/WRITE commands,
+        // discards the transaction. SDRAM contents survive; no write may leak.
         admit(1,0,0,25'h1002,2'b11,16'hFFFF);
         @(negedge clk); reset = 1;
         repeat (3) @(posedge clk);

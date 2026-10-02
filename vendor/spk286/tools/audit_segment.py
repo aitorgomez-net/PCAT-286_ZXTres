@@ -6,6 +6,8 @@ from pathlib import Path
 import subprocess
 import sys
 
+from tools.rtl_sources import ordered_rtl_sources
+
 ROOT = Path(__file__).resolve().parents[1]
 PROBES = (('segment-index',
   'spk286_control_decode',
@@ -66,7 +68,7 @@ PROBES = (('segment-index',
   'spk286_segment_lifecycle',
   'assign queue_flush = stream_restart;',
   'assign queue_flush = stream_restart || internal_segment_write;',
-  'SS cache and protected stack-pointer update precede event'))
+  ('SS cache and protected stack-pointer update precede event', 'complete selected event')))
 
 
 def main():
@@ -76,8 +78,7 @@ def main():
     subprocess.run([sys.executable, '-m', 'tools.microcode.compile_microcode', '--check'], check=True)
     output = args.build_dir.resolve()/'segment-audit'
     output.mkdir(parents=True, exist_ok=True)
-    sources = [ROOT/'microcode/generated/spk286_microcode_pkg.sv', ROOT/'microcode/generated/spk286_microcode_rom.sv',
-               *sorted((ROOT/'rtl').glob('*.sv'))]
+    sources = ordered_rtl_sources(ROOT)
     originals = {p: p.read_bytes() for p in sources}
     (output/'source.sha256').write_text(''.join(f'{hashlib.sha256(data).hexdigest()}  {p.relative_to(ROOT).as_posix()}\n'
                                               for p,data in originals.items()), encoding='utf-8')
@@ -105,7 +106,11 @@ def main():
         run = subprocess.run(['vvp',str(binary),'+instruction_vectors='+str(path)],cwd=ROOT,capture_output=True,text=True,timeout=60)
         (directory/'run.log').write_text(run.stdout+run.stderr, encoding='utf-8')
         if reason:
-            if run.returncode == 0 or reason not in run.stdout+run.stderr:
+            # Extra publication flushes may corrupt the opcode stream and
+            # reach the exact event-completion check first. Preserve both
+            # checks; only these explicit functional properties are accepted.
+            expected = (reason,) if isinstance(reason, str) else reason
+            if run.returncode == 0 or not any(message in run.stdout+run.stderr for message in expected):
                 raise RuntimeError(f'{name}: intended assertion did not reject mutant')
         elif run.returncode or 'PASS:' not in run.stdout:
             raise RuntimeError(f'{name}: pristine bench failed')

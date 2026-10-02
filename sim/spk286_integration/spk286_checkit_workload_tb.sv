@@ -9,7 +9,8 @@
 // SDRAM owner and pin model remain in the path.  P03 can be toggled for an
 // A/B comparison without changing the architectural workload.
 module spk286_checkit_workload_tb #(
-    parameter integer CODE_BUFFER_LINES = 64
+    parameter integer CODE_BUFFER_LINES = 64,
+    parameter integer POSTED_WRITES = 1
 );
     logic clk = 1'b0;
     logic reset = 1'b1;
@@ -79,6 +80,14 @@ module spk286_checkit_workload_tb #(
     wire [24:0] memory_out_address;
     wire [15:0] memory_out_data, memory_out_read_data;
     wire [31:0] data_buffer_hits, data_buffer_misses, data_buffer_fills, data_buffer_updates;
+    wire posted_pending, posted_idle, posted_error;
+    wire posted_out_valid, posted_out_command, posted_out_write, posted_out_refresh;
+    wire posted_out_code, posted_out_burst;
+    wire [1:0] posted_out_owner, posted_out_lanes;
+    wire [3:0] posted_out_class;
+    wire [24:0] posted_out_address;
+    wire [15:0] posted_out_data;
+    wire [31:0] posted_count, drained_count, posted_stalls;
 
     wire [12:0] dram_address;
     wire dram_cke, dram_cs, dram_ras, dram_cas, dram_we, dram_oe;
@@ -110,6 +119,7 @@ module spk286_checkit_workload_tb #(
         .cpu_address(address), .cpu_data_out(data_out), .cpu_data_oe(data_oe),
         .cpu_bus_write(bus_write), .cpu_bus_bhe_n(bus_bhe_n),
         .cpu_bus_status(bus_status), .cpu_bus_lock(bus_lock),
+        .memory_drain_pending(posted_pending),
         .cpu_memory_word_capable(width_capable && native_width != 0),
         .cpu_io_word_capable(1'b0),
         .cpu_ready(ready), .cpu_data_in(data_in),
@@ -194,13 +204,36 @@ module spk286_checkit_workload_tb #(
         .debug_write_update_count(data_buffer_updates), .debug_state()
     );
 
+    spk286_at_posted_write_buffer #(.ENABLE(POSTED_WRITES != 0)) posted_buffer (
+        .clk(clk), .reset(reset), .cancel_cpu(cpu_reset), .cpu_lock(bus_lock),
+        .in_valid(memory_out_valid), .in_command_valid(memory_out_command),
+        .in_owner(memory_out_owner), .in_write(memory_out_write),
+        .in_refresh(memory_out_refresh), .in_code_fetch(memory_out_code),
+        .in_burst(memory_out_burst), .in_cycle_class(memory_out_class),
+        .in_address(memory_out_address), .in_byte_enable(memory_out_lanes),
+        .in_data_out(memory_out_data), .in_accept(memory_out_accept),
+        .in_ready(memory_out_ready), .in_read_data(memory_out_read_data),
+        .in_read_data_valid(memory_out_read_valid),
+        .out_valid(posted_out_valid), .out_command_valid(posted_out_command),
+        .out_owner(posted_out_owner), .out_write(posted_out_write),
+        .out_refresh(posted_out_refresh), .out_code_fetch(posted_out_code),
+        .out_burst(posted_out_burst), .out_cycle_class(posted_out_class),
+        .out_address(posted_out_address), .out_byte_enable(posted_out_lanes),
+        .out_data_out(posted_out_data), .out_accept(physical_accept),
+        .out_ready(physical_ready), .out_read_data(physical_read_data),
+        .out_read_data_valid(physical_read_valid),
+        .pending_write(posted_pending), .idle(posted_idle), .protocol_error(posted_error),
+        .debug_post_count(posted_count), .debug_drain_count(drained_count),
+        .debug_stall_count(posted_stalls)
+    );
+
     spk286_at_mister_sdram_owner #(.SDRAM_INIT_WAIT(16'd8)) owner (
-        .clk(clk), .reset(reset), .request_valid(memory_out_valid && !ideal_selected),
-        .request_command_valid(memory_out_command && !ideal_selected),
-        .request_owner_refresh(memory_out_refresh), .request_write(memory_out_write),
-        .request_code_fetch(memory_out_code), .request_burst(memory_out_burst),
-        .request_cycle_class(memory_out_class), .request_address(memory_out_address),
-        .request_byte_enable(memory_out_lanes), .request_data_out(memory_out_data),
+        .clk(clk), .reset(reset), .request_valid(posted_out_valid),
+        .request_command_valid(posted_out_command),
+        .request_owner_refresh(posted_out_refresh), .request_write(posted_out_write),
+        .request_code_fetch(posted_out_code), .request_burst(posted_out_burst),
+        .request_cycle_class(posted_out_class), .request_address(posted_out_address),
+        .request_byte_enable(posted_out_lanes), .request_data_out(posted_out_data),
         .request_accept(physical_accept), .request_ready(physical_ready),
         .request_read_data(physical_read_data),
         .request_read_data_valid(physical_read_valid),
@@ -237,7 +270,10 @@ module spk286_checkit_workload_tb #(
     integer stage_external_wait = 0;
 
     `include "sim/spk286_integration/spk286_checkit_profile.svh"
-    `include "sim/spk286_integration/spk286_checkit_ideal_owner.svh"
+    integer ideal_owner_mode = 0;
+    integer data_cache_hits = 0;
+    integer data_cache_misses = 0;
+    integer data_cache_write_updates = 0;
 
     task automatic report_stage;
         $display("CHECKIT_STAGE workload=%s p03=%0d stage=%0d cycles=%0d retired=%0d reads=%0d writes=%0d code_fetches=%0d external_wait=%0d queue_empty=%0d",
@@ -266,7 +302,7 @@ module spk286_checkit_workload_tb #(
             end
             if (at_code && bus_valid && !ready)
                 code_fetches = code_fetches + 1;
-            if (bridge_error || port_error || owner_error || control_error ||
+            if (bridge_error || port_error || owner_error || posted_error || control_error ||
                 unsupported || microcode_fault || shutdown)
                 $fatal(1, "CHECKIT protocol/CPU fault workload=%s cs=%h ip=%h",
                     workload_name, cs, instruction_ip);
@@ -287,7 +323,7 @@ module spk286_checkit_workload_tb #(
                 end
             end
 
-            if (halted) begin
+            if (halted && posted_idle && physical_idle) begin
                 if (stage != 5 || gpr[15:0] != 16'h600D)
                     $fatal(1, "CHECKIT result failed workload=%s AX=%h stage=%0d",
                         workload_name, gpr[15:0], stage);
@@ -299,6 +335,8 @@ module spk286_checkit_workload_tb #(
                     if (dram.mem['h2000+i] !== 16'hA55A)
                         $fatal(1, "CHECKIT string mismatch workload=%s index=%0d",
                             workload_name, i);
+                $display("POSTED_RESULT enabled=%0d posted=%0d drained=%0d blocked=%0d",
+                    POSTED_WRITES, posted_count, drained_count, posted_stalls);
                 report_stage();
                 if (profile_enable != 0) profile_report();
                 $display("RAM_BUFFER_RESULT enabled=%0d hits=%0d misses=%0d fills=%0d updates=%0d",
@@ -329,7 +367,7 @@ module spk286_checkit_workload_tb #(
         if ($value$plusargs("NAME=%s", workload_name)) begin end
         if ($value$plusargs("PROFILE=%d", profile_enable)) begin end
         if ($value$plusargs("IDEAL_OWNER=%d", ideal_owner_mode)) begin end
-        if (ideal_owner_mode < 0 || ideal_owner_mode > 6)
+        if (ideal_owner_mode != 0)
             $fatal(1, "IDEAL_OWNER must be 0=physical, 1=all, 2=code, 3=data, 4=data reads, 5=writes, 6=data cache");
         fd = $fopen(rom_path, "rb");
         if (!fd)

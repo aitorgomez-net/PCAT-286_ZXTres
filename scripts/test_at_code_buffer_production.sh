@@ -7,8 +7,8 @@ bench="$root/sim/spk286_integration/spk286_at_multiline_code_buffer_tb.sv"
 top=spk286_at_multiline_code_buffer_tb
 mkdir -p "$build"
 sha256sum "$rtl" "$bench" "${BASH_SOURCE[0]}" > "$build/sources.sha256"
-# One-line compatibility and the production capacity, enabled and disabled.
-for lines in 1 64; do
+# One-line compatibility, the previous capacity and 4 KiB production capacity.
+for lines in 1 64 512; do
   for enabled in 1 0; do
     name="l$lines-e$enabled"
     iverilog -g2012 -Wall -Wno-timescale -DPCAT_PRODUCTION_CODE_BUFFER \

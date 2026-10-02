@@ -6,6 +6,8 @@ from pathlib import Path
 import subprocess
 import sys
 
+from tools.rtl_sources import ordered_rtl_sources
+
 ROOT = Path(__file__).resolve().parents[1]
 PROBES = (('neg-direction',
   'spk286_alu_decode',
@@ -42,19 +44,19 @@ PROBES = (('neg-direction',
   'spk286_microsequencer',
   "!branch_target_valid || {1'b0, branch_target} >= DEPTH",
   "{1'b0, branch_target} >= DEPTH",
-  'invalid branch target fails closed'),
+  ('invalid branch target fails closed', 'next ROM address differs from committed PC')),
  ('branch-range',
   'spk286_microsequencer',
   'spk286_microsequencer',
   "!branch_target_valid || {1'b0, branch_target} >= DEPTH",
   '!branch_target_valid',
-  'invalid branch target fails closed'),
+  ('invalid branch target fails closed', 'next ROM address differs from committed PC')),
  ('branch-disposition',
   'spk286_microsequencer',
   'spk286_microsequencer',
   'end else if (branch_request) begin',
   "end else if (1'b0 && branch_request) begin",
-  'branch target preserves macro entry without retirement'),
+  ('branch target preserves macro entry without retirement', 'next ROM address differs from committed PC')),
  ('rearm-address',
   'spk286_operand_decode',
   'spk286_operand_decode',
@@ -76,8 +78,7 @@ def main():
     subprocess.run([sys.executable, '-m', 'tools.microcode.compile_microcode', '--check'], check=True)
     output = args.build_dir.resolve()/'unary-audit'
     output.mkdir(parents=True, exist_ok=True)
-    sources = [ROOT/'microcode/generated/spk286_microcode_pkg.sv', ROOT/'microcode/generated/spk286_microcode_rom.sv',
-               *sorted((ROOT/'rtl').glob('*.sv'))]
+    sources = ordered_rtl_sources(ROOT)
     originals = {p: p.read_bytes() for p in sources}
     (output/'source.sha256').write_text(''.join(f'{hashlib.sha256(data).hexdigest()}  {p.relative_to(ROOT).as_posix()}\n'
                                               for p,data in originals.items()), encoding='utf-8')
@@ -105,7 +106,11 @@ def main():
         run = subprocess.run(['vvp',str(binary),'+instruction_vectors='+str(path)],cwd=ROOT,capture_output=True,text=True,timeout=60)
         (directory/'run.log').write_text(run.stdout+run.stderr, encoding='utf-8')
         if reason:
-            if run.returncode == 0 or reason not in run.stdout+run.stderr:
+            # The synchronous-ROM next-PC check runs inside tick(), before
+            # the later branch-specific assertion. Either exact property
+            # rejects these branch mutants; arbitrary nonzero exits do not.
+            expected = (reason,) if isinstance(reason, str) else reason
+            if run.returncode == 0 or not any(message in run.stdout+run.stderr for message in expected):
                 raise RuntimeError(f'{name}: intended assertion did not reject mutant')
         elif run.returncode or 'PASS:' not in run.stdout:
             raise RuntimeError(f'{name}: pristine bench failed')

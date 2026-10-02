@@ -730,7 +730,7 @@ module emu_at
     // therefore invalidate one line on every accepted write without adding
     // a second coherence arbiter.
     spk286_at_sdram_read_buffer #(
-        .ENABLE(1'b1)
+        .ENABLE(1'b1), .LINE_COUNT(512)
     ) u_at_sdram_read_buffer (
         .clk                     (CLK_50M),
         .reset                   (RESET),
@@ -812,24 +812,57 @@ module emu_at
         .debug_hit_count(), .debug_miss_count(), .debug_fill_count(),
         .debug_write_update_count(), .debug_state()
     );
+    // One ordinary CPU store may complete logically after retention. Both
+    // coherent buffers have observed it before another hit can complete. Any
+    // access reaching SDRAM waits for drain; the bridge fences I/O/LOCK/DMA.
+    wire at_posted_write_pending, posted_buffer_idle, posted_buffer_error;
+    wire physical_owner_idle;
+    wire posted_out_valid, posted_out_command, posted_out_write, posted_out_refresh;
+    wire posted_out_code, posted_out_burst;
+    wire [1:0] posted_out_owner, posted_out_lanes;
+    wire [3:0] posted_out_class;
+    wire [24:0] posted_out_address;
+    wire [15:0] posted_out_data;
+    spk286_at_posted_write_buffer u_at_posted_write_buffer (
+        .clk(CLK_50M), .reset(RESET),
+        .cancel_cpu(at_machine_reset | at_cpu_reset_request), .cpu_lock(at_cpu_bus_lock),
+        .in_valid(ram_out_valid), .in_command_valid(ram_out_command),
+        .in_owner(ram_out_owner), .in_write(ram_out_write), .in_refresh(ram_out_refresh),
+        .in_code_fetch(ram_out_code), .in_burst(ram_out_burst), .in_cycle_class(ram_out_class),
+        .in_address(ram_out_address), .in_byte_enable(ram_out_lanes), .in_data_out(ram_out_data),
+        .in_accept(ram_out_accept), .in_ready(ram_out_ready), .in_read_data(ram_out_read_data),
+        .in_read_data_valid(ram_out_read_valid),
+        .out_valid(posted_out_valid), .out_command_valid(posted_out_command),
+        .out_owner(posted_out_owner), .out_write(posted_out_write), .out_refresh(posted_out_refresh),
+        .out_code_fetch(posted_out_code), .out_burst(posted_out_burst), .out_cycle_class(posted_out_class),
+        .out_address(posted_out_address), .out_byte_enable(posted_out_lanes), .out_data_out(posted_out_data),
+        .out_accept(physical_accept), .out_ready(physical_ready), .out_read_data(physical_read_data),
+        .out_read_data_valid(physical_read_data_valid),
+        .pending_write(at_posted_write_pending), .idle(posted_buffer_idle), .protocol_error(posted_buffer_error),
+        .debug_post_count(), .debug_drain_count(), .debug_stall_count()
+    );
+    wire physical_accept, physical_ready, physical_read_data_valid;
+    wire [15:0] physical_read_data;
+    // Phase/frequency changes require both the queue and physical owner idle.
+    assign physical_idle = physical_owner_idle && posted_buffer_idle;
     spk286_at_mister_sdram_owner u_at_sdram_owner (
         .clk                    (CLK_50M),
         .reset                  (RESET),
-        .request_valid          (ram_out_valid),
-        .request_command_valid  (ram_out_command),
-        .request_owner_refresh  (ram_out_refresh),
-        .request_write          (ram_out_write),
-        .request_code_fetch     (ram_out_code),
-        .request_burst          (ram_out_burst),
-        .request_cycle_class    (ram_out_class),
-        .request_address        (ram_out_address),
-        .request_byte_enable    (ram_out_lanes),
-        .request_data_out       (ram_out_data),
-        .request_accept         (ram_out_accept),
-        .request_ready          (ram_out_ready),
-        .request_read_data      (ram_out_read_data),
-        .request_read_data_valid(ram_out_read_valid),
-        .physical_idle          (physical_idle),
+        .request_valid          (posted_out_valid),
+        .request_command_valid  (posted_out_command),
+        .request_owner_refresh  (posted_out_refresh),
+        .request_write          (posted_out_write),
+        .request_code_fetch     (posted_out_code),
+        .request_burst          (posted_out_burst),
+        .request_cycle_class    (posted_out_class),
+        .request_address        (posted_out_address),
+        .request_byte_enable    (posted_out_lanes),
+        .request_data_out       (posted_out_data),
+        .request_accept         (physical_accept),
+        .request_ready          (physical_ready),
+        .request_read_data      (physical_read_data),
+        .request_read_data_valid(physical_read_data_valid),
+        .physical_idle          (physical_owner_idle),
         .debug_state            (sdram_owner_debug_state),
         .protocol_error         (sdram_owner_protocol_error),
         .sdram_address           (sdram_address),
@@ -1236,6 +1269,7 @@ module emu_at
         .memory_ready           (cpu_memory_ready),
         .memory_read_data       (cpu_memory_read_data),
         .memory_read_data_valid (cpu_memory_read_data_valid),
+        .memory_drain_pending   (at_posted_write_pending),
         .dma_memory_valid       (dma_memory_valid),
         .dma_memory_write       (dma_memory_write),
         .dma_memory_read        (dma_memory_read),
@@ -1781,6 +1815,7 @@ module emu_at
 
     wire at_video_fault = cpu_fault | machine_protocol_error | keyboard_event_overflow |
                           memory_port_protocol_error |
+                          posted_buffer_error |
                           sdram_owner_protocol_error |
                           loader_protocol_error;
 
@@ -1818,6 +1853,7 @@ module emu_at
     assign HDMI_BOB_DEINT = 1'b0;
     assign LED_USER     = cpu_fault | machine_protocol_error | keyboard_event_overflow |
                           memory_port_protocol_error |
+                          posted_buffer_error |
                           sdram_owner_protocol_error |
                           loader_protocol_error;
     assign LED_POWER    = 2'b00;

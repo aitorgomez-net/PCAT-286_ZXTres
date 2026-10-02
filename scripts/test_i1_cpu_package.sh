@@ -16,6 +16,7 @@ fi
 sources=(
   vendor/spk286/microcode/generated/spk286_microcode_pkg.sv
   vendor/spk286/microcode/generated/spk286_microcode_rom.sv
+  vendor/spk286/microcode/generated/spk286_microcode_sync_rom.sv
   vendor/spk286/rtl/spk286_protected_pkg.sv
   vendor/spk286/rtl/spk286_tss_pkg.sv
 )

@@ -73,6 +73,16 @@ cpu_div2_parameter=()
 if [[ "${AT_CPU_DIV2_TEST:-0}" == 1 ]]; then
   cpu_div2_parameter=(-GCPU_DIV2_TEST=1)
 fi
+printf '%s\n' "${performance_flags[@]}" -DSPK286_AT_SIM_MODEL \
+  "${cpu_div2_parameter[@]}" > "$build_dir/compiler-flags.txt"
+sha256sum "${sources[@]}" "${pic_sources[@]}" "$rom_path" \
+  rtl/KFPC-XT/HDL/KF8253/HDL/KF8253_Definitions.svh \
+  rtl/KFPC-XT/HDL/KF8259/HDL/KF8259_Common_Package.svh \
+  rtl/video/splash_ega_320x200.hex \
+  "$performance_config" rtl/spk286_integration/spk286_integration.qip \
+  scripts/test_at_bios_first_fetch.sh scripts/test_at_code_buffer_warm_reset.sh \
+  scripts/at_performance_flags.sh tests/firmware/code_buffer_reset_stress.asm \
+  "$build_dir/compiler-flags.txt" > "$build_dir/compiled-sources.sha256"
 verilator -Irtl/KFPC-XT/HDL/KF8253/HDL --binary --timing --trace-fst --trace-depth 3 \
   "${performance_flags[@]}" -DSPK286_AT_SIM_MODEL \
   --top-module spk286_at_bios_first_fetch_tb -Wno-fatal -j 4 \
@@ -102,4 +112,6 @@ timeout 120s "$build_dir/verilator-obj/first_fetch_vlt" "+ROM=$rom_path" \
   +RAM16 | tee "$build_dir/ram16-profile.log"
 grep -q AT_RAM16_PROFILE_PASS "$build_dir/ram16-profile.log"
 grep -q AT_RAM16_BACKEND_ISOLATION_PASS "$build_dir/ram16-profile.log"
+cd "$root"
+sha256sum --check "$build_dir/compiled-sources.sha256" > "$build_dir/sources-verified.log"
 echo AT_BIOS_FIRST_FETCH_TEST_PASS

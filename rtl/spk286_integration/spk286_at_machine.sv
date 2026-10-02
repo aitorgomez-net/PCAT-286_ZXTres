@@ -111,6 +111,8 @@ module spk286_at_machine #(
     input  logic         memory_ready,
     input  logic [15:0]  memory_read_data,
     input  logic         memory_read_data_valid,
+    // Older posted RAM writes fence I/O, LOCK and external ownership.
+    input  logic         memory_drain_pending,
 
     // DMA memory side.  The device endpoint is internal to this boundary;
     // this port is the motherboard memory endpoint for one DMA beat.
@@ -774,6 +776,7 @@ module spk286_at_machine #(
         .cpu_bus_bhe_n          (cpu_bus_bhe_n),
         .cpu_bus_status         (cpu_bus_status),
         .cpu_bus_lock           (cpu_bus_lock),
+        .memory_drain_pending   (memory_drain_pending),
         .cpu_memory_word_capable (cpu_memory_word_capable),
         .cpu_io_word_capable    (cpu_io_word_capable),
         .cpu_ready              (cpu_ready_i),
@@ -1117,6 +1120,7 @@ module spk286_at_machine #(
         .clk                    (clk),
         .reset                  (reset),
         .refresh_enable         (refresh_enable),
+        .timer_1_out            (pit_counter_out[1]),
         .refresh_grant          (refresh_grant),
         .refresh_accept         (refresh_memory_accept &&
                                  refresh_memory_valid),

@@ -1,6 +1,6 @@
 # PCAT-286 for MiSTer
 
-Add coherent RAM reads, simplify CPU and chipset critical paths, introduce embedded microcode ROM and apply the SDRAM and video placement constraints selected at this checkpoint.
+Expand instruction storage to 4 KiB, use a two-way coherent data buffer, shorten bridge and SDRAM admission, add ordered posted writes and drive refresh from PIT channel 1. Restore and align active-profile regressions.
 
 This development snapshot is part of the consolidated chronological
 history. Its source state comes from 2026-10-02.

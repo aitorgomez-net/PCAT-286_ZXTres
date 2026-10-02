@@ -1,5 +1,9 @@
 `timescale 1ns/1ps
-module spk286_at_sdram_data_buffer_tb #(parameter logic FULL_PIPELINE = 1'b0);
+module spk286_at_sdram_data_buffer_tb #(
+    parameter logic FULL_PIPELINE = 1'b0,
+    parameter integer CODE_BUFFER_LINES = 64,
+    parameter integer DATA_BUFFER_WORDS = 512
+);
     logic clk = 0, reset = 1, cancel_cpu = 0, enable = 1;
     always #5 clk = ~clk;
     logic in_valid=0, in_command_valid=0, in_write=0, in_refresh=0, in_code_fetch=0, in_burst=0;
@@ -57,7 +61,7 @@ module spk286_at_sdram_data_buffer_tb #(parameter logic FULL_PIPELINE = 1'b0);
             .backend_read_data(port_read_data), .backend_read_data_valid(port_read_valid),
             .debug_state(), .protocol_error(protocol_error)
         );
-        spk286_at_sdram_read_buffer code_buffer (
+        spk286_at_sdram_read_buffer #(.LINE_COUNT(CODE_BUFFER_LINES)) code_buffer (
             .clk(clk), .reset(reset), .cancel_cpu(cancel_cpu), .enable(1'b1),
             .in_valid(port_valid), .in_command_valid(port_command), .in_owner(port_owner),
             .in_write(port_write), .in_refresh(port_refresh), .in_code_fetch(port_code),
@@ -93,7 +97,7 @@ module spk286_at_sdram_data_buffer_tb #(parameter logic FULL_PIPELINE = 1'b0);
         assign in_read_data=buffer_read_data;
         assign in_read_data_valid=buffer_read_valid;
     end endgenerate
-    spk286_at_sdram_data_buffer dut (
+    spk286_at_sdram_data_buffer #(.WORD_COUNT(DATA_BUFFER_WORDS)) dut (
         .clk(clk), .reset(reset), .cancel_cpu(cancel_cpu), .enable(enable),
         .in_valid(buffer_valid), .in_command_valid(buffer_command), .in_owner(buffer_owner),
         .in_write(buffer_write), .in_refresh(buffer_refresh), .in_code_fetch(buffer_code), .in_burst(buffer_burst),
@@ -267,6 +271,64 @@ module spk286_at_sdram_data_buffer_tb #(parameter logic FULL_PIPELINE = 1'b0);
         end
     endtask
     integer before_reads, before_hits, before_fills, before_beats;
+    task automatic cached_read(input logic [24:0] address);
+        integer reads_at_start;
+        logic [15:0] expected;
+        begin
+            expected=read_word(address[24:1]);
+            reads_at_start=physical_reads;
+            start_request(0, 0, 0, 0, address, 3, 0, 5);
+            if (!FULL_PIPELINE)
+                check(in_ready && in_read_data_valid, "two-way hit added a response clock");
+            finish_request(1, expected);
+            check(physical_reads==reads_at_start, "resident way unexpectedly missed");
+        end
+    endtask
+    task automatic two_way_checks;
+        integer reads_at_start;
+        begin
+            reads_at_start=physical_reads;
+            read_request(0, 0, 25'h18000, 3);
+            read_request(0, 0, 25'h18400, 3);
+            check(physical_reads==reads_at_start+2, "two invalid ways did not fill independently");
+            cached_read(25'h18000);
+            cached_read(25'h18400);
+            // Different tags at one set: independently merge both byte lanes
+            // in both ways for each actual writer, with physical completion.
+            for(integer owner=0; owner<4; owner++) begin
+                if (owner!=2) begin
+                    write_request(2'(owner), 25'h18000, 1, 16'h0010+16'(owner));
+                    write_request(2'(owner), 25'h18401, 2, 16'hB000+16'(owner<<8));
+                    cached_read(25'h18000);
+                    cached_read(25'h18400);
+                end
+            end
+            // A read makes A newest. Updating B must not change read recency:
+            // C replaces B, A survives, and a later B read goes to SDRAM.
+            cached_read(25'h18000);
+            write_request(3, 25'h18400, 3, 16'hCA12);
+            reads_at_start=physical_reads;
+            read_request(0, 0, 25'h18800, 3);
+            cached_read(25'h18000);
+            check(physical_reads==reads_at_start+1, "LRU fill evicted the newest way");
+            read_request(0, 0, 25'h18400, 3);
+            check(physical_reads==reads_at_start+2, "LRU victim did not miss on reread");
+            cached_read(25'h18000);
+            cached_read(25'h18400);
+            // CPU-only reset flushes both resident ways, including an idle
+            // cache. No tag or data array reset is needed to prevent a hit.
+            @(negedge clk); cancel_cpu=1;
+            @(negedge clk); cancel_cpu=0;
+            reads_at_start=physical_reads;
+            read_request(0, 0, 25'h18000, 3);
+            read_request(0, 0, 25'h18400, 3);
+            check(physical_reads==reads_at_start+2, "CPU flush left a resident way");
+            $display("RAM_BUFFER_TWO_WAY_PASS words=%0d full_pipeline=%0d alias_lru_byte_writes_hit_latency_flush",
+                     DATA_BUFFER_WORDS, FULL_PIPELINE);
+            @(negedge clk); reset=1;
+            @(negedge clk); reset=0;
+        end
+    endtask
     task automatic pipeline_checks;
         begin
             read_request(0, 1, 25'h6000, 3); // P03 four-word fill.
@@ -311,6 +373,7 @@ module spk286_at_sdram_data_buffer_tb #(parameter logic FULL_PIPELINE = 1'b0);
     initial begin
         // Unknown/uninitialized RAM rows are never hits because valid is reset.
         repeat(3) @(negedge clk); reset=0;
+        two_way_checks();
         if (FULL_PIPELINE) pipeline_checks();
         read_request(0, 0, 25'h0, 1);
         write_request(1, 25'h0, 1, 16'h0012);
@@ -339,7 +402,8 @@ module spk286_at_sdram_data_buffer_tb #(parameter logic FULL_PIPELINE = 1'b0);
         before_reads=physical_reads;
         read_request(0, 0, 25'h1400, 3);
         read_request(0, 0, 25'h1000, 3);
-        check(physical_reads==before_reads+2, "tag collision did not miss");
+        check(physical_reads==before_reads+1, "second tag did not coexist in the same set");
+        cached_read(25'h1400);
         read_request(0, 0, 25'h0100000, 3);
         read_request(0, 0, 25'h1100000, 3);
         before_reads=physical_reads;

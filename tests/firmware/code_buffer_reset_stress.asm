@@ -1,6 +1,7 @@
 ; Exercise cached code, conflicting lines, odd data words, IRQ0/IRET and AT
 ; refresh before the integration harness requests a warm CPU reset.
 bits 16
+cpu 286
 org 0
 start:
     cli
@@ -13,6 +14,7 @@ start:
     mov ss, ax
     mov sp, 0xff00
     mov word [0x600], 0
+    mov word [0x602], 0
     mov dx, 0x20
     mov al, 0x13
     out dx, al
@@ -46,7 +48,11 @@ block_a:
     mov ax, 0xa55a
     mov [7], ax
     cmp ax, [7]
-    jne failure
+    ; A near conditional jump is a 386 instruction. Keep this long error
+    ; branch explicitly 286-compatible even when its target moves.
+    je short .matched
+    jmp near failure
+.matched:
     jmp block_b
 times 0x300-($-$$) db 0x90
 block_b:
@@ -63,7 +69,7 @@ irq0:
     pop ax
     iret
 failure:
-    ud2
+    db 0x0f, 0x0b                 ; Deliberate #UD if the data check fails.
 times 0xfff0-($-$$) db 0xff
     jmp 0xf000:start
 times 0x10000-($-$$) db 0xff

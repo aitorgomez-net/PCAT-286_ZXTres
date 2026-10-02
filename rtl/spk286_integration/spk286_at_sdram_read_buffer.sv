@@ -4,7 +4,7 @@
 //
 // The upstream memory port still serializes CPU, DMA, loader and refresh
 // ownership.  This block only changes CPU code-fetch reads that are safe to
-// read ahead: 64 aligned 8-byte lines, each filled by one four-word SDRAM
+// read ahead: aligned 8-byte lines, each filled by one four-word SDRAM
 // burst. All other traffic is passed through unchanged.
 //
 // There is deliberately no speculative response, write posting or dirty
@@ -14,7 +14,10 @@
 
 module spk286_at_sdram_read_buffer #(
     parameter logic ENABLE = 1'b1,
-    parameter integer LINE_COUNT = 64
+    parameter integer LINE_COUNT = 64,
+    // Large buffers read tags alongside data in block RAM. The registered
+    // hit response keeps its existing latency; misses need one lookup clock.
+    parameter logic SYNC_TAGS = (LINE_COUNT > 128)
 ) (
     input  logic        clk,
     input  logic        reset,
@@ -74,9 +77,9 @@ module spk286_at_sdram_read_buffer #(
     localparam integer TAG_LOW = 3 + $clog2(LINE_COUNT);
     localparam integer DATA_ADDRESS_BITS = $clog2(LINE_COUNT * 4);
     logic [LINE_COUNT-1:0] line_valid_q;
-    logic [24:TAG_LOW] line_tag_q [0:LINE_COUNT-1];
-    // Synchronous read, no array reset: Quartus can infer one M10K for the
-    // 256x16 production data array. Tags/valid bits have an asynchronous lookup.
+    logic [24:TAG_LOW] lookup_tag_q;
+    // Synchronous reads, no array reset. Large-buffer tags also use a
+    // registered read instead of a combinational mux over every line.
     (* ramstyle = "M10K" *) logic [15:0] line_data_q [0:LINE_COUNT*4-1];
     logic [15:0] hit_data_q;
     logic [15:0] fill_word_q;
@@ -134,10 +137,48 @@ module spk286_at_sdram_read_buffer #(
     wire [24:0] input_line_base = line_base(in_address);
     wire [INDEX_BITS-1:0] input_index = line_index(in_address);
     wire [1:0] request_word_index = request_address_q[2:1];
-    wire input_tag_hit = line_valid_q[input_index] &&
-                         (line_tag_q[input_index] == in_address[24:TAG_LOW]);
-    wire request_tag_hit = line_valid_q[request_index_q] &&
-                           (line_tag_q[request_index_q] == request_address_q[24:TAG_LOW]);
+    wire input_tag_hit;
+    wire request_tag_hit;
+    // Separate the memory declarations at elaboration. Quartus 17 otherwise
+    // sees the asynchronous tag reads in the parameter-masked expressions
+    // before simplifying them, and implements the large array in registers.
+    generate
+        if (SYNC_TAGS) begin : g_sync_tags
+            (* ramstyle = "M10K" *) logic [24:TAG_LOW] line_tag_q [0:LINE_COUNT-1];
+            always_ff @(posedge clk) begin
+                if (!reset) begin
+                    if (state_q == STATE_IDLE && in_accept) begin
+                        lookup_tag_q <= line_tag_q[input_index];
+                        // Bypass/write lookups discard this word. Keeping one
+                        // read enable for tags and data avoids a RAM-inference
+                        // dependency on the hit/target decode.
+                        hit_data_q <= line_data_q[DATA_ADDRESS_BITS'({input_index, in_address[2:1]})];
+                    end
+                    if (state_q == STATE_FILL && physical_inflight_q &&
+                        !current_cancelled && out_read_data_valid && out_ready &&
+                        fill_index_q == 2'd3)
+                        line_tag_q[request_index_q] <= request_line_base_q[24:TAG_LOW];
+                end
+            end
+            assign input_tag_hit = 1'b0;
+            assign request_tag_hit = line_valid_q[request_index_q] &&
+                                     (lookup_tag_q == request_address_q[24:TAG_LOW]);
+        end else begin : g_async_tags
+            (* ramstyle = "M10K" *) logic [24:TAG_LOW] line_tag_q [0:LINE_COUNT-1];
+            always_ff @(posedge clk) begin
+                if (!reset && state_q == STATE_IDLE && in_accept && cache_hit)
+                    hit_data_q <= line_data_q[DATA_ADDRESS_BITS'({input_index, in_address[2:1]})];
+                if (!reset && state_q == STATE_FILL && physical_inflight_q &&
+                    !current_cancelled && out_read_data_valid && out_ready &&
+                    fill_index_q == 2'd3)
+                    line_tag_q[request_index_q] <= request_line_base_q[24:TAG_LOW];
+            end
+            assign input_tag_hit = line_valid_q[input_index] &&
+                                   (line_tag_q[input_index] == in_address[24:TAG_LOW]);
+            assign request_tag_hit = line_valid_q[request_index_q] &&
+                                     (line_tag_q[request_index_q] == request_address_q[24:TAG_LOW]);
+        end
+    endgenerate
     // Backend lanes address {address[24:1], 0/1}, not address and address+1.
     // Both physical bytes are always in the same aligned eight-byte line,
     // including an upper-byte write supplied at the odd last-byte address.
@@ -165,14 +206,9 @@ module spk286_at_sdram_read_buffer #(
     // another lookup clock or dependence on live upstream metadata.
     always_ff @(posedge clk) begin
         if (!reset) begin
-            if (state_q == STATE_IDLE && in_accept && cache_hit)
-                hit_data_q <= line_data_q[DATA_ADDRESS_BITS'({input_index, in_address[2:1]})];
             if (state_q == STATE_FILL && physical_inflight_q &&
                 !current_cancelled && out_read_data_valid)
                 line_data_q[DATA_ADDRESS_BITS'({request_index_q, fill_index_q})] <= out_read_data;
-            if (state_q == STATE_FILL && physical_inflight_q && !current_cancelled &&
-                out_read_data_valid && out_ready && fill_index_q == 2'd3)
-                line_tag_q[request_index_q] <= request_line_base_q[24:TAG_LOW];
         end
     end
 
@@ -200,7 +236,7 @@ module spk286_at_sdram_read_buffer #(
                 // entering STATE_HIT, so the upstream protocol never sees a
                 // combinational data response.
                 if (input_present && !input_cpu_cancelled) begin
-                    if (cache_hit) begin
+                    if (cache_hit || (SYNC_TAGS && cache_candidate)) begin
                         in_accept = 1'b1;
                     end else begin
                         // Misses and non-cacheable requests are sent to the
@@ -234,10 +270,25 @@ module spk286_at_sdram_read_buffer #(
             end
 
             STATE_HIT: begin
-                in_ready            = 1'b1;
-                in_read_data        = current_cancelled ? 16'hFFFF :
-                                      hit_data_q;
-                in_read_data_valid  = 1'b1;
+                if (!SYNC_TAGS || request_tag_hit || current_cancelled) begin
+                    in_ready            = 1'b1;
+                    in_read_data        = current_cancelled ? 16'hFFFF : hit_data_q;
+                    in_read_data_valid  = 1'b1;
+                end else begin
+                    // Tags and data were read on local acceptance. A miss
+                    // now submits exactly one retained four-word command.
+                    out_valid         = 1'b1;
+                    out_command_valid = 1'b1;
+                    out_owner         = OWNER_CPU;
+                    out_write         = 1'b0;
+                    out_refresh       = 1'b0;
+                    out_code_fetch    = 1'b1;
+                    out_burst         = 1'b1;
+                    out_cycle_class   = request_cycle_class_q;
+                    out_address       = request_line_base_q;
+                    out_byte_enable   = 2'b11;
+                    out_data_out      = 16'h0000;
+                end
             end
 
             STATE_BYPASS: begin
@@ -342,7 +393,10 @@ module spk286_at_sdram_read_buffer #(
                         request_data_out_q    <= in_data_out;
                         request_index_q       <= input_index;
 
-                        if (cache_hit && in_accept) begin
+                        if (SYNC_TAGS && cache_candidate && in_accept) begin
+                            state_q <= STATE_HIT;
+                            request_line_base_q <= input_line_base;
+                        end else if (cache_hit && in_accept) begin
                             state_q <= STATE_HIT;
                             debug_hit_count <= debug_hit_count + 32'd1;
                         end else if (cache_miss && in_accept) begin
@@ -372,8 +426,17 @@ module spk286_at_sdram_read_buffer #(
                     if (in_ready) begin
                         state_q             <= STATE_IDLE;
                         request_cancelled_q <= 1'b0;
+                        if (SYNC_TAGS && !current_cancelled)
+                            debug_hit_count <= debug_hit_count + 32'd1;
                         if (current_cancelled)
                             line_valid_q <= '0;
+                    end else if (SYNC_TAGS && out_accept) begin
+                        state_q             <= STATE_FILL;
+                        physical_inflight_q <= 1'b1;
+                        fill_index_q        <= 2'd0;
+                        line_valid_q[request_index_q] <= 1'b0;
+                        debug_miss_count    <= debug_miss_count + 32'd1;
+                        debug_fill_count    <= debug_fill_count + 32'd1;
                     end
                 end
 
@@ -444,9 +507,11 @@ module spk286_at_sdram_read_buffer #(
 
 `ifndef SYNTHESIS
     initial begin
-        assert (LINE_COUNT >= 1 && LINE_COUNT <= 128 &&
+        assert (LINE_COUNT >= 1 && LINE_COUNT <= 1024 &&
                 (LINE_COUNT & (LINE_COUNT - 1)) == 0)
-            else $fatal(1, "P03 LINE_COUNT must be a power of two from 1 to 128");
+            else $fatal(1, "P03 LINE_COUNT must be a power of two from 1 to 1024");
+        assert (LINE_COUNT <= 128 || SYNC_TAGS)
+            else $fatal(1, "P03 large buffers require synchronous tags");
     end
     always_ff @(posedge clk) begin
         if (!reset) begin

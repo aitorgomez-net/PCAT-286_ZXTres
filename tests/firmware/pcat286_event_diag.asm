@@ -3,10 +3,50 @@
 ; HLT, services IRQ0 through vector 20h, sends EOI, returns with IRET and emits
 ; independent memory/port signatures.
 bits 16
+cpu 286
 org 0
 
 start:
     cli
+
+%ifdef ENTRY_MEMORY_PROBE
+    ; Exercise actual early-entry transactions before the usual event path.
+    ; A ROM write must finish through the sink without changing either lane.
+    mov ax, 0xf000
+    mov ds, ax
+    mov bx, [0x0000]
+    mov ax, bx
+    not ax
+    mov [0x0000], ax
+    cmp [0x0000], bx
+    je .rom_word_ok
+    jmp entry_failure
+.rom_word_ok:
+    mov byte [0x0001], 0x5a
+    cmp [0x0000], bx
+    je .rom_byte_ok
+    jmp entry_failure
+.rom_byte_ok:
+
+    ; A20 is initially off: FFFF:1220 aliases 0000:1210. Check real read
+    ; and write data through the machine mapping, not just decode outputs.
+    xor ax, ax
+    mov ds, ax
+    mov word [0x1210], 0x5ac3
+    mov ax, 0xffff
+    mov ds, ax
+    cmp word [0x1220], 0x5ac3
+    je .a20_read_ok
+    jmp entry_failure
+.a20_read_ok:
+    mov word [0x1220], 0x286a
+    xor ax, ax
+    mov ds, ax
+    cmp word [0x1210], 0x286a
+    je .a20_write_ok
+    jmp entry_failure
+.a20_write_ok:
+%endif
 
     ; Install vector 20h before selecting the diagnostic data segment.
     xor ax, ax
@@ -38,6 +78,18 @@ start:
     mov al, 0x01
     out dx, al
     mov al, 0xfe
+    out dx, al
+
+    ; Initialize PIT channel 1 as an AT BIOS does: mode 2, divisor 18.
+    ; Real AT refresh ownership now follows OUT1 instead of a free-running
+    ; simulation requester, so the diagnostic must initialize its source.
+    mov dx, 0x0043
+    mov al, 0x74
+    out dx, al
+    mov dx, 0x0041
+    mov al, 18
+    out dx, al
+    xor al, al
     out dx, al
 
     ; Program PIT channel 0, mode 2, divisor 0020h. The focused simulation
@@ -100,6 +152,11 @@ nmi_handler:
 event_failure:
     mov al, 0xe6
     jmp failure
+%ifdef ENTRY_MEMORY_PROBE
+entry_failure:
+    mov al, 0xe5
+    jmp failure
+%endif
 frame_failure:
     mov al, 0xe7
 failure:

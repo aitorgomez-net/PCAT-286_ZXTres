@@ -22,6 +22,7 @@ sources+=(
   rtl/spk286_integration/spk286_at_mister_memory_port.sv
   rtl/spk286_integration/spk286_at_sdram_read_buffer.sv
   rtl/spk286_integration/spk286_at_sdram_data_buffer.sv
+  rtl/spk286_integration/spk286_at_posted_write_buffer.sv
   rtl/spk286_integration/spk286_at_mister_sdram_owner.sv
   rtl/KFPC-XT/HDL/KFSDRAM/HDL/KFSDRAM.sv
   sim/spk286_integration/spk286_sdram_pin_model.sv
