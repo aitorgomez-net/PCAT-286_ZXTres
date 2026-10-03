@@ -48,15 +48,9 @@ module spk286_at_config_tb;
             !contains("J,Fire 1,Fire 2;") ||
             dut.hps_io_at.CONF_STR[23:0] !== "V,v")
             $fatal(1, "AT_CONFIG: host configuration is incomplete");
-`ifdef SPK286_AT_NO_DEBUG
         if (contains("Debug") || contains("Trace") || dut.at_use_debug_q !== 1'b0)
             $fatal(1, "AT_CONFIG: debug is active in the production profile");
         $display("AT_CONFIG_NO_DEBUG_PASS bytes=%0d", byte_count);
-`else
-        if (!contains("P1O[71],SPK286 Debug,Off,On;"))
-            $fatal(1, "AT_CONFIG: debug build lost its menu");
-        $display("AT_CONFIG_DEBUG_PASS bytes=%0d", byte_count);
-`endif
         $finish;
     end
 endmodule

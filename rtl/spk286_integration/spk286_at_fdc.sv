@@ -1,11 +1,14 @@
 // IBM AT floppy-controller adapter for the normalized SPK286 device boundary.
 //
-// The controller itself is rtl/common/floppy.v, shared byte-for-byte with the
-// working XT profile and with ao486/z486.  This wrapper only translates the
+// The controller is rtl/common/floppy.v, shared with the XT and ao486/z486
+// profiles. Its optional write-address input isolates write decoding while
+// io_address preserves the existing read path. This wrapper translates the
 // normalized AT I/O, DMA and hps_ext management handshakes.
 `timescale 1ns/1ps
 
-module spk286_at_fdc (
+module spk286_at_fdc #(
+    parameter logic RETAINED_FDC_WRITE = 1'b0
+) (
     input  logic        clk,
     input  logic        reset,
 
@@ -16,6 +19,11 @@ module spk286_at_fdc (
     input  logic [23:0] request_address,
     input  logic [1:0]  request_byte_enable,
     input  logic [15:0] request_data_out,
+    input  logic        retained_io_command,
+    input  logic [23:0] retained_io_address,
+    input  logic        retained_io_write,
+    input  logic [1:0]  retained_io_byte_enable,
+    input  logic [15:0] retained_io_data_out,
     output logic        request_accept,
     output logic        request_ready,
     output logic [15:0] request_read_data,
@@ -82,7 +90,31 @@ module spk286_at_fdc (
         fdc_mgmt_selected = (mgmt_address[15:8] == 8'hF2);
     end
 
-    assign request_accept = (io_state_q == IO_IDLE) && selected && lane_valid;
+    // Reads preserve the old general address/pulse/read-wait path exactly.
+    // Writes use only retained I/O COMMAND, CPU grant and retained payload.
+    wire retained_write_selected = retained_io_command && retained_io_write &&
+                                   (retained_io_address[15:0] >= 16'h03F0) &&
+                                   (retained_io_address[15:0] <= 16'h03F7) &&
+                                   (retained_io_address[15:0] != 16'h03F6);
+    wire retained_lane_valid = (!retained_io_address[0] &&
+                                 (retained_io_byte_enable == 2'b01)) ||
+                                (retained_io_address[0] &&
+                                 (retained_io_byte_enable == 2'b10));
+    wire read_accept = (io_state_q == IO_IDLE) && selected && lane_valid &&
+                       !request_write;
+    wire write_accept = (io_state_q == IO_IDLE) &&
+                        (RETAINED_FDC_WRITE ?
+                         retained_write_selected && retained_lane_valid :
+                         selected && lane_valid && request_write);
+    wire [1:0] accepted_byte_enable = (RETAINED_FDC_WRITE && write_accept) ?
+                                      retained_io_byte_enable : request_byte_enable;
+    wire [2:0] write_address = RETAINED_FDC_WRITE ?
+                               retained_io_address[2:0] : request_address[2:0];
+    wire [7:0] write_byte = RETAINED_FDC_WRITE ?
+                            (retained_io_byte_enable[1] ?
+                             retained_io_data_out[15:8] : retained_io_data_out[7:0]) :
+                            request_byte;
+    assign request_accept = read_accept || write_accept;
     assign request_ready = (io_state_q == IO_DONE);
     assign request_read_data_valid = request_ready && io_read_data_valid_q;
     assign request_read_data = io_byte_enable_q[1] ?
@@ -91,8 +123,8 @@ module spk286_at_fdc (
 
     // floppy.v registers its I/O read value on the access edge.  The wrapper
     // therefore adds one read-wait clock before exposing normalized READY.
-    assign fdc_io_read = request_accept && !request_write;
-    assign fdc_io_write = request_accept && request_write;
+    assign fdc_io_read = read_accept;
+    assign fdc_io_write = write_accept;
 
     assign dma_request = fdc_dma_request ? 8'h04 : 8'h00;
     assign dma_transfer_accept = dma_transfer_valid &&
@@ -127,11 +159,11 @@ module spk286_at_fdc (
                 IO_IDLE: begin
                     io_read_data_valid_q <= 1'b0;
                     if (request_accept) begin
-                        io_byte_enable_q <= request_byte_enable;
+                        io_byte_enable_q <= accepted_byte_enable;
                         side_effect_count <= side_effect_count + 16'h0001;
-                        if (request_write) begin
+                        if (fdc_io_write) begin
                             io_state_q <= IO_DONE;
-                            if (request_address[2:0] == 3'd5)
+                            if (write_address == 3'd5)
                                 command_count <= command_count + 16'h0001;
                         end else begin
                             io_state_q <= IO_READ_WAIT;
@@ -161,7 +193,9 @@ module spk286_at_fdc (
         end
     end
 
-    floppy u_fdc (
+    floppy #(
+        .SEPARATE_IO_WRITE_ADDRESS(RETAINED_FDC_WRITE)
+    ) u_fdc (
         .clk             (clk),
         .rst_n           (!reset),
         .dma_req         (fdc_dma_request),
@@ -171,10 +205,11 @@ module spk286_at_fdc (
         .dma_writedata   (fdc_dma_writedata),
         .irq             (fdc_irq),
         .io_address      (request_address[2:0]),
+        .io_write_address(write_address),
         .io_read         (fdc_io_read),
         .io_readdata     (fdc_io_readdata),
         .io_write        (fdc_io_write),
-        .io_writedata    (request_byte),
+        .io_writedata    (write_byte),
         .fdd0_inserted   (),
         .mgmt_address    (mgmt_address[3:0]),
         .mgmt_fddn       (mgmt_address[7]),

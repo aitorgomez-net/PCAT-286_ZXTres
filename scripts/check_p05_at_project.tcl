@@ -24,9 +24,15 @@ set macros {}
 foreach_in_collection a [get_all_global_assignments -name VERILOG_MACRO] {
     lappend macros [lindex $a 2]
 }
-foreach required {AT_PROFILE SPK286_P05_PARALLEL_LIMIT_CHECK SPK286_AT_NO_DEBUG} {
+foreach required {AT_PROFILE SPK286_AT_CDC} {
     if {[lsearch -exact $macros $required] < 0} {
         error "PCAT-286 missing macro: $required ($macros)"
+    }
+}
+foreach macro $macros {
+    if {[string match "SPK286_P??_*" $macro] ||
+        $macro in {SPK286_AT_RAM_READ_BUFFER SPK286_AT_NO_DEBUG SPK286_AT_DEBUG_CPU_DIV2}} {
+        error "Retired CPU/profile macro in fixed production configuration: $macro"
     }
 }
 

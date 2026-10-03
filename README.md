@@ -1,9 +1,9 @@
 # PCAT-286 for MiSTer
 
-Expand instruction storage to 4 KiB, use a two-way coherent data buffer, shorten bridge and SDRAM admission, add ordered posted writes and drive refresh from PIT channel 1. Restore and align active-profile regressions.
+Retire configurable bring-up controls and hardware debug, retain platform CDC, and streamline bridge, DMA, prefetch and FDC paths with the selected fixed-clock implementation.
 
 This development snapshot is part of the consolidated chronological
-history. Its source state comes from 2026-10-02.
+history. Its source state comes from 2026-10-03.
 The latest revision contains the common technical reference and current
 validation instructions. Historical reports and compiled candidates are
 kept in the original development archive, outside this branch.

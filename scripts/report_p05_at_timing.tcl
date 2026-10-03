@@ -27,24 +27,12 @@ set cpu [require_collection cpu [get_registers -nowarn {*u_at_machine|u_cpu|*}]]
 set bridge [require_collection bridge [get_registers -nowarn {*u_at_machine|u_bridge|*}]]
 set port [require_collection memory_port [get_registers -nowarn {*u_at_memory_port|*}]]
 set owner [require_collection sdram_owner [get_registers -nowarn {*u_at_sdram_owner|*}]]
-set no_debug 0
-foreach_in_collection a [get_all_global_assignments -name VERILOG_MACRO] {
-    if {[lindex $a 2] eq "SPK286_AT_NO_DEBUG"} { set no_debug 1 }
-    if {[string match "SPK286_P??_*" [lindex $a 2]]} {
-        puts $inventory "performance_macro=[lindex $a 2]"
-    }
-}
-set debug [get_registers -nowarn {*u_at_debug_overlay|*source_snapshot*}]
 set observers [get_registers -nowarn {
     *u_at_debug_overlay|*
 }]
-puts $inventory "no_debug=$no_debug observers=[get_collection_size $observers]"
-if {$no_debug} {
-    if {[get_collection_size $observers]} {
-        error "AT production fit still contains debug observers"
-    }
-} else {
-    require_collection debug $debug
+puts $inventory "fixed_cpu_profile=1 observers=[get_collection_size $observers]"
+if {[get_collection_size $observers]} {
+    error "AT production fit still contains debug observers"
 }
 set video [require_collection video [get_registers -nowarn {*u_video|*}]]
 set video_out [require_collection video_out [get_clocks {emu|u_at_video_pll|pll_system_inst|altera_pll_i|general[2].gpll~PLL_OUTPUT_COUNTER|divclk}]]

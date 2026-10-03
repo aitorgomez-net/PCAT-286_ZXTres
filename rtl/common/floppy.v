@@ -26,6 +26,9 @@
  */
 
 module floppy
+#(
+    parameter SEPARATE_IO_WRITE_ADDRESS = 0
+)
 (
 	input             clk,
 	input             rst_n,
@@ -68,7 +71,8 @@ module floppy
 
 	input      [27:0] clock_rate,
 
-	output      [1:0] request
+	output      [1:0] request,
+    input       [2:0] io_write_address
 );
 
 reg [27:0] clk_rate;
@@ -105,10 +109,13 @@ always @(posedge clk) if(mgmt_write && mgmt_address == 4'd5) media_heads[mgmt_fd
 wire fifo_read  = mgmt_read  && &mgmt_address;
 wire fifo_write = mgmt_write && &mgmt_address;
 
+// Separate only write decoding; io_address still feeds every read clock.
+wire [2:0] write_address = SEPARATE_IO_WRITE_ADDRESS ? io_write_address : io_address;
+
 //------------------------------------------------------------------------------ io read
 
 wire ndma_read  = io_read  && io_address == 3'd5 && execute_ndma && cmd_read_normal_in_progress;
-wire ndma_write = io_write && io_address == 3'd5 && execute_ndma && (cmd_write_normal_in_progress || cmd_format_in_progress);
+wire ndma_write = io_write && write_address == 3'd5 && execute_ndma && (cmd_write_normal_in_progress || cmd_format_in_progress);
 
 wire [7:0] io_readdata_prepare =
     (io_address == 3'd2) ? { 2'b0, motor_enable[1], motor_enable[0], dma_irq_enable, enable, selected_drive } : //digital output register
@@ -123,15 +130,15 @@ always @(posedge clk) io_readdata <= io_readdata_prepare;
 //------------------------------------------------------------------------------
 
 wire sw_reset = 
-	(io_write && io_address == 3'h2 && io_writedata[2] == 1'b0 && enable) ||
-	(io_write && io_address == 3'h4 && io_writedata[7]);
+	(io_write && write_address == 3'h2 && io_writedata[2] == 1'b0 && enable) ||
+	(io_write && write_address == 3'h4 && io_writedata[7]);
 
 reg selected_drive_r;
 always @(posedge clk) selected_drive_r <= selected_drive[0];
 
 wire [1:0] selected_drive = {1'b0, rst_n &
 (
-	(io_write && io_address == 3'h2) ? io_writedata[0]  :
+	(io_write && write_address == 3'h2) ? io_writedata[0]  :
 	(cmd_recalibrate_start)          ? io_writedata[0]  :
 	(cmd_seek_start)                 ? command[0]       :
 	(cmd_read_id_start)              ? io_writedata[0]  :
@@ -144,33 +151,33 @@ reg motor_enable[2];
 reg old_motor_enable[2];
 always @(posedge clk) begin
 	if(~rst_n)                              motor_enable[0] <= 1'b0;
-	else if(io_write && io_address == 3'h2) motor_enable[0] <= io_writedata[4];
+	else if(io_write && write_address == 3'h2) motor_enable[0] <= io_writedata[4];
 	                                        old_motor_enable[0] <= motor_enable[0];
 end
 
 always @(posedge clk) begin
 	if(~rst_n)                              motor_enable[1] <= 1'b0;
-	else if(io_write && io_address == 3'h2) motor_enable[1] <= io_writedata[5];
+	else if(io_write && write_address == 3'h2) motor_enable[1] <= io_writedata[5];
 	                                        old_motor_enable[1] <= motor_enable[1];
 end
 
 reg dma_irq_enable;
 always @(posedge clk) begin
 	if(~rst_n)                              dma_irq_enable <= 1'b1;
-	else if(io_write && io_address == 3'h2) dma_irq_enable <= io_writedata[3];
+	else if(io_write && write_address == 3'h2) dma_irq_enable <= io_writedata[3];
 end
 
 reg enable;
 always @(posedge clk) begin
 	if(~rst_n)                              enable <= 1'b1;
-	else if(io_write && io_address == 3'h2) enable <= io_writedata[2];
+	else if(io_write && write_address == 3'h2) enable <= io_writedata[2];
 end
 
 reg [1:0] data_rate;
 always @(posedge clk) begin
 	if(~rst_n)                              data_rate <= 2'b10;
-	else if(io_write && io_address == 3'h4) data_rate <= io_writedata[1:0];
-	else if(io_write && io_address == 3'h7) data_rate <= io_writedata[1:0];
+	else if(io_write && write_address == 3'h4) data_rate <= io_writedata[1:0];
+	else if(io_write && write_address == 3'h7) data_rate <= io_writedata[1:0];
 end
 
 // 8272 data-rate encodings: 00=500, 01=300, 10=250, 11=1000 kbit/s.
@@ -287,8 +294,8 @@ end
 
 //------------------------------------------------------------------------------
 
-wire command_first = io_write && io_address == 3'h5 && state == S_IDLE && !command_left && ~busy;
-wire command_next  = io_write && io_address == 3'h5 && state == S_IDLE &&  command_left;
+wire command_first = io_write && write_address == 3'h5 && state == S_IDLE && !command_left && ~busy;
+wire command_next  = io_write && write_address == 3'h5 && state == S_IDLE &&  command_left;
 
 reg [71:0] command;
 always @(posedge clk) begin

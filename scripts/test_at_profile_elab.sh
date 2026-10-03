@@ -2,7 +2,7 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-BUILD_DIR="$ROOT_DIR/build/at-profile-elab"
+BUILD_DIR="${PCAT_BUILD_DIR:-$ROOT_DIR/build/at-profile-elab}"
 mkdir -p "$BUILD_DIR"
 
 if ! grep -q '`ifdef AT_PROFILE' "$ROOT_DIR/sys/sys_top.v" || \
@@ -54,7 +54,7 @@ if ! grep -q '"P1O7,Boot Splash Screen,Yes,No;"' \
      "$ROOT_DIR/PCAT-286.sv" || \
    ! grep -q '"P1FC3,ROM,EGA BIOS:;"' \
      "$ROOT_DIR/PCAT-286.sv" || \
-   ! grep -q '"P1O\[71\],SPK286 Debug,Off,On;"' \
+   grep -q '"P1O\[71\],SPK286 Debug,Off,On;"' \
      "$ROOT_DIR/PCAT-286.sv"; then
   echo "AT_PROFILE OSD bits/file slots must match PCAT-286.sv" >&2
   exit 1
@@ -193,8 +193,6 @@ iverilog -g2012 -I"$KF8253_DIR" -Wall -Wno-timescale \
     -DENABLE_MIDI=1 \
     -DENABLE_EMS=1 \
     -DENABLE_UMB=1 \
-    -DSPK286_P05_PARALLEL_LIMIT_CHECK \
-    -DSPK286_AT_NO_DEBUG \
     -DSPK286_AT_SIM_MODEL \
   -o "$BUILD_DIR/config.vvp" \
   -s spk286_at_config_tb \

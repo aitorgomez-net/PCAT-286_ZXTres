@@ -129,7 +129,11 @@ module spk286_at_mister_sdram_owner #(
     // packed word layout.  The old {mapped_address[23:1], 1'b0} expression
     // aligned a byte address down and produced a sparse word layout; it was
     // not a left shift.  Loader and CPU share this mapper in either layout.
-    assign kf_address = write_admission ? request_address[24:1] : address_q[24:1];
+    // An idle inactive owner uses the live payload for immediate write
+    // admission; launched commands use the retained record. Outside IDLE,
+    // retain the address even after early read completion.
+    assign kf_address = (kf_idle && !active_q)
+                      ? request_address[24:1] : address_q[24:1];
     assign kf_data_in = data_out_q;
 
     always_comb begin
@@ -184,12 +188,17 @@ module spk286_at_mister_sdram_owner #(
         .sdram_no_refresh     (SDRAM_NO_REFRESH),
         .sdram_init_wait      (SDRAM_INIT_WAIT),
         .sdram_refresh_cycle  (SDRAM_REFRESH_CYCLE),
-        .sdram_force_refresh  (SDRAM_FORCE_REFRESH)
+        .sdram_force_refresh  (SDRAM_FORCE_REFRESH),
+        .use_column_address_input(1'b1)
     ) u_KFSDRAM (
         .sdram_clock    (clk),
         .sdram_reset    (reset),
         .address        (kf_address),
         .access_num     (kf_access_num),
+        // READ/WRITE cannot admit a new command: request_accept requires
+        // KFSDRAM IDLE. Their column base is the retained address, so this
+        // removes the late live-command mux without a new register/cycle.
+        .column_address (address_q[9:1]),
         .data_in        (kf_data_in),
         .data_out       (kf_data_out),
         .write_request  (kf_write_request),

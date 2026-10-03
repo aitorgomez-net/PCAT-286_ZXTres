@@ -21,7 +21,9 @@
 `define ENABLE_MIDI 0
 `endif
 
-module spk286_at_device_router (
+module spk286_at_device_router #(
+    parameter logic RETAINED_FDC_WRITE = 1'b0
+) (
     input  logic        clk,
     input  logic        cpu_sample_edge,
     input  logic        reset,
@@ -74,6 +76,11 @@ module spk286_at_device_router (
     input  logic [23:0] request_address,
     input  logic [1:0]  request_byte_enable,
     input  logic [15:0] request_data_out,
+    input  logic        retained_io_command,
+    input  logic [23:0] retained_io_address,
+    input  logic        retained_io_write,
+    input  logic [1:0]  retained_io_byte_enable,
+    input  logic [15:0] retained_io_data_out,
     output logic        request_accept,
     output logic        request_ready,
     output logic [15:0] request_read_data,
@@ -661,7 +668,9 @@ module spk286_at_device_router (
         .status_osd_match (at286ctl_status_osd_match)
     );
 
-    spk286_at_storage_video u_storage_video (
+    spk286_at_storage_video #(
+        .RETAINED_FDC_WRITE(RETAINED_FDC_WRITE)
+    ) u_storage_video (
         .clk(clk), .reset(reset),
         .video_reset(video_reset),
         .prebios_video(prebios_video),
@@ -673,6 +682,11 @@ module spk286_at_device_router (
         .vsync_width_osd(vsync_width_osd), .hsync_width_osd(hsync_width_osd),
         .use_mmc(use_mmc),
         .request_valid(device_storage_candidate),
+        .retained_io_command     (retained_io_command),
+        .retained_io_address     (retained_io_address),
+        .retained_io_write       (retained_io_write),
+        .retained_io_byte_enable (retained_io_byte_enable),
+        .retained_io_data_out    (retained_io_data_out),
         .request_command_valid(request_command_valid),
         .request_write(request_write), .request_io(request_io),
         .request_address(request_address),

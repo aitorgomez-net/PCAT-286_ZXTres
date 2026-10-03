@@ -6,7 +6,9 @@
 // spk286_at_video_adapter and share this request owner with ATA/FDC.
 `timescale 1ns/1ps
 
-module spk286_at_storage_video (
+module spk286_at_storage_video #(
+    parameter logic RETAINED_FDC_WRITE = 1'b0
+) (
     input  logic        clk,
     input  logic        reset,
     input  logic        video_reset,
@@ -29,6 +31,11 @@ module spk286_at_storage_video (
     input  logic [23:0] request_address,
     input  logic [1:0]  request_byte_enable,
     input  logic [15:0] request_data_out,
+    input  logic        retained_io_command,
+    input  logic [23:0] retained_io_address,
+    input  logic        retained_io_write,
+    input  logic [1:0]  retained_io_byte_enable,
+    input  logic [15:0] retained_io_data_out,
     output logic        request_accept,
     output logic        request_ready,
     output logic [15:0] request_read_data,
@@ -319,13 +326,20 @@ module spk286_at_storage_video (
         end
     end
 
-    spk286_at_fdc u_fdc (
+    spk286_at_fdc #(
+        .RETAINED_FDC_WRITE(RETAINED_FDC_WRITE)
+    ) u_fdc (
         .clk                    (clk),
         .reset                  (reset),
         // 3F6h is shared in the broad ISA decode but belongs to IDE on an AT;
         // keep the FDC endpoint from accepting it behind the top-level
         // priority mux.
         .request_valid          (request_valid && floppy_selected),
+        .retained_io_command     (retained_io_command),
+        .retained_io_address     (retained_io_address),
+        .retained_io_write       (retained_io_write),
+        .retained_io_byte_enable (retained_io_byte_enable),
+        .retained_io_data_out    (retained_io_data_out),
         .request_command_valid  (request_command_valid && floppy_selected),
         .request_write          (request_write),
         .request_io             (request_io),

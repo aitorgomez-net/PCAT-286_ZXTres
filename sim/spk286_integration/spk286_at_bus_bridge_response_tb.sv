@@ -10,11 +10,7 @@ module spk286_at_bus_bridge_response_case #(
 `else
     localparam bit EXPECT_DIRECT = !DIV2;
 `endif
-`ifdef SPK286_P06_EARLY_MEMORY_ADDRESS
     localparam bit EXPECT_ENTRY_COMMAND = !DIV2;
-`else
-    localparam bit EXPECT_ENTRY_COMMAND = 1'b0;
-`endif
     logic clk = 0, reset = 1, cpu_phase = 0;
     always #10 clk = ~clk;
     always @(posedge clk) cpu_phase <= !cpu_phase;

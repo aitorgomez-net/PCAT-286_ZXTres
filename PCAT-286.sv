@@ -28,8 +28,8 @@ module emu_at
 
     // Keep the AT profile's System & BIOS page local to the PCAT-286 top.
     // These indices are part of the HPS/OSD contract: bit 7 is splash when
-    // enabled in config.tcl, bits 74:72 select installed RAM, and bit 71
-    // enables the compact diagnostic overlay.
+    // enabled in config.tcl and bits 74:72 select installed RAM. Bit 71 is
+    // reserved after retirement of the hardware diagnostic overlay.
     // The ROM marker is required for MiSTer to expose a real file selector.
     localparam CONF_STR_HALT_AT = {
         "h4-,HALTED: no PCAT ROM selected;",
@@ -48,10 +48,6 @@ module emu_at
         "OSD: System & BIOS;"
     };
 
-`ifndef SPK286_AT_NO_DEBUG
-    localparam CONF_STR_AT_DEBUG =
-        "P1O[71],SPK286 Debug,Off,On;";
-`endif
 
     // Match the source profile's mutually exclusive C/MS and Sound Blaster
     // choices on the shared 220h ports.
@@ -97,9 +93,6 @@ module emu_at
         "P1-;",
         // An empty packed Verilog string is an 8-bit NUL, not zero bytes.
         // Omit the entire element so the host can read the remaining entries.
-`ifndef SPK286_AT_NO_DEBUG
-        CONF_STR_AT_DEBUG,
-`endif
         "P1-;",
         "P2,Audio & Video;",
         "P2-;",
@@ -190,7 +183,6 @@ module emu_at
     wire [7:0]   at_info = at_bios_info_req ? at_bios_info : at_monitor_pending_info;
     wire         at_monitor_profile_pending =
         at_monitor_profile_osd != at_monitor_profile_applied;
-    wire         at_debug_enable = hps_status[71];
     wire         at_vga_mode13_native_osd = ~hps_status[10];
     wire [3:0]   at_crt_h_osd = hps_status[49:46];
     wire [2:0]   at_crt_v_osd = hps_status[52:50];
@@ -782,11 +774,7 @@ module emu_at
     wire [3:0]  ram_out_class;
     wire [24:0] ram_out_address;
     wire [15:0] ram_out_data, ram_out_read_data;
-`ifdef SPK286_AT_RAM_READ_BUFFER
     localparam logic RAM_READ_BUFFER_ENABLED = 1'b1;
-`else
-    localparam logic RAM_READ_BUFFER_ENABLED = 1'b0;
-`endif
     // Both buffers observe canonical addresses and every accepted CPU/DMA/HPS
     // write. RAM data hits do not change physical write completion or P03's
     // instruction-line invalidation. SDRAM remains the final memory owner.
@@ -1086,35 +1074,13 @@ module emu_at
     // AT286CTL is clocked by the AT bus and its effective video fields are
     // fed to the EGA/VGA adapter through the machine boundary.
 
-`ifndef SPK286_AT_NO_DEBUG
-`ifdef SPK286_AT_DEBUG_CPU_DIV2
-    // Optional diagnostic configuration: run only SPK286 from a related
-    // 25 MHz clock while the chipset, memory pipeline and SDRAM remain at
-    // 50 MHz. The ordinary observer build keeps the CPU at 50 MHz.
-    (* preserve, altera_attribute = "-name GLOBAL_SIGNAL GLOBAL_CLOCK" *)
-    logic at_debug_cpu_clock_q;
-    always_ff @(posedge CLK_50M or posedge RESET) begin
-        if (RESET)
-            at_debug_cpu_clock_q <= 1'b0;
-        else
-            at_debug_cpu_clock_q <= ~at_debug_cpu_clock_q;
-    end
-    wire at_cpu_clock = at_debug_cpu_clock_q;
-    wire at_cpu_sample_edge = ~at_debug_cpu_clock_q;
-    localparam logic AT_CPU_DIV2_ENABLED = 1'b1;
-`else
     wire at_cpu_clock = CLK_50M;
     wire at_cpu_sample_edge = 1'b1;
     localparam logic AT_CPU_DIV2_ENABLED = 1'b0;
-`endif
-`else
-    wire at_cpu_clock = CLK_50M;
-    wire at_cpu_sample_edge = 1'b1;
-    localparam logic AT_CPU_DIV2_ENABLED = 1'b0;
-`endif
 
     spk286_at_machine #(
-        .CPU_USES_SAMPLE_EDGE(AT_CPU_DIV2_ENABLED)
+        .CPU_USES_SAMPLE_EDGE(AT_CPU_DIV2_ENABLED),
+        .DMA_REGISTERED_MEMORY_COMPLETION(1'b1)
     ) u_at_machine (
         .clk                    (CLK_50M),
         .clk_cpu                (at_cpu_clock),
@@ -1194,69 +1160,6 @@ module emu_at
         .cpu_ready              (at_cpu_ready),
         .cpu_halted             (at_cpu_halted),
         .cpu_shutdown           (at_cpu_shutdown),
-`ifndef SPK286_AT_NO_DEBUG
-        .intr                   (at_debug_intr),
-        .irq_request            (at_debug_irq_request),
-        .dma_grant              (at_debug_dma_grant),
-        .refresh_grant          (at_debug_refresh_grant),
-        .debug_bridge_error     (at_debug_bridge_error),
-        .debug_control_error    (at_debug_control_error),
-        .debug_unsupported_opcode(at_debug_unsupported_opcode),
-        .debug_microcode_fault  (at_debug_microcode_fault),
-        .debug_operand_blocked  (at_debug_operand_blocked),
-        .debug_event_completed  (),
-        .debug_event_vector     (),
-        .debug_event_kind       (),
-        .debug_opcode           (at_debug_opcode),
-        .debug_cs               (at_debug_cs),
-        .debug_cs_base          (),
-        .debug_ip               (at_debug_ip),
-        .debug_flags            (at_debug_flags),
-        .debug_gpr              (at_debug_gpr),
-        .debug_instruction_retired(at_debug_instruction_retired),
-        .debug_segment_selectors(),
-        .debug_fetch_blocked    (at_debug_fetch_blocked),
-        .debug_fetch_cursor     (),
-        .debug_micro_pc         (at_debug_micro_pc),
-        .debug_micro_entry      (),
-        .debug_micro_instruction(),
-        .debug_micro_active     (),
-        .debug_prefetch_count   (),
-        .debug_bus_state        (at_debug_bus_state),
-        .debug_biu_detail       (at_debug_biu_detail),
-        .debug_last_post        (at_debug_last_post),
-        .debug_cpu_cycle_count  (),
-        .debug_at_cycle_count   (),
-        .debug_trace0           (at_debug_trace0),
-        .debug_trace1           (),
-        .debug_trace2           (),
-        .debug_trace3           (),
-        .debug_keyboard_keycode (),
-        .debug_keyboard_irq     (),
-        .debug_keyboard_port_b  (),
-        .debug_keyboard_pic_int (),
-        .debug_dma_request      (),
-        .debug_dma_acknowledge_n(),
-        .debug_at_address       (at_debug_address),
-        .debug_at_data_out      (at_debug_data_out),
-        .debug_at_data_in       (at_debug_data_in),
-        .debug_at_status        (at_debug_status),
-        .debug_at_valid         (at_debug_valid),
-        .debug_at_write         (at_debug_write),
-        .debug_at_io            (at_debug_io),
-        .debug_at_inta          (),
-        .debug_at_code          (),
-        .debug_at_byte_high     (),
-        .debug_at_memory_projection(),
-        .debug_at_cycle_active  (),
-        .debug_at_ready         (at_debug_ready),
-        .debug_at_read_data_valid(at_debug_read_data_valid),
-        .debug_dma_bus_request  (at_debug_dma_bus_request),
-        .debug_refresh_request  (at_debug_refresh_request),
-        .debug_bridge_state     (at_debug_bridge_state),
-        .cpu_hold_request       (at_debug_hold_request),
-        .bridge_idle            (at_debug_bridge_idle),
-`endif
         .memory_request_valid   (cpu_memory_valid),
         .memory_command_valid   (cpu_memory_command_valid),
         .memory_write           (cpu_memory_write),
@@ -1670,148 +1573,12 @@ module emu_at
     wire        at_debug_vb_out;
     wire [23:0] at_debug_rgb_out;
 
-`ifndef SPK286_AT_NO_DEBUG
-`ifdef SPK286_AT_DEBUG_STABLE_RASTER
-    // Diagnostic output timing is independent of the EGA CRTC. A BIOS
-    // reprogramming the CRTC can otherwise freeze the last debug snapshot on
-    // screen even while the CPU and the snapshot mailbox keep running.
-    logic at_debug_ce_q;
-    logic [9:0] at_debug_hpos_q;
-    logic [8:0] at_debug_vpos_q;
-    always_ff @(posedge at_video_clk_57_ps) begin
-        if (at_video_pipe_reset_57_ps) begin
-            at_debug_ce_q   <= 1'b0;
-            at_debug_hpos_q <= 10'd0;
-            at_debug_vpos_q <= 9'd0;
-        end else begin
-            at_debug_ce_q <= ~at_debug_ce_q;
-            if (at_debug_ce_q) begin
-                if (at_debug_hpos_q == 10'd899) begin
-                    at_debug_hpos_q <= 10'd0;
-                    at_debug_vpos_q <= at_debug_vpos_q == 9'd448 ?
-                                       9'd0 : at_debug_vpos_q + 9'd1;
-                end else
-                    at_debug_hpos_q <= at_debug_hpos_q + 10'd1;
-            end
-        end
-    end
-    wire at_debug_hs = !(at_debug_hpos_q >= 10'd720 &&
-                         at_debug_hpos_q < 10'd816);
-    wire at_debug_vs = !(at_debug_vpos_q >= 9'd440 &&
-                         at_debug_vpos_q < 9'd442);
-    wire at_debug_hb = !(at_debug_hpos_q >= 10'd48 &&
-                         at_debug_hpos_q < 10'd688);
-    wire at_debug_vb = !(at_debug_vpos_q >= 9'd35 &&
-                         at_debug_vpos_q < 9'd435);
-    wire at_debug_pxl_cen = at_debug_ce_q;
-`else
-    wire at_debug_hs = at_video_hs_out_q;
-    wire at_debug_vs = at_video_vs_out_q;
-    wire at_debug_hb = at_video_hb_out_q;
-    wire at_debug_vb = at_video_vb_out_q;
-    wire at_debug_pxl_cen = at_video_ce_out_q;
-`endif
-    // The single-page overlay is passive and never drives the machine.
-    spk286_debug_min_overlay #(
-        .COLW(8),
-        .CPU_DIV2(AT_CPU_DIV2_ENABLED)
-    ) u_at_debug_overlay (
-        .rst                    (at_video_pipe_reset_57_ps),
-        .src_rst                (at_boot_reset),
-        .src_clk                (CLK_50M),
-        .clk                    (at_video_clk_57_ps),
-        .pxl_cen                (at_debug_pxl_cen),
-        .HS                     (at_debug_hs),
-        .VS                     (at_debug_vs),
-        .HB                     (at_debug_hb),
-        .VB                     (at_debug_vb),
-`ifdef SPK286_AT_DEBUG_STABLE_RASTER
-        .rgb_in                 (24'h000000),
-`else
-        .rgb_in                 ({at_video_r_out_q,
-                                  at_video_g_out_q,
-                                  at_video_b_out_q}),
-`endif
-        .cpu_reset              (at_machine_reset | at_cpu_reset_request),
-        .cpu_halted             (at_cpu_halted),
-        .cpu_shutdown           (at_cpu_shutdown),
-        .cpu_control_error      (at_debug_control_error),
-        .cpu_unsupported_opcode (at_debug_unsupported_opcode),
-        .cpu_microcode_fault    (at_debug_microcode_fault),
-        .cpu_operand_blocked    (at_debug_operand_blocked),
-        .bridge_error           (at_debug_bridge_error |
-                                 keyboard_event_overflow),
-        .cpu_opcode             (at_debug_opcode),
-        .cpu_cs                 (at_debug_cs),
-        .cpu_ip                 (at_debug_ip),
-        .cpu_flags              (at_debug_flags),
-        .cpu_cx                 (at_debug_gpr[31:16]),
-        .cpu_micro_pc           (at_debug_micro_pc),
-        .cpu_biu_state          (at_debug_bus_state),
-        .cpu_fetch_blocked      (at_debug_fetch_blocked),
-        .cpu_ready              (at_cpu_ready),
-        .cpu_bus_valid          (at_cpu_bus_valid),
-        .cpu_hlda               (at_cpu_hlda),
-        .instruction_retired    (at_debug_instruction_retired),
-        .irq8                   (at_debug_irq_request[8]),
-        .cpu_intr               (at_debug_intr),
-        .last_post              (at_debug_last_post),
-        .trace0                 (at_debug_trace0),
-        .at_address             (at_debug_address),
-        .at_data_out            (at_debug_data_out),
-        .at_data_in             (at_debug_data_in),
-        .at_status              (at_debug_status),
-        .at_valid               (at_debug_valid),
-        .at_write               (at_debug_write),
-        .at_io                  (at_debug_io),
-        .at_ready               (at_debug_ready),
-        .at_read_data_valid     (at_debug_read_data_valid),
-        .bridge_idle            (at_debug_bridge_idle),
-        .bridge_state           (at_debug_bridge_state),
-        .hold_request           (at_debug_hold_request),
-        .dma_request            (at_debug_dma_bus_request),
-        .refresh_request        (at_debug_refresh_request),
-        .dma_grant              (at_debug_dma_grant),
-        .refresh_grant          (at_debug_refresh_grant),
-        .memory_port_state      (memory_port_debug_state),
-        .read_buffer_state      (p03_debug_state),
-        .sdram_owner_state      (sdram_owner_debug_state),
-        .biu_detail             (at_debug_biu_detail),
-        .HB_out                 (at_debug_hb_out),
-        .VB_out                 (at_debug_vb_out),
-        .rgb_out                (at_debug_rgb_out)
-    );
-`endif
 
-`ifndef SPK286_AT_NO_DEBUG
-    (* altera_attribute = "-name SYNCHRONIZER_IDENTIFICATION FORCED_IF_ASYNCHRONOUS" *)
-    logic at_debug_enable_sync1_q;
-    (* altera_attribute = "-name SYNCHRONIZER_IDENTIFICATION FORCED_IF_ASYNCHRONOUS" *)
-    logic at_debug_enable_sync2_q;
-    always_ff @(posedge at_video_clk_57_ps) begin
-        if (at_video_pipe_reset_57_ps) begin
-            at_debug_enable_sync1_q <= 1'b0;
-            at_debug_enable_sync2_q <= 1'b0;
-        end else begin
-            at_debug_enable_sync1_q <= at_debug_enable;
-            at_debug_enable_sync2_q <= at_debug_enable_sync1_q;
-        end
-    end
-
-    logic at_use_debug_q;
-    always_ff @(posedge at_video_clk_57_ps) begin
-        if (at_video_pipe_reset_57_ps)
-            at_use_debug_q <= 1'b0;
-        else if (at_debug_vb)
-            at_use_debug_q <= at_debug_enable_sync2_q;
-    end
-`else
     logic at_use_debug_q;
     assign at_use_debug_q = 1'b0;
     assign at_debug_hb_out = 1'b0;
     assign at_debug_vb_out = 1'b0;
     assign at_debug_rgb_out = 24'h000000;
-`endif
 
     wire at_video_fault = cpu_fault | machine_protocol_error | keyboard_event_overflow |
                           memory_port_protocol_error |
@@ -1820,11 +1587,7 @@ module emu_at
                           loader_protocol_error;
 
     assign CLK_VIDEO    = at_video_clk_57_ps;
-`ifndef SPK286_AT_NO_DEBUG
-    assign CE_PIXEL     = at_use_debug_q ? at_debug_pxl_cen : at_video_ce_out_q;
-`else
     assign CE_PIXEL     = at_video_ce_out_q;
-`endif
     assign VIDEO_ARX    = at_video_arx_q;
     assign VIDEO_ARY    = at_video_ary_q;
     assign VGA_R        = at_use_debug_q ? at_debug_rgb_out[23:16] :
@@ -1833,13 +1596,8 @@ module emu_at
                           at_video_g_out_q;
     assign VGA_B        = at_use_debug_q ? at_debug_rgb_out[7:0] :
                           at_video_b_out_q;
-`ifndef SPK286_AT_NO_DEBUG
-    assign VGA_HS       = at_use_debug_q ? at_debug_hs : at_video_hs_out_q;
-    assign VGA_VS       = at_use_debug_q ? at_debug_vs : at_video_vs_out_q;
-`else
     assign VGA_HS       = at_video_hs_out_q;
     assign VGA_VS       = at_video_vs_out_q;
-`endif
     assign VGA_DE       = at_use_debug_q ?
                           (~at_debug_hb_out & ~at_debug_vb_out) :
                           at_video_de_out_q;

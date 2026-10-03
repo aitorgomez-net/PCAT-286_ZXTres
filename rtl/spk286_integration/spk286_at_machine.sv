@@ -24,7 +24,11 @@
 `endif
 
 module spk286_at_machine #(
-    parameter logic CPU_USES_SAMPLE_EDGE = 1'b0
+    parameter logic CPU_USES_SAMPLE_EDGE = 1'b0,
+    // Backend protocol, not a CPU speed option. The MiSTer memory port
+    // completes only a previously accepted record; abstract test backends
+    // may also accept and complete on the same edge.
+    parameter logic DMA_REGISTERED_MEMORY_COMPLETION = 1'b0
 ) (
     input  logic         clk,
     input  logic         clk_cpu,
@@ -295,6 +299,12 @@ module spk286_at_machine #(
     logic [3:0]  spk_debug_prefetch_count;
     logic [7:0]  spk_debug_biu_detail;
 
+    // Dedicated retained FDC write record; general/read buses remain intact.
+    logic        retained_io_command;
+    logic [23:0] retained_io_address;
+    logic        retained_io_write;
+    logic [1:0]  retained_io_byte_enable;
+    logic [15:0] retained_io_data_out;
     logic        at_valid;
     logic        at_command_valid;
     logic [2:0]  at_owner;
@@ -508,6 +518,9 @@ module spk286_at_machine #(
     logic        rom_write_sink_ready;
 
     logic        dma_memory_accept_q;
+    wire dma_memory_response_valid = dma_memory_ready &&
+        (DMA_REGISTERED_MEMORY_COMPLETION ? dma_memory_accept_q :
+                                           (dma_memory_accept || dma_memory_accept_q));
     logic        nmi_source_active_q;
 
     logic [15:0] debug_cpu_cycle_count_q;
@@ -781,6 +794,12 @@ module spk286_at_machine #(
         .cpu_io_word_capable    (cpu_io_word_capable),
         .cpu_ready              (cpu_ready_i),
         .cpu_data_in            (cpu_data_in_i),
+        .retained_io_command    (retained_io_command),
+        .retained_io_address    (retained_io_address),
+        .retained_io_write      (retained_io_write),
+        .retained_io_byte_enable(retained_io_byte_enable),
+        .retained_io_data_out   (retained_io_data_out),
+        .retained_io_data_oe    (),
         .at_valid               (at_valid),
         .at_command_valid       (at_command_valid),
         .at_owner               (at_owner),
@@ -845,7 +864,9 @@ module spk286_at_machine #(
                                    rom_write_blocked && !rom_write_sink_active_q;
     assign rom_write_sink_ready = rom_write_sink_active_q;
 
-    spk286_at_device_router u_devices (
+    spk286_at_device_router #(
+        .RETAINED_FDC_WRITE(1'b1)
+    ) u_devices (
         .clk                    (clk),
         .cpu_sample_edge        (cpu_sample_edge),
         .reset                  (reset),
@@ -890,6 +911,12 @@ module spk286_at_machine #(
         .uart2_tx              (uart2_tx),
         .uart2_rts_n           (uart2_rts_n),
         .uart2_dtr_n           (uart2_dtr_n),
+        // Pure I/O COMMAND ownership, independent of the early memory mux.
+        .retained_io_command    (cpu_grant && retained_io_command),
+        .retained_io_address    (retained_io_address),
+        .retained_io_write      (retained_io_write),
+        .retained_io_byte_enable(retained_io_byte_enable),
+        .retained_io_data_out   (retained_io_data_out),
         .request_valid          (device_request_candidate),
         .request_command_valid  (at_command_valid),
         .request_write          (at_write),
@@ -922,8 +949,7 @@ module spk286_at_machine #(
         .dma_terminal_count     (dma_terminal_count),
         .dma_active_channel     (dma_active_channel),
         .dma_transfer_read_from_memory(dma_transfer_read_from_memory),
-        .dma_memory_data_valid  (dma_memory_ready &&
-                                 (dma_memory_accept || dma_memory_accept_q)),
+        .dma_memory_data_valid  (dma_memory_response_valid),
         // DMA1 byte devices consume a normalized low-byte value. Select the
         // addressed SDRAM lane for memory-to-I/O transfers.
         .dma_transfer_data_in   ((dma_active_channel < 3'd4) &&
@@ -1071,8 +1097,7 @@ module spk286_at_machine #(
         .dma_grant               (dma_grant),
         .transfer_accept         (devices_dma_transfer_accept),
         .transfer_ready          (devices_dma_transfer_ready &&
-                                  dma_memory_ready &&
-                                  (dma_memory_accept || dma_memory_accept_q)),
+                                  dma_memory_response_valid),
         .transfer_data_in        (dma_transfer_read_from_memory ?
                                   dma_memory_data_in :
                                   devices_dma_transfer_data_out),

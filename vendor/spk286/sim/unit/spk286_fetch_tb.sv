@@ -1,11 +1,7 @@
 `timescale 1ns/1ps
 
 module spk286_fetch_tb;
-`ifdef SPK286_P02_FETCH_CHAIN
     localparam logic EXPECT_FETCH_CHAINING = 1'b1;
-`else
-    localparam logic EXPECT_FETCH_CHAINING = 1'b0;
-`endif
 
     logic suspend = 0;
     logic clk = 1'b0, reset = 1'b1, ready = 1'b0;

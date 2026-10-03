@@ -279,6 +279,8 @@ module spk286_at_mister_memory_port (
                 else $error("AT MiSTer memory port completed CPU and refresh together");
             assert (!(dma_ready && refresh_ready))
                 else $error("AT MiSTer memory port completed DMA and refresh together");
+            assert (!(dma_accept && dma_ready))
+                else $error("AT MiSTer DMA completion needs an earlier accepted record");
         end
     end
 `endif

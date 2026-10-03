@@ -4,12 +4,18 @@
 set -euo pipefail
 
 prepare_only=0
+frozen_run=0
 if [[ ${1:-} == --prepare-only ]]; then
   prepare_only=1
   shift
 fi
+if [[ ${1:-} == --frozen-run ]]; then
+  frozen_run=1
+  shift
+  [[ $# == 1 ]] || { echo '--frozen-run requires one pre-frozen new run directory' >&2; exit 2; }
+fi
 if [[ $# -gt 1 ]]; then
-  echo 'Usage: build_at_no_debug.sh [--prepare-only] [NEW_RUN_DIRECTORY]' >&2
+  echo 'Usage: build_at_no_debug.sh [--prepare-only | --frozen-run] [NEW_RUN_DIRECTORY]' >&2
   exit 2
 fi
 
@@ -23,9 +29,26 @@ elif [[ ${AT_DETAILED_TIMING:-0} != 0 ]]; then
   exit 2
 fi
 run_dir=$(realpath -m "${1:-$root/build/at-no-debug/$(date -u +%Y%m%dT%H%M%S)-$$}")
-[[ ! -e "$run_dir" ]] || { echo "Run directory already exists: $run_dir" >&2; exit 2; }
-
-python3 "$root/scripts/p05_snapshot.py" "$run_dir" --revision PCAT-286
+if [[ $frozen_run == 0 ]]; then
+  [[ ! -e "$run_dir" ]] || { echo "Run directory already exists: $run_dir" >&2; exit 2; }
+  python3 "$root/scripts/p05_snapshot.py" "$run_dir" --revision PCAT-286
+else
+  # Allows a snapshot created by native Python when Git on a mounted NTFS
+  # checkout is slow. Never accept an existing database or compilation.
+  [[ -f "$run_dir/manifest.json" && ! -e "$run_dir/compile-started.txt" ]]
+  python3 - "$run_dir" <<'PY'
+from pathlib import Path
+import hashlib, json, sys
+r = Path(sys.argv[1])
+m = json.loads((r/'manifest.json').read_text())
+assert m['revision'] == 'PCAT-286' and not m['fit_sha256']
+for n, h in m['source_sha256'].items():
+    p = Path(n.replace('\\', '/'))
+    assert not p.is_absolute() and '..' not in p.parts
+    assert hashlib.sha256((r/'work'/p).read_bytes()).hexdigest() == h, n
+print('FROZEN_NEW_RUN_INPUTS_PASS', len(m['source_sha256']))
+PY
+fi
 work="$run_dir/work"
 output_dir=$(sed -n 's/.*-name PROJECT_OUTPUT_DIRECTORY \([^ ]*\).*/\1/p' "$work/PCAT-286.qsf" | tr -d '\r"')
 [[ "$output_dir" == output_files ]]

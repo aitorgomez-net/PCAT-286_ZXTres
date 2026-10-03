@@ -34,31 +34,11 @@ proc at_mailbox {label source_clock patterns budget} {
     set_false_path -hold -from $source_clock -to $r
 }
 
-# The optional observer /2 mode uses a real divide-by-two CPU clock. This is deliberately
-# a generated clock rather than a multicycle exception on the complete SPK286
-# hierarchy: BIU and chipset handshake paths which still require one 50 MHz
-# cycle remain fully timed.
-set at_no_debug 0
-set at_debug_cpu_div2 0
+# CPU, bridge and SDRAM service share the physical 50 MHz system clock.
+set AT_CPU [at_clock FPGA_CLK2_50]
 set at_boot_splash_enabled 0
 foreach_in_collection a [get_all_global_assignments -name VERILOG_MACRO] {
-    if {[lindex $a 2] eq "SPK286_AT_NO_DEBUG"} { set at_no_debug 1 }
-    if {[lindex $a 2] eq "SPK286_AT_DEBUG_CPU_DIV2"} { set at_debug_cpu_div2 1 }
     if {[lindex $a 2] eq "SPK286_AT_BOOT_SPLASH"} { set at_boot_splash_enabled 1 }
-}
-if {$at_no_debug && $at_debug_cpu_div2} {
-    error "SPK286_AT_DEBUG_CPU_DIV2 requires the debug observer"
-}
-if {$at_debug_cpu_div2} {
-    set at_debug_cpu_clock_pin [get_pins -nowarn {*|at_debug_cpu_clock_q|q}]
-    if {[get_collection_size $at_debug_cpu_clock_pin] != 1} {
-        error "AT debug CPU clock divider missing/ambiguous"
-    }
-    create_generated_clock -name AT_DEBUG_CPU_CLK -source [get_ports FPGA_CLK2_50] \
-        -divide_by 2 $at_debug_cpu_clock_pin
-    set AT_CPU [at_clock AT_DEBUG_CPU_CLK]
-} else {
-    set AT_CPU [at_clock FPGA_CLK2_50]
 }
 
 set AT_VIDEO [at_clock {emu|u_at_video_pll|pll_system_inst|altera_pll_i|general[0].gpll~PLL_OUTPUT_COUNTER|divclk}]
@@ -98,8 +78,7 @@ at_mailbox ega_reply_payload $AT_VIDEO {*u_video|io_read_data_sync1_q[*]} 10.0
 at_sync ega_memory_select $AT_CPU {*u_video|memory_select_video1_q *u_video|memory_write_video1_q}
 
 # The machine-reset/ROM-hold level is generated in the 50 MHz system domain,
-# including when the optional CPU /2 observer is selected. The video adapter
-# uses prebios_video_sync1_q -> prebios_video_sync2_q and consumes stage two
+# The video adapter uses prebios_video_sync1_q -> prebios_video_sync2_q and consumes stage two
 # only. Cut its asynchronous arrival at stage one; keep stage one -> stage
 # two and every other CPU/video path timed.
 at_sync prebios_video [at_clock FPGA_CLK2_50] {*u_video|prebios_video_sync1_q}

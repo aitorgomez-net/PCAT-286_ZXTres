@@ -55,7 +55,7 @@ def main():
                 '.sv', '.v', '.vh', '.qsf', '.qpf', '.qip', '.sdc', '.tcl',
                 '.mif', '.mem', '.hex'):
             shutil.copy2(src, work / src.name)
-    source_files = {str(p.relative_to(work)): digest(p)
+    source_files = {p.relative_to(work).as_posix(): digest(p)
                     for p in sorted(work.rglob('*')) if p.is_file()}
     fit_files = {}
     if args.with_fit:
@@ -73,10 +73,10 @@ def main():
         shutil.copytree(output, work / output.name)
         for p in sorted((work / output.name).rglob('*')):
             if p.is_file():
-                fit_files[str(p.relative_to(work))] = digest(p)
+                fit_files[p.relative_to(work).as_posix()] = digest(p)
         for p in sorted((work / 'db').glob(args.revision + '.cmp.*')):
             if p.is_file():
-                fit_files[str(p.relative_to(work))] = digest(p)
+                fit_files[p.relative_to(work).as_posix()] = digest(p)
     manifest = dict(created_utc=datetime.now(timezone.utc).isoformat(),
                     source_root=str(root), revision=args.revision,
                     head=git('rev-parse', 'HEAD').decode().strip(),

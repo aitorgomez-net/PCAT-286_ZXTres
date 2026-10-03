@@ -34,11 +34,7 @@ module spk286_fetch (
     logic bhe_n_q;
     logic [23:0] next_address;
     logic single_byte;
-`ifdef SPK286_P02_FETCH_CHAIN
     localparam logic FETCH_CHAINING = 1'b1;
-`else
-    localparam logic FETCH_CHAINING = 1'b0;
-`endif
     wire response_fire = response_valid && response_ready;
     wire response_slot_available = !response_valid ||
                                    (FETCH_CHAINING && response_fire);

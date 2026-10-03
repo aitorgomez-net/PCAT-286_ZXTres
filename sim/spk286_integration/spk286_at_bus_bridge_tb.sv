@@ -1,16 +1,8 @@
 `timescale 1ns/1ps
 
 module spk286_at_bus_bridge_tb;
-`ifdef SPK286_P06_EARLY_MEMORY_ADDRESS
     localparam logic EXPECT_EARLY_MEMORY_ADDRESS = 1'b1;
-`else
-    localparam logic EXPECT_EARLY_MEMORY_ADDRESS = 1'b0;
-`endif
-`ifdef SPK286_P01_FAST_MEMORY_START
     localparam logic EXPECT_P01_FAST_MEMORY_START = 1'b1;
-`else
-    localparam logic EXPECT_P01_FAST_MEMORY_START = 1'b0;
-`endif
 
     logic clk = 1'b0;
     logic reset = 1'b1;

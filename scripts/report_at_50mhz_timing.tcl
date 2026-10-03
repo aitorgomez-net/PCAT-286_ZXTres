@@ -30,6 +30,9 @@ set keyboard [require_regs keyboard {*u_at_keyboard|*}]
 set video [require_regs video {*u_video|*}]
 set prebios1 [require_regs prebios_stage1 {*u_video|prebios_video_sync1_q}]
 set prebios2 [require_regs prebios_stage2 {*u_video|prebios_video_sync2_q}]
+set observers [get_registers -nowarn {*u_at_debug_overlay|* *at_debug_cpu_clock_q*}]
+puts $inventory "fixed_cpu_profile=1 observers=[get_collection_size $observers]"
+if {[get_collection_size $observers]} { error "Retired observer/divider in production fit" }
 set clk50 [get_clocks FPGA_CLK2_50]
 set sdram_clk [get_clocks SDRAM_CLK]
 if {[get_collection_size $clk50] != 1 || [get_collection_size $sdram_clk] != 1} {

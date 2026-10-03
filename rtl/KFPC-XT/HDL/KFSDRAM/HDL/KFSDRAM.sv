@@ -18,7 +18,11 @@ module KFSDRAM #(
     parameter cas_latency           = 3'b010,
     parameter sdram_init_wait       = 16'd10000,
     parameter sdram_refresh_cycle   = 16'd00100,
-    parameter sdram_force_refresh   = 16'd00400
+    parameter sdram_force_refresh   = 16'd00400,
+    // The AT owner supplies its retained transaction column separately
+    // from the live row address used for write admission. Other clients
+    // retain the original single-address interface behavior.
+    parameter use_column_address_input = 1'b0
 ) (
     input   logic                               sdram_clock,
     input   logic                               sdram_reset,
@@ -28,6 +32,7 @@ module KFSDRAM #(
                     + sdram_row_width
                     + sdram_bank_width-1:0]     address,
     input   logic   [sdram_col_width-1:0]       access_num,
+    input   logic   [sdram_col_width-1:0]       column_address,
     input   logic   [sdram_data_width-1:0]      data_in,
     output  reg     [sdram_data_width-1:0]      data_out,
     input   logic                               write_request,
@@ -66,6 +71,8 @@ module KFSDRAM #(
     logic   [sdram_col_width-1:0]       read_counter;
     logic                               send_cmd_timing;
     logic                               end_read_cmd;
+    wire [sdram_col_width-1:0] column_base = use_column_address_input
+        ? column_address : address[sdram_col_width-1:0];
 
     //
     // State Machine
@@ -341,7 +348,7 @@ module KFSDRAM #(
                     end
                 end
                 WRITE: begin
-                    sdram_address[sdram_col_width-1:0]  <= address[sdram_col_width-1:0] + access_counter;
+                    sdram_address[sdram_col_width-1:0]  <= column_base + access_counter;
                     sdram_address[sdram_row_width-1:sdram_col_width] <= 0;
                     sdram_cke       <= 1'b1;
                     sdram_cs        <= 1'b0;
@@ -364,7 +371,7 @@ module KFSDRAM #(
                     sdram_dq_io     <= 1'b1;
                 end
                 READ: begin
-                    sdram_address[sdram_col_width-1:0]  <= (~end_read_cmd) ? address[sdram_col_width-1:0] + access_counter : 0;
+                    sdram_address[sdram_col_width-1:0]  <= (~end_read_cmd) ? column_base + access_counter : 0;
                     sdram_address[sdram_row_width-1:sdram_col_width] <= 0;
                     sdram_cke       <= 1'b1;
                     sdram_cs        <= 1'b0;

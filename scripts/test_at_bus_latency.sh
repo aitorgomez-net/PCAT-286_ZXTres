@@ -1,19 +1,13 @@
 #!/usr/bin/env bash
-# Verify the retained AT protocol in reference, P01/P02 and production modes.
+# Verify the fixed production bridge/fetch protocol in both simulators.
 set -euo pipefail
 root=$(cd "$(dirname "$0")/.." && pwd)
 build_dir=${PCAT_BUILD_DIR:-$root/build/at-bus-latency}
 mkdir -p "$build_dir"
 cd "$root"
-sed '/SPK286_P01_/d; /SPK286_P02_/d; /SPK286_P06_/d' config.tcl > "$build_dir/reference.tcl"
-sed '/SPK286_P06_/d' config.tcl > "$build_dir/p01-p02.tcl"
-for profile in reference p01-p02 production; do
-  config="$build_dir/$profile.tcl"
-  if [[ $profile == production ]]; then config="$root/config.tcl"; fi
-  PCAT_PERF_CONFIG="$config" PCAT_BUILD_DIR="$build_dir/bridge-$profile" \
-    bash scripts/test_a1_at_bridge.sh > "$build_dir/bridge-$profile.log" 2>&1
-  echo "AT_BUS_LATENCY_BRIDGE_PASS $profile (Icarus and Verilator)"
-done
+PCAT_BUILD_DIR="$build_dir/bridge-production" \
+  bash scripts/test_a1_at_bridge.sh > "$build_dir/bridge-production.log" 2>&1
+echo 'AT_BUS_LATENCY_BRIDGE_PASS fixed production (Icarus and Verilator)'
 source scripts/at_performance_flags.sh
 fetch_sources=(vendor/spk286/rtl/spk286_fetch.sv vendor/spk286/sim/unit/spk286_fetch_tb.sv)
 iverilog -g2012 "${performance_flags[@]}" -s spk286_fetch_tb \
