@@ -1,11 +1,20 @@
 // SPK286 production wrapper for the XT-derived MiSTer machine.
 // Setup/debug mutation inputs are disabled; diagnostics remain observable.
 `timescale 1ns/1ps
+// Guarded definitions keep older directed integration source lists usable.
+// The selected hardware has one profiled CPU; MAX bypasses its schedule.
+`include "rtl/spk286_timing/spk286_instruction_timing.sv"
+`include "rtl/spk286_timing/spk286_instruction_schedule.sv"
+`include "vendor/spk286/rtl/timed/spk286_profiled_events.sv"
+`include "vendor/spk286/rtl/timed/spk286_profiled.sv"
 
 module spk286_machine_cpu (
     input  logic         clk,
     input  logic         reset,
     input  logic         execute_enable,
+    input  logic         historical_enable,
+    input  logic         cpu_boundary,
+    input  logic         timing_read_wait_event,
     input  logic         ready,
     input  logic [15:0]  data_in,
     input  logic         intr,
@@ -83,6 +92,9 @@ module spk286_machine_cpu (
     logic [23:0] unused_debug_ldtr_base;
     logic [23:0] unused_debug_tr_base;
     logic [3:0]  unused_debug_bus_transaction;
+    // Older directed fixtures omit the profile inputs. Their baseline remains
+    // MAX; execute_enable keeps its original native/setup ownership meaning.
+    wire applied_historical = historical_enable === 1'b1;
 
     // Preserve the existing 8-bit integration diagnostic while the CPU
     // exposes the bus state and protected transaction class separately.
@@ -97,12 +109,15 @@ module spk286_machine_cpu (
     logic [15:0] sim_cs = 16'h0000;
 `endif
 
-    spk286 cpu (
+    spk286_profiled cpu (
         .clk(clk),
         .reset(reset),
         .ready(ready),
         .data_in(data_in),
         .execute_enable(execute_enable),
+        .historical_enable(applied_historical),
+        .cpu_boundary(cpu_boundary),
+        .timing_read_wait_event(timing_read_wait_event),
         // PCAT uses the baseline dependency-driven policy; policy selection
         // is intentionally kept local to the CPU integration boundary.
         .timing_policy_request(2'd0),

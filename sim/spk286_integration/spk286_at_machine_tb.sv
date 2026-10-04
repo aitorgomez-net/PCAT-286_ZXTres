@@ -11,6 +11,9 @@ module spk286_at_machine_tb;
     logic clk = 1'b0;
     logic reset = 1'b1;
     logic cpu_local_reset = 1'b0;
+    integer selected_cpu_profile = 0;
+    logic [2:0] applied_cpu_profile;
+    wire cpu_profile_pending;
     always #5 clk = ~clk;
     logic clk_video = 1'b0;
     always #17.45 clk_video = ~clk_video;
@@ -492,6 +495,8 @@ module spk286_at_machine_tb;
     spk286_at_machine dut (
         .clk(clk), .clk_cpu(clk), .cpu_sample_edge(1'b1), .reset(reset), .video_reset(reset),
         .cpu_reset(reset | cpu_local_reset), .clk_video(clk_video), .splashscreen(1'b0),
+        .cpu_speed_requested(3'(selected_cpu_profile)),
+        .cpu_speed_active(applied_cpu_profile), .cpu_speed_pending(cpu_profile_pending),
         .ega_monitor_profile(2'b00),
         .installed_ram_size_osd(3'd0),
         .at286ctl_eff_mpu401(runtime_mpu_enable),
@@ -562,6 +567,10 @@ module spk286_at_machine_tb;
         logic mrbios_ram_fault_seen;
         if (!$value$plusargs("MAX_CYCLES=%d", max_cycles))
             max_cycles = 2000000;
+        if (!$value$plusargs("CPU_PROFILE=%d", selected_cpu_profile))
+            selected_cpu_profile = 0;
+        if (selected_cpu_profile < 0 || selected_cpu_profile > 7)
+            $fatal(1, "invalid CPU_PROFILE=%0d", selected_cpu_profile);
 
         runtime_mpu_test = $test$plusargs("RUNTIME_MPU_ENABLE");
         mrbios_warm_restarts = 0;
@@ -577,6 +586,9 @@ module spk286_at_machine_tb;
 
         repeat (8) @(posedge clk);
         reset = 1'b0;
+        #1;
+        if (applied_cpu_profile !== 3'(selected_cpu_profile) || cpu_profile_pending)
+            $fatal(1, "CPU profile was not applied through machine reset");
 
         // The AT motherboard converts the 80286 SHUTDOWN indication into a
         // CPU-local reset and exports the same pulse to cancel a retained

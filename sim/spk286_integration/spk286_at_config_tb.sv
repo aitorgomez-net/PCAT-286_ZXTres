@@ -45,6 +45,7 @@ module spk286_at_config_tb;
             contains("UMB E000-EFFF") ||
             !contains("S2,VHD,IDE 0-0;") ||
             !contains("R0,Reset & apply settings;") ||
+            !contains("P3O[77:75],CPU Speed,MAX,6 MHz,8 MHz,10 MHz,12.5 MHz,16 MHz,20 MHz,25 MHz;") ||
             !contains("J,Fire 1,Fire 2;") ||
             dut.hps_io_at.CONF_STR[23:0] !== "V,v")
             $fatal(1, "AT_CONFIG: host configuration is incomplete");

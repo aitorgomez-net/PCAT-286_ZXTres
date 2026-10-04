@@ -6,6 +6,7 @@
 // memory/refresh interfaces.  A later MiSTer profile can attach those ports
 // to the SDRAM/HPS/media/video owners without changing the CPU contract.
 `timescale 1ns/1ps
+`include "rtl/spk286_integration/spk286_at_cpu_profile.sv"
 
 `ifndef ENABLE_OPL2
 `define ENABLE_OPL2 0
@@ -33,6 +34,9 @@ module spk286_at_machine #(
     input  logic         clk,
     input  logic         clk_cpu,
     input  logic         cpu_sample_edge,
+    input  logic [2:0]   cpu_speed_requested,
+    output logic [2:0]   cpu_speed_active,
+    output logic         cpu_speed_pending,
     input  logic         reset,
     // The video raster can run its power-on timing while the machine remains
     // reset for a missing system BIOS.
@@ -696,10 +700,26 @@ module spk286_at_machine #(
                                     video_aperture_select);
     end
 
+    wire timing_historical, timing_cpu_boundary;
+    wire timing_phase_enable, timing_phase_two;
+    wire timing_deadline_miss;
+    // Only an external machine reset applies an OSD speed change. CPU-local
+    // warm resets preserve the applied choice and all peripheral clocks.
+    spk286_at_cpu_profile u_cpu_profile (
+        .clk(clk), .reset(reset | cpu_reset),
+        .requested(cpu_speed_requested), .active(cpu_speed_active),
+        .pending(cpu_speed_pending), .historical(timing_historical),
+        .phase_enable(timing_phase_enable), .phase_two(timing_phase_two),
+        .cpu_boundary(timing_cpu_boundary)
+    );
+
     spk286_machine_cpu u_cpu (
         .clk                    (clk_cpu),
         .reset                  (cpu_clock_reset),
         .execute_enable         (execute_enable),
+        .historical_enable      (timing_historical),
+        .cpu_boundary           (timing_cpu_boundary),
+        .timing_read_wait_event (1'b0),
         .ready                  (cpu_ready_i),
         .data_in                (cpu_data_in_i),
         .intr                   (intr),
@@ -781,6 +801,9 @@ module spk286_at_machine #(
         .clk                    (clk),
         .reset                  (cpu_core_reset),
         .cpu_sample_edge        (cpu_sample_edge),
+        .timing_historical      (timing_historical),
+        .timing_cpu_boundary    (timing_cpu_boundary),
+        .timing_deadline_miss   (timing_deadline_miss),
         .cpu_bus_valid          (cpu_bus_valid),
         .cpu_address            (cpu_address),
         .cpu_data_out           (cpu_data_out),

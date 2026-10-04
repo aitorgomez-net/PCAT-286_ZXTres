@@ -116,6 +116,7 @@ module emu_at
         "P3,Hardware;",
         "P3-;",
         "P3O[74:72],Installed RAM,4MB,8MB,16MB,1MB,2MB;",
+        "P3O[77:75],CPU Speed,MAX,6 MHz,8 MHz,10 MHz,12.5 MHz,16 MHz,20 MHz,25 MHz;",
         "P3oCD,Monitor,5154/ECD,5153/CGA,5151/MDA;",
         "P3ONO,Joystick 1, Analog, Digital, Disabled;",
         "P3OPQ,Joystick 2, Analog, Digital, Disabled;",
@@ -183,6 +184,8 @@ module emu_at
     wire [7:0]   at_info = at_bios_info_req ? at_bios_info : at_monitor_pending_info;
     wire         at_monitor_profile_pending =
         at_monitor_profile_osd != at_monitor_profile_applied;
+    wire [2:0]   at_cpu_speed_active;
+    wire         at_cpu_speed_pending;
     wire         at_vga_mode13_native_osd = ~hps_status[10];
     wire [3:0]   at_crt_h_osd = hps_status[49:46];
     wire [2:0]   at_crt_v_osd = hps_status[52:50];
@@ -995,7 +998,7 @@ module emu_at
         .INFO_INDEX (8'd1)
     ) at_monitor_pending_notice (
         .clock      (CLK_50M),
-        .pending    (at_monitor_profile_pending),
+        .pending    (at_monitor_profile_pending | at_cpu_speed_pending),
         .osd_status (OSD_STATUS),
         .suppress   (at_bios_hold),
         .info       (at_monitor_pending_info),
@@ -1085,6 +1088,9 @@ module emu_at
         .clk                    (CLK_50M),
         .clk_cpu                (at_cpu_clock),
         .cpu_sample_edge        (at_cpu_sample_edge),
+        .cpu_speed_requested    (hps_status[77:75]),
+        .cpu_speed_active       (at_cpu_speed_active),
+        .cpu_speed_pending      (at_cpu_speed_pending),
         // Keep the AT devices and EGA raster alive during the splash.  Only
         // the CPU/BIU reset is extended over the splash interval.
         .reset                  (at_boot_reset),

@@ -16,6 +16,11 @@ module spk286_at_bus_bridge #(
     // Pulse in this clock domain on an edge at which the CPU can sample
     // READY. It is used only when the CPU runs from a related slower clock.
     input  logic         cpu_sample_edge,
+    // Clock enables on the SAME 50 MHz fabric, never a divided clock.
+    // Unconnected legacy fixtures retain the MAX transaction path.
+    input  logic         timing_historical,
+    input  logic         timing_cpu_boundary,
+    output logic         timing_deadline_miss,
 
     input  logic         cpu_bus_valid,
     input  logic [23:0]  cpu_address,
@@ -109,6 +114,15 @@ module spk286_at_bus_bridge #(
     logic [7:0]  read_low_byte_q;
     logic        complete_sampled_q;
     logic [15:0] cpu_data_in_q;
+    logic        timing_tc_q;
+    logic        timing_active_q;
+    logic        timing_admission_window_q;
+    wire historical = timing_historical === 1'b1;
+    wire timing_admit = !historical || timing_cpu_boundary || timing_admission_window_q;
+    // Admission is the beginning of Ts. The following boundary begins Tc;
+    // the next boundary is the earliest terminal READY sample (two clocks).
+    wire timing_terminal = !historical ||
+                           (timing_cpu_boundary && timing_active_q && timing_tc_q);
 
     logic request_status_valid;
     logic request_lane_valid;
@@ -149,7 +163,7 @@ module spk286_at_bus_bridge #(
     // common clock, command acceptance may share that edge; synchronous RAM
     // and all completions still use the retained accepted record afterwards.
     wire early_memory_address = EARLY_MEMORY_ADDRESS && !reset &&
-                                (state_q == STATE_IDLE) && cpu_bus_valid &&
+                                (state_q == STATE_IDLE) && timing_admit && cpu_bus_valid &&
                                 memory_native_word_request && live_request_valid && !drain_barrier;
     // Related slower CPU clocks keep the registered command sequence.
     wire early_memory_command = early_memory_address && !COMPLETE_ON_CPU_SAMPLE;
@@ -224,7 +238,7 @@ module spk286_at_bus_bridge #(
     wire direct_memory_wait = !COMPLETE_ON_CPU_SAMPLE && !reset &&
                               request_native_memory_q && !request_two_beats_q &&
                               (state_q == STATE_WAIT);
-    wire direct_memory_response = direct_memory_wait && completion_valid;
+    wire direct_memory_response = direct_memory_wait && completion_valid && timing_terminal;
     wire [15:0] direct_memory_data = request_native_word_q ? at_read_data :
                                      beat_byte_enable[1] ?
                                      {at_read_data[15:8], 8'h00} :
@@ -258,8 +272,12 @@ module spk286_at_bus_bridge #(
     assign at_lock           = early_memory_address ? cpu_bus_lock : (state_q != STATE_IDLE) && request_lock_q;
     assign at_accepted       = at_command_valid && at_accept;
     assign at_completed      = completion_valid;
-    assign at_response_valid = (state_q == STATE_COMPLETE) || direct_memory_response;
-    assign cpu_ready         = (state_q == STATE_COMPLETE) || direct_memory_response;
+    assign at_response_valid = ((state_q == STATE_COMPLETE) && timing_terminal) || direct_memory_response;
+    assign cpu_ready         = at_response_valid;
+    // This is a fabric/backend deadline miss, NOT an external board READY
+    // wait state. It must never be used to infer a motherboard wait setting.
+    assign timing_deadline_miss = !reset && historical && timing_terminal &&
+                                  state_q != STATE_IDLE && !cpu_ready;
     // Select the retained lane path independently of READY/data-valid. The
     // CPU consumes it only with cpu_ready, keeping completion qualification
     // out of the 16-bit response-data mux.
@@ -283,13 +301,31 @@ module spk286_at_bus_bridge #(
             read_low_byte_q    <= 8'd0;
             complete_sampled_q <= 1'b0;
             cpu_data_in_q      <= 16'd0;
+            timing_tc_q        <= 1'b0;
+            timing_active_q    <= 1'b0;
+            timing_admission_window_q <= 1'b0;
             protocol_error     <= 1'b0;
         end else begin
+            if (timing_cpu_boundary || !historical)
+                timing_admission_window_q <= 1'b0;
+            if (historical && timing_active_q && timing_cpu_boundary)
+                timing_tc_q <= 1'b1;
+            if (cpu_ready) begin
+                timing_active_q <= 1'b0;
+                timing_tc_q <= 1'b0;
+                // A level-held BIU presents the NEXT request after this edge.
+                // Admit it on a subsequent fabric edge in this same virtual
+                // interval, never by replaying the just-completed request.
+                timing_admission_window_q <= historical;
+            end
             if (state_q != STATE_COMPLETE)
                 complete_sampled_q <= 1'b0;
             case (state_q)
                 STATE_IDLE: begin
-                    if (cpu_bus_valid && !drain_barrier) begin
+                    if (cpu_bus_valid && timing_admit && !drain_barrier) begin
+                        timing_active_q <= historical;
+                        timing_tc_q <= 1'b0;
+                        timing_admission_window_q <= 1'b0;
                         // Snapshot is performed once per request.  No edge or
                         // payload comparison is used as a delimiter, so an
                         // identical request held back-to-back is accepted.
@@ -393,7 +429,10 @@ module spk286_at_bus_bridge #(
                     // half a CPU cycle of hold time and avoids a second READY
                     // sample. The CPU may chain cycles without dropping valid,
                     // so bus_valid cannot acknowledge this state.
-                    if (!COMPLETE_ON_CPU_SAMPLE)
+                    if (historical) begin
+                        if (timing_terminal)
+                            state_q <= STATE_IDLE;
+                    end else if (!COMPLETE_ON_CPU_SAMPLE)
                         state_q <= STATE_IDLE;
                     else if (!complete_sampled_q && cpu_sample_edge)
                         complete_sampled_q <= 1'b1;

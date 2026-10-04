@@ -1,9 +1,9 @@
 # PCAT-286 for MiSTer
 
-Retire configurable bring-up controls and hardware debug, retain platform CDC, and streamline bridge, DMA, prefetch and FDC paths with the selected fixed-clock implementation.
+Introduce the qualified instruction and bus timing machinery and expose CPU speed profiles applied at reset.
 
 This development snapshot is part of the consolidated chronological
-history. Its source state comes from 2026-10-03.
+history. Its source state comes from 2026-10-04.
 The latest revision contains the common technical reference and current
 validation instructions. Historical reports and compiled candidates are
 kept in the original development archive, outside this branch.
