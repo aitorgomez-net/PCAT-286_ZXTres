@@ -29,6 +29,25 @@ instruction ADD_OR_MEMORY:
 '''
 
 
+def standalone_catalog_words(test, fixture):
+    """Explicitly migrate the two controls in the frozen PCAT catalog.
+
+    Historical fixtures retain CARRY_FILL8=171/LOADALL=172. The accepted
+    standalone catalog/audit uses LOADALL=171/CARRY_FILL8=172. Assert the
+    complete old protocols and exact affected positions before translating;
+    all other words, addresses, labels and branches remain frozen evidence.
+    """
+    words = fixture['words'].copy()
+    loadall = fixture['entries']['LOADALL']
+    carry = fixture['entries']['LOAD_CARRY_BYTE']
+    test.assertEqual(words[loadall:loadall+2], [172, 3])
+    test.assertEqual(words[carry:carry+4], [30, 171, 54, 3])
+    test.assertEqual({pc for pc, word in enumerate(words) if word in (171, 172)},
+                     {loadall, carry+1})
+    words[loadall], words[carry+1] = 171, 172
+    return words
+
+
 class RegisterExecutionMicrocodeTests(unittest.TestCase):
     def test_register_decode_controls_change(self):
         baseline = json.loads((ROOT / 'tests/fixtures/microcode_phase9_loadall.json').read_text())
@@ -38,21 +57,25 @@ class RegisterExecutionMicrocodeTests(unittest.TestCase):
             address = baseline['entries'][entry]
             self.assertEqual(expected[address], old_code)
             expected[address] = code
-        sources = {'format22.mc': canonical_source(active['words'], active['entries'],
+        # Compare the original literal delta before its versioned catalog
+        # translation. The compiler does not supply the expected fixture words.
+        self.assertEqual(active['words'], expected)
+        current_words = standalone_catalog_words(self, active)
+        current_expected = standalone_catalog_words(self, {**baseline, 'words': expected})
+        sources = {'format22.mc': canonical_source(current_words, active['entries'],
                                                   active['labels'], {int(k): v for k, v in active['branch_targets'].items()})}
         program = compile_sources(sources)
         artifacts = generate(program)
         words = read_generated_words(artifacts['spk286_microcode_pkg.sv'],
                                      artifacts['spk286_microcode_rom.sv'])
-        self.assertEqual(list(words), expected)
-        self.assertEqual(active['words'], expected)
+        self.assertEqual(list(words), current_expected)
         self.assertEqual(program.entries, baseline['entries'])
         self.assertEqual(program.labels, baseline['labels'])
         self.assertEqual({str(k): v for k, v in program.branch_targets.items()}, baseline['branch_targets'])
         self.assertEqual((program.format_version, program.word_width), (22, 8))
         rebuilt = compile_sources({'canonical.mc': canonical_source(
             words, program.entries, program.labels, program.branch_targets)})
-        self.assertEqual([encode(op) for op in rebuilt.operations], expected)
+        self.assertEqual([encode(op) for op in rebuilt.operations], current_expected)
 
     def test_register_and_memory_paths_must_agree(self):
         mutations = (

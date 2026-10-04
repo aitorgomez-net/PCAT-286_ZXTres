@@ -4,6 +4,9 @@
 `timescale 1ns/1ps
 module spk286_machine_cpu (
     input logic clk, reset, execute_enable, ready,
+    // Match the production CPU profile interface; this bus stimulus driver
+    // does not model instruction timing or historical speed throttling.
+    input logic historical_enable, cpu_boundary, timing_read_wait_event,
     input logic [15:0] data_in,
     input logic intr, nmi, hold_request,
     output logic [23:0] address = 0,

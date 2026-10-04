@@ -734,11 +734,16 @@ module spk286_profiled (
                                      (execute_enable ? internal_ip_write_data : ip_write_data);
     assign effective_flags_write_en = execute_enable ? internal_flags_write_en : flags_write_en;
 
-    // Keep two bytes of bus capacity available. This lets the current fetch
-    // service preserve both bytes of every word response without a second
-    // response staging slot in the instruction queue.
+    // Reserve every staged response and the current bus beat before granting
+    // another maximum two-byte fetch. A prepared request cannot complete
+    // until the previous response leaves its slot; total reserved bytes still
+    // fit the six-byte queue even when consumption stops on the next edge.
+    logic [4:0] fetch_reserved_bytes;
+    assign fetch_reserved_bytes = {1'b0, queue_count} +
+        (fetch_response_valid ? {3'b000, fetch_response_count} : 5'd0) +
+        (fetch_bus_valid ? 5'd2 : 5'd0);
     assign fetch_request_internal = execute_enable && !event_active && !halted && !shutdown && !unsupported_q && !microcode_fault && !operand_blocked &&
-                                    !protected_fetch_invalid && (queue_count <= 4'd4);
+                                    !protected_fetch_invalid && (fetch_reserved_bytes <= 5'd4);
     assign fetch_response_ready = execute_enable ? queue_fill_ready : fetch_ready;
 
     spk286_registers registers (
@@ -908,7 +913,7 @@ module spk286_profiled (
         .limit_state(real_segment_limits), .access_state(real_segment_access_state)
     );
 
-    spk286_fetch fetch (
+    spk286_fetch #(.READY_CHAINING(1'b1)) fetch (
         .clk(clk), .reset(reset), .ready(fetch_bus_ready), .data_in(data_in),
         .code_base(debug_segment_bases[24 +: 24]),
         .code_limit(debug_segment_limits[16 +: 16]),

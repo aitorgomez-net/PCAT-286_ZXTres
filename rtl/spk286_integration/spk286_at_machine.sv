@@ -525,6 +525,29 @@ module spk286_at_machine #(
     wire dma_memory_response_valid = dma_memory_ready &&
         (DMA_REGISTERED_MEMORY_COMPLETION ? dma_memory_accept_q :
                                            (dma_memory_accept || dma_memory_accept_q));
+
+    // BEGIN DMA_READ_PAYLOAD_RETENTION
+    // DMA1 byte devices consume the addressed lane in the low byte. Retain
+    // that selection with the response: the registered completion pulse is
+    // consumed one edge later, after memory data expires and the DMA address
+    // (and therefore its byte lane) advances. SoundBlaster still consumes the
+    // live response while dma_memory_response_valid is asserted.
+    wire [15:0] dma_read_lane_data = (dma_active_channel < 3'd4) &&
+                                    dma_transfer_byte_enable[1] ?
+                                    {8'h00, dma_memory_data_in[15:8]} :
+                                    dma_memory_data_in;
+    logic [15:0] dma_read_payload_q;
+    always_ff @(posedge clk) begin
+        if (reset)
+            dma_read_payload_q <= 16'h0000;
+        else if (dma_transfer_valid && dma_transfer_read_from_memory &&
+                 dma_memory_response_valid)
+            dma_read_payload_q <= dma_read_lane_data;
+    end
+    wire [15:0] dma_endpoint_data = dma_transfer_complete &&
+                                   dma_transfer_read_from_memory ?
+                                   dma_read_payload_q : dma_read_lane_data;
+    // END DMA_READ_PAYLOAD_RETENTION
     logic        nmi_source_active_q;
 
     logic [15:0] debug_cpu_cycle_count_q;
@@ -973,12 +996,7 @@ module spk286_at_machine #(
         .dma_active_channel     (dma_active_channel),
         .dma_transfer_read_from_memory(dma_transfer_read_from_memory),
         .dma_memory_data_valid  (dma_memory_response_valid),
-        // DMA1 byte devices consume a normalized low-byte value. Select the
-        // addressed SDRAM lane for memory-to-I/O transfers.
-        .dma_transfer_data_in   ((dma_active_channel < 3'd4) &&
-                                 dma_transfer_byte_enable[1] ?
-                                 {8'h00, dma_memory_data_in[15:8]} :
-                                 dma_memory_data_in),
+        .dma_transfer_data_in   (dma_endpoint_data),
         .dma_transfer_accept    (devices_dma_transfer_accept),
         .dma_transfer_ready     (devices_dma_transfer_ready),
         .dma_transfer_data_out  (devices_dma_transfer_data_out),

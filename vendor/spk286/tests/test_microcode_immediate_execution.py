@@ -4,6 +4,7 @@ import unittest
 
 from tools.microcode.compile_microcode import ROOT, CompileError, compile_sources, encode, generate
 from tools.microcode.audit_microcode import canonical_source, read_generated_words
+from tests.test_microcode_register_execution import standalone_catalog_words
 
 
 REPLACEMENTS = {
@@ -24,21 +25,24 @@ class ImmediateExecutionMicrocodeTests(unittest.TestCase):
             pc = old['entries'][name] + offset
             self.assertEqual(expected[pc], before)
             expected[pc] = after
-        # This is the frozen format-23 contract, independent of later controls.
-        sources = {'format23.mc': canonical_source(active['words'], active['entries'],
+        # Retain the frozen format-23 delta, translating only the independently
+        # asserted historical LOADALL/SALC catalog before current decoding.
+        self.assertEqual(active['words'], expected)
+        current_words = standalone_catalog_words(self, active)
+        current_expected = standalone_catalog_words(self, {**old, 'words': expected})
+        sources = {'format23.mc': canonical_source(current_words, active['entries'],
                     active['labels'], {int(k): v for k, v in active['branch_targets'].items()})}
         program = compile_sources(sources)
         artifacts = generate(program)
         words = read_generated_words(artifacts['spk286_microcode_pkg.sv'], artifacts['spk286_microcode_rom.sv'])
-        self.assertEqual(list(words), expected)
-        self.assertEqual(active['words'], expected)
+        self.assertEqual(list(words), current_expected)
         self.assertEqual(program.entries, old['entries'])
         self.assertEqual(program.labels, old['labels'])
         self.assertEqual({str(k): v for k, v in program.branch_targets.items()}, old['branch_targets'])
         self.assertEqual((program.format_version, program.word_width), (23, 8))
         rebuilt = compile_sources({'canonical.mc': canonical_source(
             words, program.entries, program.labels, program.branch_targets)})
-        self.assertEqual([encode(op) for op in rebuilt.operations], expected)
+        self.assertEqual([encode(op) for op in rebuilt.operations], current_expected)
 
     def test_every_control_rejects_inconsistent_or_partial_protocol(self):
         sources = {p.name: p.read_text() for p in (ROOT/'microcode/source').glob('*.mc')}

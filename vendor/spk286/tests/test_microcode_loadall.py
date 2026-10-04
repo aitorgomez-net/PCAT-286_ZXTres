@@ -7,14 +7,16 @@ from tools.microcode.compile_microcode import (
 from tools.microcode.audit_microcode import canonical_source, read_generated_words
 
 
-NAME = 'zzzzzzzzzzzzzzzzzz_loadall.mc'
+# Source names/catalog were aligned with the standalone CPU in the accepted
+# 2026-09-30 targeted-fixes milestone; LOADALL is now literal control 171.
+NAME = 'zzzzzzzzzzzzzzzzzzzz_loadall.mc'
 
 
 class LoadallMicrocodeTests(unittest.TestCase):
     def test_atomic_protocol(self):
         source = (ROOT / 'microcode/source' / NAME).read_text()
         program = compile_sources({NAME: source})
-        self.assertEqual([encode(op) for op in program.operations], [172, 3])
+        self.assertEqual([encode(op) for op in program.operations], [171, 3])
         for changed in (
             source.replace('21', '20'),
             source.replace('    LOADALL\n', ''),
@@ -31,7 +33,7 @@ class LoadallMicrocodeTests(unittest.TestCase):
         current = compile_sources(sources)
         words = [encode(op) for op in current.operations]
         start = current.entries['LOADALL']
-        self.assertEqual(words[start:start + 2], [172, 3])
+        self.assertEqual(words[start:start + 2], [171, 3])
         self.assertEqual(words[:start] + words[start + 2:],
                          [encode(op) for op in previous.operations])
         for name, address in previous.entries.items():

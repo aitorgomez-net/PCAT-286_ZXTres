@@ -33,6 +33,7 @@ sources=(
   rtl/spk286_integration/spk286_at_sound.sv
   rtl/spk286_integration/spk286_at_serial.sv
   rtl/spk286_integration/spk286_at_device_router.sv
+  rtl/spk286_integration/spk286_at_cpu_profile.sv
   rtl/spk286_integration/spk286_at_machine.sv
   rtl/KFPC-XT/HDL/KF8253/HDL/*.sv
   rtl/KFPC-XT/HDL/KF8259/HDL/*.sv

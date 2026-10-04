@@ -1,6 +1,6 @@
 # PCAT-286 for MiSTer
 
-Introduce the qualified instruction and bus timing machinery and expose CPU speed profiles applied at reset.
+Preserve floppy write payload through registered completion, verify write protection, repair microcode regression adapters and correct the 25 MHz fetch performance inversion.
 
 This development snapshot is part of the consolidated chronological
 history. Its source state comes from 2026-10-04.
