@@ -34,8 +34,7 @@ PROBES = (
         "spk286_esc_instructions",
         "assign esc_instruction = opcode[7:3] == 5'b11011;",
         "assign esc_instruction = 1'b0;",
-        ("D8-DF opcode is not left at queue head",
-         "ESC dispatch reaches the terminal microcode entry"),
+        "D8-DF opcode is not left at queue head",
     ),
 )
 
@@ -120,11 +119,7 @@ def main():
         (directory / "run.log").write_text(run_output, encoding="utf-8")
         if reason:
             require(run.returncode != 0, f"{name}: mutant unexpectedly passed")
-            # The terminal-entry check now runs before the older queue-head
-            # check. Require one of these exact functional assertions.
-            expected = (reason,) if isinstance(reason, str) else reason
-            require(any(message in run_output for message in expected),
-                    f"{name}: intended assertion did not reject mutant")
+            require(reason in run_output, f"{name}: intended assertion did not reject mutant")
         else:
             require(run.returncode == 0, f"{name}: pristine control failed")
             require("PASS:" in run_output, f"{name}: missing PASS marker")

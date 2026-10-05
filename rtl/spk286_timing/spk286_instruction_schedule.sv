@@ -4,7 +4,9 @@
 `ifndef SPK286_INSTRUCTION_SCHEDULE_SV
 `define SPK286_INSTRUCTION_SCHEDULE_SV
 `timescale 1ns/1ps
-module spk286_instruction_schedule (
+module spk286_instruction_schedule #(
+    parameter bit EXECUTION_METADATA_CARRY_SAVE = 1'b0
+) (
     input logic clk, reset, historical_enable, cpu_boundary,
     input logic cancel, preserve_cancel,
     input logic start_interval, start_body,
@@ -14,6 +16,10 @@ module spk286_instruction_schedule (
     // must match it while body_active is asserted, and uses retained context.
     input logic execution_metadata_valid, execution_read_wait_event,
     input logic [9:0] execution_metadata_clocks,
+    // The production execution lane can retain the unsaturated metadata
+    // compressor outputs. Their sum is the same nonnegative budget before
+    // its 1023 clamp. Legacy callers continue using metadata_clocks above.
+    input logic [11:0] execution_metadata_sum_bits, execution_metadata_carry_bits,
     input logic target_length_ready,
     input logic [3:0] target_length_clocks,
     input logic read_wait_event, alignment_event,
@@ -29,9 +35,11 @@ module spk286_instruction_schedule (
     logic [9:0] elapsed_q, base_q, extra_q;
     logic [10:0] elapsed_next, effective_base, extra_next;
     logic [11:0] total;
-    logic [10:0] execution_elapsed_next, execution_base;
-    logic [11:0] execution_total;
-    logic [11:0] execution_sum_bits, execution_carry_bits;
+    logic [12:0] execution_budget_sum, execution_budget_carry;
+    logic [12:0] execution_adjustment_sum, execution_adjustment_carry;
+    logic [12:0] execution_adjustment;
+    logic [12:0] execution_compare_sum, execution_compare_carry, execution_difference;
+    logic execution_productive_boundary, execution_elapsed_saturated;
     logic execution_metadata_available;
 
     always_comb begin
@@ -54,20 +62,35 @@ module spk286_instruction_schedule (
         if (total > 12'd1023) total = 12'd1023;
         // Cut the admission-byte classifier out of retirement/EU backpressure.
         // This is a parallel combinational lane, not a delayed pipeline stage.
-        execution_elapsed_next = {1'b0, elapsed_q} +
-                                 11'(cpu_boundary && !execution_read_wait_event);
-        if (execution_elapsed_next > 11'd1023) execution_elapsed_next = 11'd1023;
-        execution_base = (!frozen_q && execution_metadata_valid) ?
-                         {1'b0, execution_metadata_clocks} : {1'b0, base_q};
-        // Compress the three addends before the single carry-propagating sum.
-        // Keep the full result: the deadline comparison handles saturation
-        // directly, so metadata does not cross another clamp mux/comparator.
-        execution_sum_bits = {1'b0, execution_base} ^ {2'd0, extra_q} ^
-                             {8'd0, target_length_clocks};
-        execution_carry_bits = ({1'b0, execution_base} & {2'd0, extra_q}) |
-                               ({1'b0, execution_base} & {8'd0, target_length_clocks}) |
-                               ({2'd0, extra_q} & {8'd0, target_length_clocks});
-        execution_total = execution_sum_bits + (execution_carry_bits << 1);
+        execution_budget_sum = {3'd0, base_q};
+        execution_budget_carry = 13'd0;
+        if (!frozen_q && execution_metadata_valid) begin
+            if (EXECUTION_METADATA_CARRY_SAVE) begin
+                execution_budget_sum = {1'b0, execution_metadata_sum_bits};
+                execution_budget_carry = {execution_metadata_carry_bits, 1'b0};
+            end else execution_budget_sum = {3'd0, execution_metadata_clocks};
+        end
+        // This arithmetic lane depends only on retained age/alignment/target
+        // context. Keep its carry propagation parallel to metadata decoding.
+        execution_adjustment_sum = {3'd0, extra_q} ^ {9'd0, target_length_clocks} ^
+                                   ~{3'd0, elapsed_q};
+        execution_adjustment_carry = ({3'd0, extra_q} & {9'd0, target_length_clocks}) |
+                                     ({3'd0, extra_q} & ~{3'd0, elapsed_q}) |
+                                     ({9'd0, target_length_clocks} & ~{3'd0, elapsed_q});
+        execution_adjustment = execution_adjustment_sum + (execution_adjustment_carry << 1);
+        execution_compare_sum = execution_budget_sum ^ execution_budget_carry ^ execution_adjustment;
+        execution_compare_carry = (execution_budget_sum & execution_budget_carry) |
+                                  (execution_budget_sum & execution_adjustment) |
+                                  (execution_budget_carry & execution_adjustment);
+        execution_difference = execution_compare_sum + (execution_compare_carry << 1);
+        // difference is budget+extra+target-age-1 modulo 8192. Its true range
+        // is -1024..3113, so bit12 is the exact signed comparison result.
+        // A productive boundary also permits equality with age+1. At age1023
+        // the existing saturation override remains unconditional; removing
+        // the earlier metadata clamp is exact because all extras are >=0.
+        execution_productive_boundary = cpu_boundary && !execution_read_wait_event;
+        execution_elapsed_saturated = elapsed_q == 10'd1023 ||
+                                      (execution_productive_boundary && elapsed_q == 10'd1022);
         execution_metadata_available = qualified_q || (!frozen_q && execution_metadata_valid);
     end
     assign active = historical_enable && active_q;
@@ -78,8 +101,8 @@ module spk286_instruction_schedule (
                           (!active_q || !body_q) && !pending_q);
     assign deadline_ready = !historical_enable ||
                             (active_q && body_q && execution_metadata_available && target_length_ready &&
-                             (execution_elapsed_next == 11'd1023 ||
-                              {1'b0, execution_elapsed_next} >= execution_total));
+                             (execution_elapsed_saturated || execution_difference[12] ||
+                              (execution_productive_boundary && execution_difference == 13'd0)));
     assign retire_fire = !historical_enable ? functional_retired :
                          !reset && !cancel && cpu_boundary && deadline_ready &&
                          (pending_q || functional_retired);

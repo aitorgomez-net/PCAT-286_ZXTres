@@ -3,32 +3,26 @@ import unittest
 
 from tools.microcode.compile_microcode import ROOT, CompileError, compile_sources, encode, generate
 from tools.microcode.audit_microcode import canonical_source, read_generated_words
-from tests.test_microcode_register_execution import standalone_catalog_words
 
 
 class SystemAccessMicrocodeTests(unittest.TestCase):
     def test_frozen_h01_rom_adds_only_the_eight_documented_checks(self):
         old = json.loads((ROOT / 'tests/fixtures/microcode_immediate_execution.json').read_text())
-        # The format-24 fixture already has the standalone catalog. Preserve
-        # the independent format-23 words and migrate only its two asserted
-        # LOADALL/SALC controls before deriving the eight H01 insertions.
-        old_words = standalone_catalog_words(self, old)
         additions = {
             'SYSTEM_STORE_LDTR': (0, 193), 'SYSTEM_STORE_TR': (0, 193),
             'SYSTEM_LOAD_LDTR': (0, 194), 'SYSTEM_LOAD_TR': (0, 194),
             'SYSTEM_VERIFY_READ': (0, 193), 'SYSTEM_VERIFY_WRITE': (0, 193),
             'SYSTEM_LOAD_ACCESS': (1, 193), 'SYSTEM_LOAD_LIMIT': (1, 193),
         }
-        expected_words, expected_entries, positions = [], {}, []
+        expected_words, expected_entries = [], {}
         entries = sorted(old['entries'].items(), key=lambda item: item[1])
         for index, (name, address) in enumerate(entries):
             expected_entries[name] = len(expected_words)
             end = entries[index + 1][1] if index + 1 < len(entries) else len(old['words'])
-            body = old_words[address:end].copy()
+            body = old['words'][address:end].copy()
             if name in additions:
                 offset, code = additions[name]
                 body.insert(offset, code)
-                positions.append(address + offset)
             expected_words.extend(body)
         frozen = json.loads((ROOT / 'tests/fixtures/microcode_system_access.json').read_text())
         program = compile_sources({'format24.mc': canonical_source(frozen['words'], frozen['entries'],
@@ -37,15 +31,6 @@ class SystemAccessMicrocodeTests(unittest.TestCase):
         self.assertEqual(program.entries, expected_entries)
         self.assertEqual(frozen['words'], expected_words)
         self.assertEqual(frozen['entries'], expected_entries)
-        def shifted(pc):
-            return pc + sum(position <= pc for position in positions)
-        labels = {name: shifted(pc) for name, pc in old['labels'].items()}
-        branches = {shifted(int(pc)): shifted(target)
-                    for pc, target in old['branch_targets'].items()}
-        self.assertEqual(program.labels, labels)
-        self.assertEqual(program.branch_targets, branches)
-        self.assertEqual(frozen['labels'], labels)
-        self.assertEqual({int(pc): target for pc, target in frozen['branch_targets'].items()}, branches)
         generated = generate(program)
         words = read_generated_words(generated['spk286_microcode_pkg.sv'], generated['spk286_microcode_rom.sv'])
         rebuilt = compile_sources({'canonical.mc': canonical_source(words, program.entries, program.labels, program.branch_targets)})

@@ -68,7 +68,7 @@ PROBES = (('segment-index',
   'spk286_segment_lifecycle',
   'assign queue_flush = stream_restart;',
   'assign queue_flush = stream_restart || internal_segment_write;',
-  ('SS cache and protected stack-pointer update precede event', 'complete selected event')))
+  'SS cache and protected stack-pointer update precede event'))
 
 
 def main():
@@ -106,11 +106,7 @@ def main():
         run = subprocess.run(['vvp',str(binary),'+instruction_vectors='+str(path)],cwd=ROOT,capture_output=True,text=True,timeout=60)
         (directory/'run.log').write_text(run.stdout+run.stderr, encoding='utf-8')
         if reason:
-            # Extra publication flushes may corrupt the opcode stream and
-            # reach the exact event-completion check first. Preserve both
-            # checks; only these explicit functional properties are accepted.
-            expected = (reason,) if isinstance(reason, str) else reason
-            if run.returncode == 0 or not any(message in run.stdout+run.stderr for message in expected):
+            if run.returncode == 0 or reason not in run.stdout+run.stderr:
                 raise RuntimeError(f'{name}: intended assertion did not reject mutant')
         elif run.returncode or 'PASS:' not in run.stdout:
             raise RuntimeError(f'{name}: pristine bench failed')

@@ -15,6 +15,7 @@ module spk286_instruction_schedule_tb;
     integer checks=0;
     spk286_instruction_schedule dut(.execution_metadata_valid(metadata_valid),
         .execution_metadata_clocks(metadata_clocks),
+        .execution_metadata_sum_bits(12'd0), .execution_metadata_carry_bits(12'd0),
         .execution_read_wait_event(read_wait_event), .*);
 
     task automatic check(input logic condition, input string label);

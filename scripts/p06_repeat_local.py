@@ -1,8 +1,8 @@
 """Generate opcode-local executor strobes without weakening REP permission.
 
-Only a positive leading conjunction is changed. Its expanded logical guard
-must be false for both timed REP branch words with every state/context atom
-arbitrary. All state-only
+Only a positive conjunction is changed, including a guarded OR branch. Its
+expanded logical guard must be false for both timed REP branch words with
+every state/context atom arbitrary. All state-only
 qualifiers, subservice enables and REP strobes retain the original permission.
 """
 import re
@@ -140,6 +140,37 @@ def possibilities(tree, operation):
     return any(yes for yes, _ in values), all(no for _, no in values)
 
 
+def repeat_excluded_permission_guard(expression, aliases, constants, repeat_words):
+    """Find the positive conjunction containing the one permission token.
+
+    Other OR branches may remain true during REP (for example an already
+    active descriptor service). The branch containing ``allowed`` alone must
+    be false for every arbitrary context atom under both REP words. Never
+    cross a negation or ternary, and never infer lifecycle correlations.
+    """
+    expression = unwrap(expression)
+    if '?' in expression or expression.startswith('!'):
+        return None
+    alternatives = split_top(expression, '||')
+    if len(alternatives) > 1:
+        for branch in alternatives:
+            guard = repeat_excluded_permission_guard(branch, aliases, constants, repeat_words)
+            if guard is not None:
+                return guard
+        return None
+    terms = split_top(expression, '&&')
+    if len(terms) > 1:
+        if any(unwrap(term) == 'allowed' for term in terms):
+            tree = boolean_expression(expression, aliases, constants)
+            if not any(possibilities(tree, word)[0] for word in repeat_words):
+                return expression
+        for term in terms:
+            guard = repeat_excluded_permission_guard(term, aliases, constants, repeat_words)
+            if guard is not None:
+                return guard
+    return None
+
+
 def generate(source, package):
     constants = {name: int(value) for name, value in re.findall(
         r'localparam\s+logic\s+\[MC_WORD_WIDTH-1:0\]\s+(MC_\w+)\s*=\s*8\'d(\d+);', package)}
@@ -157,18 +188,14 @@ def generate(source, package):
         expression = match[2]
         if len(re.findall(r'\ballowed\b', expression)) != 1 or '?' in expression:
             return match[0]
-        first_term = split_top(expression, '||')[0]
-        terms = split_top(first_term, '&&')
-        if not terms or terms[0] != 'allowed':
-            return match[0]
-        tree = boolean_expression(first_term, aliases, constants)
-        if any(possibilities(tree, word)[0] for word in repeat_words):
+        guard = repeat_excluded_permission_guard(expression, aliases, constants, repeat_words)
+        if guard is None:
             return match[0]
         replacement = re.sub(r'\ballowed\b', 'implementation_allowed', match[0])
         # Expand aliases from the original source for both sides. Their
         # replacements are independently proved equal, so this simultaneous
         # cutpoint contract retains every arbitrary state/context predicate.
-        changes.append({'signal': match[1], 'guard': first_term,
+        changes.append({'signal': match[1], 'guard': guard,
                         'original_statement': match[0],
                         'replacement_statement': replacement,
                         'original_model': boolean_expression(expression, aliases, constants),

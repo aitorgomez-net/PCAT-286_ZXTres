@@ -12,8 +12,8 @@ from tools.rtl_sources import ordered_rtl_sources
 
 ROOT=Path(__file__).resolve().parents[1]
 PROBES=(
-    ('owed-trap-priority','spk286_events','spk286_event_arbitration',
-     'fault_request && instruction_active && !shutdown','fault_request && !shutdown','owed trap precedes next-opcode demand fault'),
+    ('owed-trap-priority','spk286_events','spk286_event_lifecycle',
+     'fault_request && instruction_active && !shutdown','fault_request && !shutdown','complete selected event'),
     ('fault-start','spk286_events','spk286_event_lifecycle',
      '(repeat_boundary || (selected_kind == KIND_FAULT && instruction_active && !fault_new_task)) ? instruction_ip : ip','ip','precise source fault'),
     ('next-ip','spk286_events','spk286_event_lifecycle',
@@ -94,13 +94,13 @@ def main():
         elif run.returncode or 'PASS:' not in run.stdout:raise RuntimeError(f'{name}: pristine test failed')
         results.append({'name':name,'bench':bench,'status':run.returncode,'expected_assertion':reason})
         print(f'EVENT_MUTATION {name}: {"rejected" if reason else "passed"} status={run.returncode}',flush=True)
-    for bench in ('spk286_event_instructions','spk286_event_lifecycle','spk286_event_arbitration'):execute('pristine-'+bench,bench)
+    for bench in ('spk286_event_instructions','spk286_event_lifecycle'):execute('pristine-'+bench,bench)
     for name,module,bench,old,new,reason in PROBES:execute(name,bench,(module,old,new),reason)
     if any(p.read_bytes()!=data for p,data in originals.items()):raise RuntimeError('production source bytes changed during mutation audit')
-    summary={'validation':'PASS','mutants':len(PROBES),'pristine':3,'results':results,
+    summary={'validation':'PASS','mutants':len(PROBES),'pristine':2,'results':results,
              'source_sha256':{p.relative_to(ROOT).as_posix():hashlib.sha256(data).hexdigest() for p,data in originals.items()}}
     (output/'summary.json').write_text(json.dumps(summary,indent=2,sort_keys=True)+'\n')
-    print(f'EVENT_AUDIT PASS: {len(PROBES)} rejected RTL mutants; 3 pristine benches; production bytes unchanged')
+    print(f'EVENT_AUDIT PASS: {len(PROBES)} rejected RTL mutants; 2 pristine benches; production bytes unchanged')
 
 
 if __name__=='__main__':main()

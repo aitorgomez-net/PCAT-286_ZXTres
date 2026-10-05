@@ -1,6 +1,6 @@
 # PCAT-286 for MiSTer
 
-Qualify taken-transfer targets, streamline replay and execution deadline metadata, and allow the main-menu speed selection to take effect at a drained instruction boundary.
+Factor deadline and operand-permission arithmetic, specialize null-segment and stack preparation, synchronize CPU generators and proof adapters, and optimize scaler terminal and horizontal accumulation paths.
 
 This development snapshot is part of the consolidated chronological
 history. Its source state comes from 2026-10-05.

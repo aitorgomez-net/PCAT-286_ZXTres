@@ -3,8 +3,6 @@ import unittest
 from tools.microcode.compile_microcode import ROOT, CompileError, compile_sources, generate, encode, emit
 from tools.microcode.audit_microcode import canonical_source, read_generated_words
 
-# The accepted standalone catalog assigns LOADALL=171 and CARRY_FILL8=172.
-# Only allocation/source naming changed; the four-operation SALC protocol did not.
 NAME = 'zzzzzzzzzzzzzzzzzzzzz_salc.mc'
 
 

@@ -142,20 +142,23 @@ module spk286_at_sdram_data_buffer #(
         out_data_out = data_q;
         case (state_q)
             STATE_IDLE: begin
+                // Idle payload follows the incoming record without waiting
+                // for cache eligibility or command admission. out_valid
+                // remains the sole qualifier for downstream consumption.
+                out_owner = in_owner;
+                out_write = in_write;
+                out_refresh = in_refresh;
+                out_code_fetch = in_code_fetch;
+                out_burst = in_burst;
+                out_cycle_class = in_cycle_class;
+                out_address = in_address;
+                out_byte_enable = in_byte_enable;
+                out_data_out = in_data_out;
                 if (input_present && !input_cancelled) begin
                     if (!candidate) begin
                         // Transparent acceptance for every bypass access.
                         out_valid = 1'b1;
                         out_command_valid = 1'b1;
-                        out_owner = in_owner;
-                        out_write = in_write;
-                        out_refresh = in_refresh;
-                        out_code_fetch = in_code_fetch;
-                        out_burst = in_burst;
-                        out_cycle_class = in_cycle_class;
-                        out_address = in_address;
-                        out_byte_enable = in_byte_enable;
-                        out_data_out = in_data_out;
                     end
                 end
             end

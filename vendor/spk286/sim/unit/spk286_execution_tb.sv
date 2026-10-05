@@ -10,6 +10,7 @@ module spk286_execution_tb;
     integer bus_transactions = 0;
     integer cycles = 0;
     logic single_done = 1'b0, multi_done = 1'b0;
+    logic [127:0] saved_ud_gpr;
 
     spk286 dut (.*);
 
@@ -175,25 +176,31 @@ module spk286_execution_tb;
         if (debug_prefetch_count > 4'd6)
             $fatal(1, "prefetch queue count overflow: %d", debug_prefetch_count);
 
-        // An unsupported second byte of the 0F escape is an architectural #UD
-        // event; the old local "unsupported opcode" latch must stay clear.
+        // An invalid 0F second byte must reach architectural #UD acceptance.
+        // Stop before stack entry: retain origin and the complete MOV signature.
+        saved_ud_gpr = debug_gpr;
         ip_write_en = 1'b1;
         ip_write_data = 16'h0200;
         redirect = 1'b1;
         load_byte(16'h0200, 8'h0F);
         load_byte(16'h0201, 8'hFF);
-        memory[24] = 8'h00; memory[25] = 8'h03; // vector 6 -> 0000:0300
-        memory[26] = 8'h00; memory[27] = 8'h00;
-        load_byte(16'h0300, 8'hCF);
         #1;
         tick();
         ip_write_en = 1'b0;
         redirect = 1'b0;
-        for (cycles = 0; cycles < 600 && !event_completed; cycles = cycles + 1)
+        for (cycles = 0; cycles < 600 && !dut.event_active; cycles = cycles + 1) begin
+            if ((bus_valid && bus_write) || instruction_retired)
+                $fatal(1, "invalid sentinel retired or entered the stack before acceptance");
             service_cycle();
-        if (!event_completed || debug_event_vector !== 8'd6 || unsupported_opcode ||
-            debug_gpr[15:0] !== 16'h1234 || debug_flags !== 16'h0043)
-            $fatal(1, "0F invalid form did not raise architectural #UD");
+        end
+        if (cycles == 0 || cycles >= 600 || !dut.event_active || !dut.event_cancel ||
+            debug_event_vector !== 8'd6 || debug_event_kind !== 3'd1 ||
+            debug_event_error_valid || unsupported_opcode || instruction_retired || event_completed ||
+            (bus_valid && bus_write) || dut.event_ip !== 16'h0200 || dut.event_cs !== 16'h0000 ||
+            dut.event_flags !== 16'h0043 || debug_gpr !== saved_ud_gpr || debug_flags !== 16'h0043)
+            $fatal(1, "0F invalid form failed pre-entry #UD/context/signature preservation");
+        execute_enable = 1'b0;
+        $display("EXECUTION_SENTINEL_PASS origin=%h cycles=%0d", dut.event_ip, cycles);
 
         $display("EXECUTION PASS: MOV single/multi-instruction, stalls, redirect flush and unsupported opcode; bus transactions=%0d",
                  bus_transactions);

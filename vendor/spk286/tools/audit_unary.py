@@ -44,19 +44,19 @@ PROBES = (('neg-direction',
   'spk286_microsequencer',
   "!branch_target_valid || {1'b0, branch_target} >= DEPTH",
   "{1'b0, branch_target} >= DEPTH",
-  ('invalid branch target fails closed', 'next ROM address differs from committed PC')),
+  'invalid branch target fails closed'),
  ('branch-range',
   'spk286_microsequencer',
   'spk286_microsequencer',
   "!branch_target_valid || {1'b0, branch_target} >= DEPTH",
   '!branch_target_valid',
-  ('invalid branch target fails closed', 'next ROM address differs from committed PC')),
+  'invalid branch target fails closed'),
  ('branch-disposition',
   'spk286_microsequencer',
   'spk286_microsequencer',
   'end else if (branch_request) begin',
   "end else if (1'b0 && branch_request) begin",
-  ('branch target preserves macro entry without retirement', 'next ROM address differs from committed PC')),
+  'branch target preserves macro entry without retirement'),
  ('rearm-address',
   'spk286_operand_decode',
   'spk286_operand_decode',
@@ -106,11 +106,7 @@ def main():
         run = subprocess.run(['vvp',str(binary),'+instruction_vectors='+str(path)],cwd=ROOT,capture_output=True,text=True,timeout=60)
         (directory/'run.log').write_text(run.stdout+run.stderr, encoding='utf-8')
         if reason:
-            # The synchronous-ROM next-PC check runs inside tick(), before
-            # the later branch-specific assertion. Either exact property
-            # rejects these branch mutants; arbitrary nonzero exits do not.
-            expected = (reason,) if isinstance(reason, str) else reason
-            if run.returncode == 0 or not any(message in run.stdout+run.stderr for message in expected):
+            if run.returncode == 0 or reason not in run.stdout+run.stderr:
                 raise RuntimeError(f'{name}: intended assertion did not reject mutant')
         elif run.returncode or 'PASS:' not in run.stdout:
             raise RuntimeError(f'{name}: pristine bench failed')

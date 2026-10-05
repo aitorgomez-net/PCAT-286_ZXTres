@@ -250,23 +250,9 @@ def main():
     execute("actual-immediate", replace(example, initial_ram=tuple(sorted(values.items()))),
             "architectural register mismatch")
     values = dict(example.initial_ram)
-    # Invalid 286 forms now deliver #UD, rather than the early-development
-    # unsupported-output latch. Supply its IVT bytes so this negative control
-    # reaches architectural completion instead of failing sparse-RAM admission.
-    # First prove that adding the vector does not change the original MOV.
-    vector = {address: 0 for address in range(6 * 4, 6 * 4 + 4)}
-    seeded_initial = dict(example.initial_ram)
-    seeded_expected = dict(example.expected_ram)
-    seeded_initial.update(vector)
-    seeded_expected.update(vector)
-    seeded = replace(example, initial_ram=tuple(sorted(seeded_initial.items())),
-                     expected_ram=tuple(sorted(seeded_expected.items())))
-    execute("pristine-with-ud-vector", seeded)
-    values = dict(seeded.initial_ram)
-    values[instruction_address] = 0x0f
-    values[instruction_address + 1] = 0xff
-    execute("actual-invalid-opcode", replace(seeded, initial_ram=tuple(sorted(values.items()))),
-            "architectural completion mismatch")
+    values[instruction_address] = 0x0f  # Unsupported system escape: the target must not retire.
+    execute("actual-unsupported", replace(example, initial_ram=tuple(sorted(values.items()))),
+            "unsupported opcode observed before target retirement")
     execute("pristine-after", example)
     require(set(memory_examples) == {"89", "8B"}, "missing supported memory examples")
     read = memory_examples["8B"]

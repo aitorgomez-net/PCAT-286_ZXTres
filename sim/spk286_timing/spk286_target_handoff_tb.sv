@@ -19,6 +19,7 @@ module spk286_target_handoff_tb;
     spk286_target_handoff handoff(.*);
     spk286_instruction_schedule schedule(.execution_metadata_valid(metadata_valid),
         .execution_metadata_clocks(metadata_clocks),
+        .execution_metadata_sum_bits(12'd0), .execution_metadata_carry_bits(12'd0),
         .execution_read_wait_event(read_wait_event), .*);
     assign source_retire=retire_fire;
 

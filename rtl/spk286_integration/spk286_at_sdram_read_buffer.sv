@@ -232,6 +232,27 @@ module spk286_at_sdram_read_buffer #(
 
         case (state_q)
             STATE_IDLE: begin
+                // Payload selection follows ownership state, independently
+                // of admission/classification. No receiver consumes it until
+                // out_valid qualifies the request. This keeps a cache lookup
+                // or cancellation out of the next buffer's address decode.
+                out_owner         = in_owner;
+                out_write         = in_write;
+                out_refresh       = in_refresh;
+                out_code_fetch    = in_code_fetch;
+                out_cycle_class   = in_cycle_class;
+                out_address       = in_address;
+                out_byte_enable   = in_byte_enable;
+                out_data_out      = in_data_out;
+                // Synchronous tags accept every cache candidate locally;
+                // only the asynchronous-tag configuration forwards its miss
+                // on this edge. Keep that parameter distinction explicit.
+                if (!SYNC_TAGS && cache_miss) begin
+                    out_burst        = 1'b1;
+                    out_address      = input_line_base;
+                    out_byte_enable  = 2'b11;
+                    out_data_out     = 16'h0000;
+                end
                 // A hit is accepted locally.  The response is registered by
                 // entering STATE_HIT, so the upstream protocol never sees a
                 // combinational data response.
@@ -244,26 +265,6 @@ module spk286_at_sdram_read_buffer #(
                         // of its canonical line.
                         out_valid         = 1'b1;
                         out_command_valid = 1'b1;
-                        if (cache_miss) begin
-                            out_owner       = OWNER_CPU;
-                            out_write       = 1'b0;
-                            out_refresh     = 1'b0;
-                            out_code_fetch  = 1'b1;
-                            out_burst       = 1'b1;
-                            out_cycle_class = in_cycle_class;
-                            out_address      = input_line_base;
-                            out_byte_enable  = 2'b11;
-                            out_data_out     = 16'h0000;
-                        end else begin
-                            out_owner       = in_owner;
-                            out_write       = in_write;
-                            out_refresh     = in_refresh;
-                            out_code_fetch  = in_code_fetch;
-                            out_cycle_class = in_cycle_class;
-                            out_address      = in_address;
-                            out_byte_enable  = in_byte_enable;
-                            out_data_out     = in_data_out;
-                        end
                         in_accept = out_accept;
                     end
                 end

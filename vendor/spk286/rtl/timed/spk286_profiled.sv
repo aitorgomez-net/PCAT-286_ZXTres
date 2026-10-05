@@ -406,6 +406,7 @@ module spk286_profiled (
     logic profile_execution_metadata_valid, profile_execution_metadata_read_wait;
     logic [9:0] profile_execution_base, profile_execution_repeat_setup;
     logic [9:0] profile_execution_repeat_iteration, profile_execution_metadata_clocks;
+    logic [23:0] profile_execution_metadata_carry_save;
     logic [2:0] profile_execution_ea;
     logic profile_instruction_metadata_valid, profile_instruction_metadata_read_wait;
     logic profile_event_metadata_valid, profile_event_metadata_read_wait;
@@ -553,6 +554,26 @@ module spk286_profiled (
         profile_metadata_budget = |full_sum[11:10] ? 10'd1023 : full_sum[9:0];
     endfunction
 
+    // Carry-save execution metadata is consumed directly by the scheduler's
+    // signed deadline compare. Admission/reporting keeps the budget above.
+    function automatic logic [23:0] profile_metadata_budget_carry_save(
+        input logic [9:0] base, setup_clocks, iteration_clocks,
+        input logic [2:0] ea,
+        input logic repeated, nonempty,
+        input logic [3:0] prefixes
+    );
+        logic [3:0] remaining_prefixes;
+        logic [11:0] first, second, prefix_clocks, sum_bits, carry_bits;
+        remaining_prefixes = prefixes == 0 ? 4'd0 : prefixes - 4'd1;
+        first = {2'd0, repeated ? setup_clocks : base};
+        second = repeated ? (nonempty ? {2'd0, iteration_clocks} : 12'd0) : {9'd0, ea};
+        prefix_clocks = repeated ? {7'd0, remaining_prefixes, 1'b0} :
+                                  {7'd0, prefixes, 1'b0};
+        sum_bits = first ^ second ^ prefix_clocks;
+        carry_bits = (first & second) | (first & prefix_clocks) | (second & prefix_clocks);
+        profile_metadata_budget_carry_save = {sum_bits, carry_bits};
+    endfunction
+
     spk286_instruction_timing profile_metadata (
         .opcode(profile_metadata_opcode),
         .extended_opcode(profile_delivery_metadata ? 1'b0 : extended_opcode_active),
@@ -637,6 +658,11 @@ module spk286_profiled (
         profile_metadata_budget(profile_execution_base, profile_execution_repeat_setup,
             profile_execution_repeat_iteration, profile_execution_ea, profile_execution_repeated,
             profile_repeat_nonempty_q, 1'b0, profile_prefix_count_q);
+    assign profile_execution_metadata_carry_save = profile_delivery_metadata ?
+        {2'd0, profile_event_base, 12'd0} :
+        profile_metadata_budget_carry_save(profile_execution_base, profile_execution_repeat_setup,
+            profile_execution_repeat_iteration, profile_execution_ea, profile_execution_repeated,
+            profile_repeat_nonempty_q, profile_prefix_count_q);
 
     // Odd corrections belong to each real original word reference, before the
     // BIU decomposes it into lanes. RMW therefore obtains READ +2 and WRITE +2.
@@ -676,7 +702,7 @@ module spk286_profiled (
         !profile_active ||
         (cpu_boundary && (!profile_active || profile_retire_fire || repeat_boundary));
 
-    spk286_instruction_schedule profile_schedule (
+    spk286_instruction_schedule #(.EXECUTION_METADATA_CARRY_SAVE(1'b1)) profile_schedule (
         .clk(clk), .reset(reset), .historical_enable(historical_enable),
         .cpu_boundary(cpu_boundary), .cancel(semantic_cancel),
         .preserve_cancel(profile_preserve_cancel),
@@ -686,6 +712,8 @@ module spk286_profiled (
         .metadata_clocks(profile_metadata_clocks),
         .execution_metadata_valid(profile_execution_metadata_valid),
         .execution_metadata_clocks(profile_execution_metadata_clocks),
+        .execution_metadata_sum_bits(profile_execution_metadata_carry_save[23:12]),
+        .execution_metadata_carry_bits(profile_execution_metadata_carry_save[11:0]),
         .execution_read_wait_event(timing_read_wait_event && profile_execution_metadata_read_wait),
         .target_length_ready(profile_target_length_ready),
         .target_length_clocks(profile_target_length_clocks),

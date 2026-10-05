@@ -251,7 +251,7 @@ module spk286_profiled_micro_executor #(parameter bit USE_PARALLEL_SYSTEM_LIMIT 
     // Keep a tentative SP until protected returns or POP Sreg validate all
     // descriptors. A fault must leave the original SS:SP restartable.
     assign begin_return_cursor = protected_msw[0] && (check_pop2 ||
-                                 (allowed && operation == spk286_microcode_pkg::MC_TASK_RETURN && !architectural_flags[14]) ||
+                                 (implementation_allowed && operation == spk286_microcode_pkg::MC_TASK_RETURN && !architectural_flags[14]) ||
                                  (segment_pop_opcode && pop_operation && !stack_cursor_valid_q));
     assign return_stack_pointer = protected_return_cursor_q ? stack_cursor_q : stack_pointer;
     assign add_allocation_arch = add_allocation_sp && !protected_return_cursor_q;
@@ -298,10 +298,18 @@ module spk286_profiled_micro_executor #(parameter bit USE_PARALLEL_SYSTEM_LIMIT 
     assign call_parameter_write_offset = stack_cursor_q - 16'd2;
     assign iret_parameter_bytes = allocation_valid_q ? allocation_q : 16'd0;
     assign iret_outer_stack_offset = return_stack_pointer + iret_parameter_bytes;
-    assign stack_offset = call_parameter_read ? call_parameter_source_sp_q :
-                          call_parameter_write ? call_parameter_write_offset :
-                          iret_outer_pop ? iret_outer_stack_offset :
-                          read_frame_address ? frame_address_q : stack_native_offset;
+    logic call_parameter_read_data_select, call_parameter_write_data_select, iret_outer_data_select, frame_address_data_select;
+    assign call_parameter_read_data_select = operation == spk286_microcode_pkg::MC_COPY_CALL_PARAMETERS &&
+                                            call_gate_outer_required && call_parameter_active_q && call_parameter_phase_q == 2'd0;
+    assign call_parameter_write_data_select = operation == spk286_microcode_pkg::MC_COPY_CALL_PARAMETERS &&
+                                             call_gate_outer_required && call_parameter_active_q && call_parameter_phase_q == 2'd1;
+    assign iret_outer_data_select = operation == spk286_microcode_pkg::MC_IRET_OUTER_FRAME &&
+                                    iret_outer_required && iret_outer_phase_q < 2'd2;
+    assign frame_address_data_select = operation == spk286_microcode_pkg::MC_READ_STACK_ADDRESS_TMP0 && frame_address_valid_q;
+    assign stack_offset = call_parameter_read_data_select ? call_parameter_source_sp_q :
+                          call_parameter_write_data_select ? call_parameter_write_offset :
+                          iret_outer_data_select ? iret_outer_stack_offset :
+                          frame_address_data_select ? frame_address_q : stack_native_offset;
 
     logic [15:0] tmp0_q, tmp1_q, tmp2_q, flags_q, flags_mask_q;
     logic system_active_q;
@@ -598,7 +606,7 @@ module spk286_profiled_micro_executor #(parameter bit USE_PARALLEL_SYSTEM_LIMIT 
                                       !event_gate_candidate_valid_q;
     assign call_gate_validation_operation = implementation_allowed && operation == spk286_microcode_pkg::MC_VALIDATE_CALL_GATE && protected_msw[0];
     assign call_gate_cs_validation_operation = jmp_gate_cs_validation_operation ||
-                                               (allowed && operation == spk286_microcode_pkg::MC_VALIDATE_CALL_CS &&
+                                               (implementation_allowed && operation == spk286_microcode_pkg::MC_VALIDATE_CALL_CS &&
                                                 protected_msw[0] && call_gate_candidate_valid_q);
     assign call_stack_validation_operation = implementation_allowed && operation == spk286_microcode_pkg::MC_VALIDATE_CALL_STACK;
     assign call_ss_validation_operation = implementation_allowed && operation == spk286_microcode_pkg::MC_VALIDATE_CALL_SS && protected_msw[0];
@@ -662,8 +670,8 @@ module spk286_profiled_micro_executor #(parameter bit USE_PARALLEL_SYSTEM_LIMIT 
                                         (descriptor_selector_null || descriptor_selector_carry ||
                                          !descriptor_selector_limit_valid ||
                                          (descriptor_selector_ti && (!protected_ldtr_valid || !protected_ldtr_present)));
-    assign descriptor_segment_null_commit = descriptor_begin && segment_reload_operation &&
-                                           descriptor_selector_null && !descriptor_pre_fault && segment_index != 2'd2;
+    assign descriptor_segment_null_commit = !descriptor_active_q && segment_reload_operation &&
+                                           tmp0_q[15:2] == 14'd0 && segment_index != 2'd2;
     assign descriptor_read_begin = descriptor_begin && !descriptor_pre_fault && !system_privilege_fault && !descriptor_verify_negative && !descriptor_inspect_negative &&
                                    !descriptor_segment_null_commit && !descriptor_selector_null;
     // Only the reserved-form check uses word 3. Reduce both possible words
@@ -1511,7 +1519,7 @@ module spk286_profiled_micro_executor #(parameter bit USE_PARALLEL_SYSTEM_LIMIT 
     assign commit_result = implementation_allowed && result_operation && temporary_valid_q[2] && !result_disposed_q;
     assign discard_result = commit_result && !allow_result_write;
     assign result_to_dst = commit_result && allow_result_write && (operation == spk286_microcode_pkg::MC_WRITE_RESULT_DST || operation == spk286_microcode_pkg::MC_WRITE_RESULT_DST8);
-    assign operand_request = descriptor_active_q || event_gate_active_q || call_tss_active_q || system_operand_request || io_transfer || string_request || vector_request || stack_request || check_operand || (arpl_operation && arpl_adjust) || (allowed &&
+    assign operand_request = descriptor_active_q || event_gate_active_q || call_tss_active_q || system_operand_request || io_transfer || string_request || vector_request || stack_request || check_operand || (arpl_operation && arpl_adjust) || (implementation_allowed &&
                              (write_reg_tmp1 || operation == spk286_microcode_pkg::MC_READ_REG16 || operation == spk286_microcode_pkg::MC_READ_RM16 || operation == spk286_microcode_pkg::MC_READ_REG8 || operation == spk286_microcode_pkg::MC_READ_RM8 || read_tmp1 ||
                               ((operation == spk286_microcode_pkg::MC_WRITE_REG16 || operation == spk286_microcode_pkg::MC_WRITE_RM16 || operation == spk286_microcode_pkg::MC_WRITE_REG8 || operation == spk286_microcode_pkg::MC_WRITE_RM8) && temporary_valid_q[0]) ||
                               (commit_result && allow_result_write && operation != spk286_microcode_pkg::MC_WRITE_RESULT_DST && operation != spk286_microcode_pkg::MC_WRITE_RESULT_DST8)));
@@ -1555,7 +1563,7 @@ module spk286_profiled_micro_executor #(parameter bit USE_PARALLEL_SYSTEM_LIMIT 
                              task_event_switch_skip ||
                              task_return_noop || task_return_commit_done || task_return_skip) ||
                              (arpl_check_operation && protected_msw[0]) || arpl_fault || arpl_commit || clts_commit || clts_fault ||
-                            (allowed && (operation == spk286_microcode_pkg::MC_VALIDATE_CS || operation == spk286_microcode_pkg::MC_VALIDATE_CALL_GATE ||
+                            (implementation_allowed && (operation == spk286_microcode_pkg::MC_VALIDATE_CS || operation == spk286_microcode_pkg::MC_VALIDATE_CALL_GATE ||
                                          operation == spk286_microcode_pkg::MC_VALIDATE_CALL_CS || operation == spk286_microcode_pkg::MC_VALIDATE_CALL_SS || operation == spk286_microcode_pkg::MC_VALIDATE_IRET_CS ||
                                          operation == spk286_microcode_pkg::MC_VALIDATE_IRET_SS) && !protected_msw[0]) ||
                             (iret_outer_frame_operation && (!iret_outer_required || (iret_outer_phase_q == 2'd1 && operand_done))) ||

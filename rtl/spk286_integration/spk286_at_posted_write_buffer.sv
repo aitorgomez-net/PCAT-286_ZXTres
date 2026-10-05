@@ -71,6 +71,20 @@ module spk286_at_posted_write_buffer #(
         out_address = address_q;
         out_byte_enable = lanes_q;
         out_data_out = data_q;
+        // The idle payload does not depend on admission through upstream
+        // buffers. It is consumed only with out_valid; retained ownership
+        // still selects the frozen record throughout posting and drain.
+        if (state_q == IDLE) begin
+            out_owner = in_owner;
+            out_write = in_write;
+            out_refresh = in_refresh;
+            out_code_fetch = in_code_fetch;
+            out_burst = in_burst;
+            out_cycle_class = in_cycle_class;
+            out_address = in_address;
+            out_byte_enable = in_byte_enable;
+            out_data_out = in_data_out;
+        end
         if (!reset) begin
             case (state_q)
                 IDLE: if (presented) begin
@@ -79,15 +93,6 @@ module spk286_at_posted_write_buffer #(
                     // recovery. Logical READY appears only after retention.
                     out_valid = 1'b1;
                     out_command_valid = 1'b1;
-                    out_owner = in_owner;
-                    out_write = in_write;
-                    out_refresh = in_refresh;
-                    out_code_fetch = in_code_fetch;
-                    out_burst = in_burst;
-                    out_cycle_class = in_cycle_class;
-                    out_address = in_address;
-                    out_byte_enable = in_byte_enable;
-                    out_data_out = in_data_out;
                     in_accept = candidate || out_accept;
                 end
                 POSTED: begin

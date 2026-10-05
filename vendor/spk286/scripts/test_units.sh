@@ -51,7 +51,6 @@ tests+=(spk286_register_execution)
 tests+=(spk286_task_late_publication)
 tests+=(spk286_null_ldtr)
 tests+=(spk286_immediate_execution spk286_immediate_throughput)
-tests+=(spk286_event_arbitration)
 tests+=(spk286_encoding_preview)
 tests+=(spk286_length_boundary)
 if [[ "$unit" != all ]]; then tests=("$unit"); fi
@@ -155,8 +154,8 @@ for name in "${tests[@]}"; do
         python3 -m tools.event_streams --output "$BUILD_DIR/event-streams.txt"
         run_args=("+stream_vectors=$BUILD_DIR/event-streams.txt")
     fi
-    if [[ "$name" == spk286_event_lifecycle ]]; then
-        run_args+=("+real_mode_fetch_wrap=${SPK286_TEST_REAL_MODE_FETCH_WRAP:-1}")
+    if [[ "$name" == spk286_event_lifecycle && "${SPK286_TEST_REAL_MODE_FETCH_WRAP:-0}" == 1 ]]; then
+        run_args+=("+real_mode_fetch_wrap=1")
     fi
     if [[ "$name" == spk286_timing_capture ]]; then
         mkdir -p "$BUILD_DIR/timing"

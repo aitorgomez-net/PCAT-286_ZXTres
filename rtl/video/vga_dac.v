@@ -319,6 +319,21 @@ module vga_dac(
     wire full_write = palette_write && write_en;
     wire component_write = palette_write && !write_en && component_write_en;
     wire [7:0] ram_write_index = full_write ? write_index : component_write_index;
+    // Store software colours through a bijective address transform. Every
+    // physical write-address bit crosses required XOR logic before the MLAB
+    // address register; the normal single-cycle setup and hold checks remain.
+    // Default ROMs, validity/override bits and bypass comparisons use logical
+    // addresses. Applying this same permutation to reads preserves all data.
+    function [7:0] palette_ram_address;
+        input [7:0] logical_index;
+        begin
+            palette_ram_address[6:0] = logical_index[6:0] ^ logical_index[7:1];
+            palette_ram_address[7] = logical_index[7] ^ logical_index[0] ^ logical_index[1];
+        end
+    endfunction
+    wire [7:0] encoded_write_index = palette_ram_address(ram_write_index);
+    wire [7:0] encoded_sample_index = palette_ram_address(sample_index);
+    wire [7:0] encoded_port_index = palette_ram_address(port_index);
     wire red_write = full_write || (component_write && component_select == 2'd0);
     wire green_write = full_write || (component_write && component_select == 2'd1);
     wire blue_write = full_write || (component_write && component_select == 2'd2);
@@ -337,18 +352,18 @@ module vga_dac(
         last_green_write <= green_write;
         last_blue_write <= blue_write;
         if (red_write) begin
-            sample_red_ram[ram_write_index] <= red_write_data;
-            port_red_ram[ram_write_index] <= red_write_data;
+            sample_red_ram[encoded_write_index] <= red_write_data;
+            port_red_ram[encoded_write_index] <= red_write_data;
             last_red_data <= red_write_data;
         end
         if (green_write) begin
-            sample_green_ram[ram_write_index] <= green_write_data;
-            port_green_ram[ram_write_index] <= green_write_data;
+            sample_green_ram[encoded_write_index] <= green_write_data;
+            port_green_ram[encoded_write_index] <= green_write_data;
             last_green_data <= green_write_data;
         end
         if (blue_write) begin
-            sample_blue_ram[ram_write_index] <= blue_write_data;
-            port_blue_ram[ram_write_index] <= blue_write_data;
+            sample_blue_ram[encoded_write_index] <= blue_write_data;
+            port_blue_ram[encoded_write_index] <= blue_write_data;
             last_blue_data <= blue_write_data;
         end
     end
@@ -386,26 +401,26 @@ module vga_dac(
     wire [17:0] sample_default = sample_default_palette[sample_index];
     wire [17:0] port_default = port_default_palette[port_index];
     assign sample_red = red_override[sample_index] ?
-                        (last_red_write && last_write_index == sample_index ? last_red_data : sample_red_ram[sample_index]) :
+                        (last_red_write && last_write_index == sample_index ? last_red_data : sample_red_ram[encoded_sample_index]) :
                         sample_default[17:12];
     assign sample_green = green_override[sample_index] ?
-                          (last_green_write && last_write_index == sample_index ? last_green_data : sample_green_ram[sample_index]) :
+                          (last_green_write && last_write_index == sample_index ? last_green_data : sample_green_ram[encoded_sample_index]) :
                           sample_default[11:6];
     assign sample_blue = blue_override[sample_index] ?
-                         (last_blue_write && last_write_index == sample_index ? last_blue_data : sample_blue_ram[sample_index]) :
+                         (last_blue_write && last_write_index == sample_index ? last_blue_data : sample_blue_ram[encoded_sample_index]) :
                          sample_default[5:0];
     assign sample_red_8 = {sample_red, sample_red[5:4]};
     assign sample_green_8 = {sample_green, sample_green[5:4]};
     assign sample_blue_8 = {sample_blue, sample_blue[5:4]};
     assign sample_valid = entry_valid[sample_index];
     assign port_red = red_override[port_index] ?
-                      (last_red_write && last_write_index == port_index ? last_red_data : port_red_ram[port_index]) :
+                      (last_red_write && last_write_index == port_index ? last_red_data : port_red_ram[encoded_port_index]) :
                       port_default[17:12];
     assign port_green = green_override[port_index] ?
-                        (last_green_write && last_write_index == port_index ? last_green_data : port_green_ram[port_index]) :
+                        (last_green_write && last_write_index == port_index ? last_green_data : port_green_ram[encoded_port_index]) :
                         port_default[11:6];
     assign port_blue = blue_override[port_index] ?
-                       (last_blue_write && last_write_index == port_index ? last_blue_data : port_blue_ram[port_index]) :
+                       (last_blue_write && last_write_index == port_index ? last_blue_data : port_blue_ram[encoded_port_index]) :
                        port_default[5:0];
     assign port_valid = entry_valid[port_index];
 
