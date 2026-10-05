@@ -726,10 +726,14 @@ module spk286_at_machine #(
     wire timing_historical, timing_cpu_boundary;
     wire timing_phase_enable, timing_phase_two;
     wire timing_deadline_miss;
-    // Only an external machine reset applies an OSD speed change. CPU-local
-    // warm resets preserve the applied choice and all peripheral clocks.
+    wire timing_profile_change_ready;
+    // Keep the current instruction/event and every accepted bus record on
+    // their original profile. Park admission, drain the bus, then start the
+    // new virtual phase without resetting the CPU or any peripheral.
     spk286_at_cpu_profile u_cpu_profile (
         .clk(clk), .reset(reset | cpu_reset),
+        .apply(timing_profile_change_ready && bridge_idle &&
+               !(memory_drain_pending === 1'b1)),
         .requested(cpu_speed_requested), .active(cpu_speed_active),
         .pending(cpu_speed_pending), .historical(timing_historical),
         .phase_enable(timing_phase_enable), .phase_two(timing_phase_two),
@@ -743,6 +747,8 @@ module spk286_at_machine #(
         .historical_enable      (timing_historical),
         .cpu_boundary           (timing_cpu_boundary),
         .timing_read_wait_event (1'b0),
+        .profile_change_pending (cpu_speed_pending),
+        .profile_change_ready   (timing_profile_change_ready),
         .ready                  (cpu_ready_i),
         .data_in                (cpu_data_in_i),
         .intr                   (intr),

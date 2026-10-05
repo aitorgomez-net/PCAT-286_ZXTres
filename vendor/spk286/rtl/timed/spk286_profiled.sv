@@ -9,6 +9,8 @@ module spk286_profiled (
     input  logic         clk,
     input  logic         reset,
     input  logic         historical_enable, cpu_boundary, timing_read_wait_event,
+    input  logic         profile_change_pending,
+    output logic         profile_change_ready,
     input  logic         ready,
     input  logic [15:0]  data_in,
     input  logic         execute_enable,
@@ -400,13 +402,113 @@ module spk286_profiled (
     logic [2:0] profile_ea_clocks;
     logic profile_metadata_read_wait;
     logic profile_alignment_event, profile_start_interval, profile_start_body;
-    logic [11:0] profile_metadata_sum;
     logic [9:0] profile_metadata_clocks;
+    logic profile_execution_metadata_valid, profile_execution_metadata_read_wait;
+    logic [9:0] profile_execution_base, profile_execution_repeat_setup;
+    logic [9:0] profile_execution_repeat_iteration, profile_execution_metadata_clocks;
+    logic [2:0] profile_execution_ea;
+    logic profile_instruction_metadata_valid, profile_instruction_metadata_read_wait;
+    logic profile_event_metadata_valid, profile_event_metadata_read_wait;
+    logic [9:0] profile_event_base;
+    /* verilator lint_off UNUSEDSIGNAL */
+    logic [4:0] profile_execution_unused;
+    logic [4:0] profile_event_unused;
+    logic [9:0] profile_event_repeat_setup, profile_event_repeat_iteration;
+    logic [2:0] profile_event_ea;
+    /* verilator lint_on UNUSEDSIGNAL */
     /* verilator lint_off UNUSEDSIGNAL */
     logic profile_requires_modrm, profile_requires_outcome, profile_requires_count;
     logic [9:0] profile_elapsed, profile_scheduled;
     logic profile_implementation_extension;
     /* verilator lint_on UNUSEDSIGNAL */
+
+    logic profile_requires_target_length;
+    // Park only between complete instruction/event contexts. Existing BIU
+    // and fetch responses continue draining on the unchanged fabric clock.
+    wire profile_change_hold = (profile_change_pending === 1'b1) &&
+        !micro_active && !context_active && !event_active && !profile_active &&
+        !raw_retired && !event_completed && !profile_target_pending;
+    assign profile_change_ready = profile_change_hold && !bus_valid && !fetch_bus_valid;
+    logic profile_native_queue_valid, profile_native_queue_ready;
+    logic [7:0] profile_native_queue_data;
+    logic profile_target_pending, profile_target_preview_enable;
+    logic profile_target_preview_start, profile_target_started_q;
+    logic profile_target_preview_active, profile_target_byte_ready;
+    logic profile_target_complete, profile_target_valid_length;
+    /* verilator lint_off UNUSEDSIGNAL */
+    logic profile_target_invalid, profile_target_unsupported;
+    logic profile_target_overlength, profile_target_fetch_fault;
+    /* verilator lint_on UNUSEDSIGNAL */
+    logic profile_target_abort_fetch, profile_target_length_ready;
+    logic [3:0] profile_target_length, profile_target_length_clocks;
+    logic profile_target_replay_valid;
+    logic [7:0] profile_target_replay_data;
+    /* verilator lint_off UNUSEDSIGNAL */
+    logic [3:0] profile_target_replay_count;
+    logic profile_target_fault_estimated;
+    /* verilator lint_on UNUSEDSIGNAL */
+
+    // A real redirect qualifies the source form. Preview starts only after
+    // functional END, when no late source operand can consume target bytes.
+    assign profile_target_preview_start = historical_enable && raw_retired &&
+        profile_target_pending && !event_active && !profile_target_started_q;
+    assign profile_target_preview_active = profile_target_started_q &&
+        profile_target_preview_enable && !micro_active;
+    assign profile_target_abort_fetch = !profile_native_queue_valid &&
+        !fetch_response_valid && !fetch_bus_valid &&
+        (fetch_blocked || protected_fetch_invalid);
+    always_ff @(posedge clk) begin
+        if (reset || !historical_enable || stream_restart || profile_start_interval ||
+            profile_retire_fire)
+            profile_target_started_q <= 1'b0;
+        else if (profile_target_preview_start)
+            profile_target_started_q <= 1'b1;
+    end
+
+    spk286_target_handoff profile_target_handoff (
+        .clk(clk), .reset(reset), .historical_enable(historical_enable),
+        .cancel(semantic_cancel || loadall_commit_valid ||
+                (internal_redirect && (!profile_requires_target_length || event_active))),
+        .start_interval(profile_start_interval), .source_retire(profile_retire_fire),
+        .requires_target_length(profile_requires_target_length && !event_active),
+        .redirect_event(internal_redirect),
+        .preview_complete(profile_target_complete && profile_target_started_q),
+        .preview_fault(!profile_target_valid_length), .preview_length(profile_target_length),
+        .pending(profile_target_pending), .preview_enable(profile_target_preview_enable),
+        .target_length_ready(profile_target_length_ready),
+        .target_length_clocks(profile_target_length_clocks),
+        .target_fault_estimated(profile_target_fault_estimated)
+    );
+    spk286_encoding_preview profile_target_preview (
+        .clk(clk), .reset(reset), .cancel(!historical_enable || stream_restart),
+        .start(profile_target_preview_start), .enable(profile_target_preview_active),
+        .byte_valid(profile_native_queue_valid), .byte_data(profile_native_queue_data),
+        .abort_fetch(profile_target_abort_fetch), .byte_ready(profile_target_byte_ready),
+        .complete(profile_target_complete), .valid_length(profile_target_valid_length),
+        .invalid_opcode(profile_target_invalid), .unsupported(profile_target_unsupported),
+        .overlength(profile_target_overlength), .fetch_fault(profile_target_fetch_fault),
+        .length(profile_target_length)
+    );
+    spk286_target_replay profile_target_replay (
+        // A live transition to MAX must retain bytes already removed from
+        // the native queue. They leave through the normal consume handshake.
+        .clk(clk), .reset(reset), .cancel(stream_restart),
+        .start(profile_target_preview_start),
+        .capture(profile_native_queue_valid && profile_target_byte_ready),
+        .capture_data(profile_native_queue_data),
+        .consume(!profile_target_pending && queue_consume_valid && queue_consume_ready &&
+                 profile_target_replay_valid),
+        .valid(profile_target_replay_valid), .data(profile_target_replay_data),
+        .count(profile_target_replay_count)
+    );
+    // Only replay uses the existing architectural queue handshake. Native
+    // prefetch keeps its six-byte reservation and accepted-response ownership.
+    assign queue_consume_valid = profile_target_pending ? 1'b0 :
+        profile_target_replay_valid ? 1'b1 : profile_native_queue_valid;
+    assign queue_consume_data = profile_target_replay_valid ?
+        profile_target_replay_data : profile_native_queue_data;
+    assign profile_native_queue_ready = profile_target_pending ? profile_target_byte_ready :
+        (!profile_target_replay_valid && queue_consume_ready);
 
     wire profile_delivery_metadata = event_dispatch || (event_active && !event_software);
     // Candidate metadata must not depend on opcode_start/event_request: the
@@ -429,6 +531,28 @@ module spk286_profiled (
                               queue_consume_data != 8'hF0;
     wire profile_modrm_current = operand_context_valid && micro_active && !event_active;
 
+    // Prefix correction is a nonnegative addend. For REP, the table already
+    // includes one prefix: subtract it from the small prefix count before
+    // adding the budget, not after a chain of wide carry-propagating sums.
+    function automatic logic [9:0] profile_metadata_budget(
+        input logic [9:0] base, setup_clocks, iteration_clocks,
+        input logic [2:0] ea,
+        input logic repeated, nonempty, delivery,
+        input logic [3:0] prefixes
+    );
+        logic [3:0] remaining_prefixes;
+        logic [11:0] first, second, prefix_clocks, sum_bits, carry_bits, full_sum;
+        remaining_prefixes = prefixes == 0 ? 4'd0 : prefixes - 4'd1;
+        first = {2'd0, repeated ? setup_clocks : base};
+        second = repeated ? (nonempty ? {2'd0, iteration_clocks} : 12'd0) : {9'd0, ea};
+        prefix_clocks = repeated ? {7'd0, remaining_prefixes, 1'b0} :
+                        delivery ? 12'd0 : {7'd0, prefixes, 1'b0};
+        sum_bits = first ^ second ^ prefix_clocks;
+        carry_bits = (first & second) | (first & prefix_clocks) | (second & prefix_clocks);
+        full_sum = sum_bits + (carry_bits << 1);
+        profile_metadata_budget = |full_sum[11:10] ? 10'd1023 : full_sum[9:0];
+    endfunction
+
     spk286_instruction_timing profile_metadata (
         .opcode(profile_metadata_opcode),
         .extended_opcode(profile_delivery_metadata ? 1'b0 : extended_opcode_active),
@@ -443,36 +567,89 @@ module spk286_profiled (
         .estimated(profile_family_estimated),
         .requires_modrm(profile_requires_modrm), .requires_outcome(profile_requires_outcome),
         .requires_count(profile_requires_count), .base_clocks(profile_base_clocks),
+        .requires_target_length(profile_requires_target_length),
         .repeat_setup_clocks(profile_repeat_setup),
         .repeat_iteration_clocks(profile_repeat_iteration),
         .permits_read_wait(profile_metadata_read_wait), .ea_clocks(profile_ea_clocks)
     );
 
+    // Retirement/REP permission uses only retained execution context. The
+    // admission lane above still captures exactly the original next-head
+    // metadata, but its decoder must not feed through the deadline to EU
+    // exception/head arbitration. Both lanes agree whenever body_active is
+    // true; no architectural or virtual-clock boundary is added.
+    // Classify retained instruction and delivery contexts in parallel. The
+    // live dispatch permission selects their completed budgets below; it does
+    // not traverse the instruction decoder or prefix arithmetic.
+    wire [7:0] profile_execution_opcode = opcode_q;
+    wire [spk286_microcode_pkg::MC_ADDR_WIDTH-1:0] profile_execution_entry = micro_entry;
+    wire profile_execution_string = !extended_opcode_active &&
+        ((profile_execution_opcode >= 8'hA4 && profile_execution_opcode <= 8'hA7) ||
+         (profile_execution_opcode >= 8'hAA && profile_execution_opcode <= 8'hAF) ||
+         (profile_execution_opcode >= 8'h6C && profile_execution_opcode <= 8'h6F));
+    wire profile_execution_repeated = profile_execution_string && repeat_kind != 0;
+    spk286_instruction_timing profile_execution_metadata (
+        .opcode(profile_execution_opcode),
+        .extended_opcode(extended_opcode_active),
+        .micro_entry(profile_execution_entry),
+        .modrm_valid(profile_modrm_current), .modrm_mode(operand_mode),
+        .modrm_reg(operand_reg), .modrm_rm(operand_rm),
+        .protected_mode(protected_msw[0]), .CPL(current_cpl), .operand_odd(1'b0),
+        .branch_known(profile_branch_known_q), .branch_taken(profile_branch_taken_q),
+        .count_known(profile_count_known_q), .count(profile_count_q),
+        .repeat_kind(repeat_kind), .qualified(profile_instruction_metadata_valid),
+        .estimated(profile_execution_unused[0]),
+        .requires_modrm(profile_execution_unused[1]),
+        .requires_outcome(profile_execution_unused[2]),
+        .requires_count(profile_execution_unused[3]),
+        .requires_target_length(profile_execution_unused[4]),
+        .base_clocks(profile_execution_base),
+        .repeat_setup_clocks(profile_execution_repeat_setup),
+        .repeat_iteration_clocks(profile_execution_repeat_iteration),
+        .permits_read_wait(profile_instruction_metadata_read_wait),
+        .ea_clocks(profile_execution_ea)
+    );
+    // Reuse the authoritative policy table rather than duplicate event timing
+    // constants. Constant event entries fold to the small delivery lane.
+    spk286_instruction_timing profile_event_metadata (
+        .opcode(8'd0), .extended_opcode(1'b0),
+        .micro_entry(protected_msw[0] ?
+            spk286_microcode_pkg::MC_ENTRY_EVENT_ENTRY_PROTECTED :
+            spk286_microcode_pkg::MC_ENTRY_EVENT_ENTRY),
+        .modrm_valid(profile_modrm_current), .modrm_mode(operand_mode),
+        .modrm_reg(operand_reg), .modrm_rm(operand_rm),
+        .protected_mode(protected_msw[0]), .CPL(current_cpl), .operand_odd(1'b0),
+        .branch_known(profile_branch_known_q), .branch_taken(profile_branch_taken_q),
+        .count_known(profile_count_known_q), .count(profile_count_q),
+        .repeat_kind(repeat_kind), .qualified(profile_event_metadata_valid),
+        .estimated(profile_event_unused[0]), .requires_modrm(profile_event_unused[1]),
+        .requires_outcome(profile_event_unused[2]), .requires_count(profile_event_unused[3]),
+        .requires_target_length(profile_event_unused[4]), .base_clocks(profile_event_base),
+        .repeat_setup_clocks(profile_event_repeat_setup),
+        .repeat_iteration_clocks(profile_event_repeat_iteration),
+        .permits_read_wait(profile_event_metadata_read_wait), .ea_clocks(profile_event_ea)
+    );
+    assign profile_execution_metadata_valid = profile_delivery_metadata ?
+        profile_event_metadata_valid : profile_instruction_metadata_valid;
+    assign profile_execution_metadata_read_wait = profile_delivery_metadata ?
+        profile_event_metadata_read_wait : profile_instruction_metadata_read_wait;
+    assign profile_execution_metadata_clocks = profile_delivery_metadata ? profile_event_base :
+        profile_metadata_budget(profile_execution_base, profile_execution_repeat_setup,
+            profile_execution_repeat_iteration, profile_execution_ea, profile_execution_repeated,
+            profile_repeat_nonempty_q, 1'b0, profile_prefix_count_q);
+
     // Odd corrections belong to each real original word reference, before the
     // BIU decomposes it into lanes. RMW therefore obtains READ +2 and WRITE +2.
     assign profile_alignment_event = historical_enable &&
         memory_request && memory_request_ready && !memory_byte && memory_address[0];
-    assign profile_metadata_estimated = profile_family_estimated ||
+    assign profile_metadata_estimated = profile_family_estimated || profile_target_fault_estimated ||
         (!profile_delivery_metadata && profile_prefix_count_q != 0 &&
          (!profile_repeated_string || profile_prefix_count_q > 1));
-    always_comb begin
-        profile_metadata_sum = {2'd0, profile_base_clocks} + {9'd0, profile_ea_clocks};
-        if (profile_repeated_string) begin
-            profile_metadata_sum = {2'd0, profile_repeat_setup} +
-                ((profile_candidate_body ? register_state[16 +: 16] != 0 : profile_repeat_nonempty_q) ?
-                 {2'd0, profile_repeat_iteration} : 12'd0);
-            // Setup already includes one REP prefix. Any remaining counted
-            // override/repeated prefix uses the estimated native fallback.
-            if (profile_prefix_count_q != 0)
-                profile_metadata_sum = profile_metadata_sum +
-                    {7'd0, profile_prefix_count_q, 1'b0} - 12'd2;
-        end else if (!profile_delivery_metadata) begin
-            // Provisional native fallback; LOCK and 0F are not charged again.
-            profile_metadata_sum = profile_metadata_sum + {7'd0, profile_prefix_count_q, 1'b0};
-        end
-        profile_metadata_clocks = profile_metadata_sum > 12'd1023 ?
-                                  10'd1023 : profile_metadata_sum[9:0];
-    end
+    assign profile_metadata_clocks = profile_metadata_budget(profile_base_clocks,
+        profile_repeat_setup, profile_repeat_iteration, profile_ea_clocks,
+        profile_repeated_string,
+        profile_candidate_body ? register_state[16 +: 16] != 0 : profile_repeat_nonempty_q,
+        profile_delivery_metadata, profile_prefix_count_q);
     assign profile_preserve_cancel = !restart && event_cancel && event_active && event_software;
     assign profile_start_interval =
         ((!context_active && (prefix_accept || opcode_start)) ||
@@ -507,6 +684,11 @@ module spk286_profiled (
         .metadata_valid(profile_metadata_valid),
         .metadata_freeze(raw_retired || (software_taken && event_request)),
         .metadata_clocks(profile_metadata_clocks),
+        .execution_metadata_valid(profile_execution_metadata_valid),
+        .execution_metadata_clocks(profile_execution_metadata_clocks),
+        .execution_read_wait_event(timing_read_wait_event && profile_execution_metadata_read_wait),
+        .target_length_ready(profile_target_length_ready),
+        .target_length_clocks(profile_target_length_clocks),
         .read_wait_event(timing_read_wait_event && profile_metadata_read_wait),
         .alignment_event(profile_alignment_event), .functional_retired(raw_retired),
         .repeat_checkpoint(profile_repeat_checkpoint), .repeat_next_clocks(profile_repeat_iteration),
@@ -578,7 +760,7 @@ module spk286_profiled (
     assign service_segment = string_request ? (string_destination ? 2'd0 : (segment_override ? override_segment : 2'd3)) : stack_request ? 2'd2 : (segment_override ? override_segment : operand_segment);
     assign implicit_lock = micro_active && !event_active && operand_context_valid && !operand_register_direct && (opcode_q == 8'h86 || opcode_q == 8'h87);
     assign service_offset = io_transfer ? 16'd0 : address_override && !stack_request && !vector_request ? address_offset : vector_request ? vector_offset : (stack_request ? stack_offset : operand_offset);
-    assign execution_allowed = execute_enable && commit_allowed && !reset && !restart && !operand_blocked && !unsupported_q &&
+    assign execution_allowed = execute_enable && !profile_change_hold && commit_allowed && !reset && !restart && !operand_blocked && !unsupported_q &&
                                !shutdown && (!halted || micro_active);
 
     // Protected-mode segment state is the architectural cache source. During
@@ -742,7 +924,7 @@ module spk286_profiled (
     assign fetch_reserved_bytes = {1'b0, queue_count} +
         (fetch_response_valid ? {3'b000, fetch_response_count} : 5'd0) +
         (fetch_bus_valid ? 5'd2 : 5'd0);
-    assign fetch_request_internal = execute_enable && !event_active && !halted && !shutdown && !unsupported_q && !microcode_fault && !operand_blocked &&
+    assign fetch_request_internal = execute_enable && !profile_change_hold && !event_active && !halted && !shutdown && !unsupported_q && !microcode_fault && !operand_blocked &&
                                     !protected_fetch_invalid && (fetch_reserved_bytes <= 5'd4);
     assign fetch_response_ready = execute_enable ? queue_fill_ready : fetch_ready;
 
@@ -933,8 +1115,8 @@ module spk286_profiled (
         .clk(clk), .reset(reset), .flush(queue_flush),
         .fill_valid(fetch_response_valid && execute_enable), .fill_data(fetch_response_data),
         .fill_count(fetch_response_count), .fill_ready(queue_fill_ready),
-        .consume_valid(queue_consume_valid), .consume_data(queue_consume_data),
-        .consume_ready(queue_consume_ready), .count(queue_count)
+        .consume_valid(profile_native_queue_valid), .consume_data(profile_native_queue_data),
+        .consume_ready(profile_native_queue_ready), .count(queue_count)
     );
 
     assign fetch_request_ready = fetch_request_ready_internal;
@@ -1028,7 +1210,7 @@ module spk286_profiled (
                           !unsupported_q && queue_consume_valid && decode_supported && !is_prefix && !length_fault;
     assign prefix_accept = decode_ready && !event_active && !event_request && !event_completed && !raw_retired &&
                            !unsupported_q && queue_consume_valid && is_prefix && !length_fault;
-    assign length_fault = !event_active && instruction_bytes == 10 &&
+    assign length_fault = !event_active && !raw_retired && !event_completed && instruction_bytes == 10 &&
                           (micro_active ? executor_byte_ready : decode_ready);
     spk286_instruction_context instruction_context (
         .clk(clk), .reset(reset), .cancel(semantic_cancel), .complete(profile_retire_fire || event_completed),
@@ -1072,12 +1254,13 @@ module spk286_profiled (
     // Remove that redundant late qualification from descriptor/event responses.
     assign executor_operand_done = (protected_descriptor_access || protected_tss_access || protected_event_access) ?
                                    unlimited_memory_done : operand_done;
-    spk286_micro_executor #(
+    spk286_profiled_micro_executor #(
         .USE_PARALLEL_SYSTEM_LIMIT(1'b1)
     ) micro_executor (
         .parallel_system_limit_fault(parallel_system_cache_fault),
         .clk(clk), .reset(reset), .cancel(semantic_cancel), .start(service_start),
-        .operation_valid(operation_valid), .operation(micro_word), .operation_done(executor_done), .operation_retire(operation_retire), .dispatch_request(dispatch_request),
+        .operation_valid(operation_valid), .implementation_operation_valid(profile_raw_operation_valid),
+        .operation(micro_word), .operation_done(executor_done), .operation_retire(operation_retire), .dispatch_request(dispatch_request),
         .segment_pop_opcode(opcode_q == 8'h07 || opcode_q == 8'h17 || opcode_q == 8'h1F),
         .byte_valid(queue_consume_valid && !length_fault), .byte_data(queue_consume_data), .byte_ready(executor_byte_ready),
         .decode_operand(operand_decode_enable), .decode_done(operand_decode_done), .decode_modrm_valid(operand_context_valid),

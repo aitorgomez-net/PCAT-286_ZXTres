@@ -1,0 +1,6598 @@
+{
+  "repeat_words": [
+    121,
+    128
+  ],
+  "constants": {
+    "MC_INVALID": 0,
+    "MC_FETCH_IMM16": 1,
+    "MC_MOVE": 2,
+    "MC_END": 3,
+    "MC_DECODE_MODRM": 4,
+    "MC_READ_REG16": 5,
+    "MC_READ_RM16": 6,
+    "MC_WRITE_REG16": 7,
+    "MC_WRITE_RM16": 8,
+    "MC_READ_REG16_TMP1": 9,
+    "MC_READ_RM16_TMP1": 10,
+    "MC_FETCH_IMM16_TMP1": 11,
+    "MC_FETCH_IMM8S_TMP1": 12,
+    "MC_READ_DST16": 13,
+    "MC_ALU": 14,
+    "MC_WRITE_RESULT_REG16": 15,
+    "MC_WRITE_RESULT_RM16": 16,
+    "MC_WRITE_RESULT_DST": 17,
+    "MC_COMMIT_FLAGS": 18,
+    "MC_CHECK_RM16": 19,
+    "MC_FETCH_IMM8S_TMP0": 20,
+    "MC_PUSH16": 21,
+    "MC_POP16": 22,
+    "MC_READ_IP16": 23,
+    "MC_TARGET_REL16": 24,
+    "MC_TARGET_ABS16": 25,
+    "MC_REDIRECT": 26,
+    "MC_ADJUST_SP16": 27,
+    "MC_COUNT": 28,
+    "MC_FETCH_IMM8": 29,
+    "MC_READ_FLAGS": 30,
+    "MC_RESTORE_FLAGS": 31,
+    "MC_SET_IF": 32,
+    "MC_HALT": 33,
+    "MC_REQUEST_EVENT": 34,
+    "MC_EVENT_ACK": 35,
+    "MC_EVENT_FLAGS": 36,
+    "MC_EVENT_CS": 37,
+    "MC_EVENT_IP": 38,
+    "MC_CLEAR_IF_TF": 39,
+    "MC_VECTOR_IP": 40,
+    "MC_VECTOR_CS": 41,
+    "MC_CONTEXT_COMMIT": 42,
+    "MC_POP16_TMP1": 43,
+    "MC_POP16_TMP2": 44,
+    "MC_IRET_COMMIT": 45,
+    "MC_READ_REG8": 46,
+    "MC_READ_RM8": 47,
+    "MC_WRITE_REG8": 48,
+    "MC_WRITE_RM8": 49,
+    "MC_FETCH_IMM8_TMP1": 50,
+    "MC_READ_REG8_TMP1": 51,
+    "MC_READ_RM8_TMP1": 52,
+    "MC_READ_DST8": 53,
+    "MC_MOVE8": 54,
+    "MC_WRITE_RESULT_REG8": 55,
+    "MC_WRITE_RESULT_RM8": 56,
+    "MC_WRITE_RESULT_DST8": 57,
+    "MC_FLAGS_DECODED": 58,
+    "MC_SIGN_EXTEND8": 59,
+    "MC_SIGN_FILL16": 60,
+    "MC_CONST_ONE_TMP1": 61,
+    "MC_SHIFT": 62,
+    "MC_COUNT_LOW_TMP1": 63,
+    "MC_READ_EA": 64,
+    "MC_WRITE_REG8_TMP1": 65,
+    "MC_WRITE_REG16_TMP1": 66,
+    "MC_READ_TARGET16_TMP1": 67,
+    "MC_MOVE_SOURCE16_TMP1": 68,
+    "MC_SET_ADDRESS_TMP1": 69,
+    "MC_ADD_BASE_TMP0_TMP1": 70,
+    "MC_DISPATCH_DECODED": 71,
+    "MC_CONST_ZERO_TMP1": 72,
+    "MC_CONST_ONES_TMP1": 73,
+    "MC_ADJUST": 74,
+    "MC_CHECK_ARITHMETIC": 75,
+    "MC_READ_SEG16_TMP0": 76,
+    "MC_WRITE_SEG16_TMP0": 77,
+    "MC_READ_AX_TMP0": 78,
+    "MC_READ_CX_TMP0": 79,
+    "MC_READ_DX_TMP0": 80,
+    "MC_READ_BX_TMP0": 81,
+    "MC_READ_SP_TMP0": 82,
+    "MC_READ_BP_TMP0": 83,
+    "MC_READ_SI_TMP0": 84,
+    "MC_READ_DI_TMP0": 85,
+    "MC_WRITE_AX_TMP0": 86,
+    "MC_WRITE_CX_TMP0": 87,
+    "MC_WRITE_DX_TMP0": 88,
+    "MC_WRITE_BX_TMP0": 89,
+    "MC_WRITE_SP_TMP0": 90,
+    "MC_WRITE_BP_TMP0": 91,
+    "MC_WRITE_SI_TMP0": 92,
+    "MC_WRITE_DI_TMP0": 93,
+    "MC_SAVE_AUX_TMP0": 94,
+    "MC_RESTORE_AUX_TMP0": 95,
+    "MC_SAVE_ALLOCATION_TMP0": 96,
+    "MC_LOAD_COUNTER_TMP1": 97,
+    "MC_DECREMENT_COUNTER": 98,
+    "MC_BRANCH_ZERO": 99,
+    "MC_BRANCH_NONZERO": 100,
+    "MC_CHECK_PUSH8": 101,
+    "MC_CHECK_POP8": 102,
+    "MC_BEGIN_STACK_CURSOR": 103,
+    "MC_CHECK_STACK_TMP0": 104,
+    "MC_SET_STACK_ADDRESS_TMP0": 105,
+    "MC_READ_STACK_ADDRESS_TMP0": 106,
+    "MC_DECREMENT_STACK_ADDRESS": 107,
+    "MC_ALLOCATE_STACK": 108,
+    "MC_CHECK_RM32": 109,
+    "MC_SET_EA_PLUS2": 110,
+    "MC_CHECK_BOUNDS": 111,
+    "MC_READ_STACK_CURSOR_TMP0": 112,
+    "MC_CHECK_PUSH2": 113,
+    "MC_CHECK_POP2": 114,
+    "MC_ADD_ALLOCATION_SP": 115,
+    "MC_SYSTEM_STORE_GDTR": 136,
+    "MC_SYSTEM_STORE_IDTR": 137,
+    "MC_SYSTEM_LOAD_GDTR": 138,
+    "MC_SYSTEM_LOAD_IDTR": 139,
+    "MC_SYSTEM_STORE_MSW": 140,
+    "MC_SYSTEM_LOAD_MSW": 141,
+    "MC_SYSTEM_STORE_LDTR": 142,
+    "MC_SYSTEM_STORE_TR": 143,
+    "MC_SYSTEM_LOAD_LDTR": 144,
+    "MC_SYSTEM_LOAD_TR": 145,
+    "MC_SYSTEM_VERIFY_READ": 146,
+    "MC_SYSTEM_VERIFY_WRITE": 147,
+    "MC_SYSTEM_LOAD_ACCESS": 148,
+    "MC_SYSTEM_LOAD_LIMIT": 149,
+    "MC_SYSTEM_ARPL_CHECK": 166,
+    "MC_SYSTEM_ARPL": 167,
+    "MC_SYSTEM_CLTS": 168,
+    "MC_TASK_SWITCH": 169,
+    "MC_TASK_RETURN": 170,
+    "MC_LOADALL": 171,
+    "MC_CARRY_FILL8": 172,
+    "MC_CHECK_PROTECTED_MODE": 193,
+    "MC_CHECK_SYSTEM_PRIVILEGE": 194,
+    "MC_CHECK_IO_PRIVILEGE": 195,
+    "MC_CHECK_NPX_ESC": 196,
+    "MC_CHECK_NPX_WAIT": 197,
+    "MC_DECODE_ALU_RM16_REG16": 173,
+    "MC_DECODE_ALU_REG16_RM16": 174,
+    "MC_DECODE_ALU_RM8_REG8": 175,
+    "MC_DECODE_ALU_REG8_RM8": 176,
+    "MC_DECODE_MOV_RM16_REG16": 177,
+    "MC_DECODE_MOV_REG16_RM16": 178,
+    "MC_DECODE_MOV_RM8_REG8": 179,
+    "MC_DECODE_MOV_REG8_RM8": 180,
+    "MC_DECODE_UNARY_RM16": 190,
+    "MC_DECODE_UNARY_RM8": 191,
+    "MC_EXEC_INC_DEC_DST16": 192,
+    "MC_FETCH_ALU_DST16_IMM16": 181,
+    "MC_FETCH_ALU_DST8_IMM8": 182,
+    "MC_FETCH_ALU_RM16_IMM16": 183,
+    "MC_FETCH_ALU_RM16_IMM8S": 184,
+    "MC_FETCH_ALU_RM8_IMM8": 185,
+    "MC_FETCH_MOV_DST16_IMM16": 186,
+    "MC_FETCH_MOV_DST8_IMM8": 187,
+    "MC_FETCH_MOV_RM16_IMM16": 188,
+    "MC_FETCH_MOV_RM8_IMM8": 189,
+    "MC_VALIDATE_CS": 150,
+    "MC_VALIDATE_EVENT_GATE": 151,
+    "MC_EVENT_GATE_IP": 152,
+    "MC_EVENT_GATE_CS": 153,
+    "MC_CLEAR_EVENT_FLAGS": 154,
+    "MC_PUSH_EVENT_ERROR": 155,
+    "MC_VALIDATE_IRET_CS": 156,
+    "MC_IRET_OUTER_FRAME": 157,
+    "MC_VALIDATE_IRET_SS": 158,
+    "MC_VALIDATE_CALL_GATE": 159,
+    "MC_VALIDATE_CALL_CS": 160,
+    "MC_VALIDATE_CALL_STACK": 161,
+    "MC_VALIDATE_CALL_SS": 162,
+    "MC_CALL_GATE_STACK_SWITCH": 163,
+    "MC_CHECK_CALL_FRAME": 164,
+    "MC_COPY_CALL_PARAMETERS": 165,
+    "MC_BRANCH_REPEAT_EMPTY": 121,
+    "MC_STEP_STRING_SOURCE": 122,
+    "MC_STEP_STRING_DEST": 123,
+    "MC_REPEAT_COUNT": 124,
+    "MC_READ_STRING_TMP0": 125,
+    "MC_READ_STRING_TMP1": 126,
+    "MC_WRITE_STRING_TMP0": 127,
+    "MC_BRANCH_REPEAT_CONTINUE": 128,
+    "MC_READ_STRING_ACCUMULATOR": 129,
+    "MC_WRITE_STRING_ACCUMULATOR": 130,
+    "MC_IO_READ8": 131,
+    "MC_IO_READ16": 132,
+    "MC_IO_WRITE8": 133,
+    "MC_IO_WRITE16": 134,
+    "MC_FETCH_PORT": 135,
+    "MC_MULDIV8": 116,
+    "MC_MULDIV16": 117,
+    "MC_IMUL_IMM16": 118,
+    "MC_WRITE_RESULT_AX16": 119,
+    "MC_WRITE_RESULT_DX16": 120
+  },
+  "pure_aliases": {
+    "io_byte": "operation == spk286_microcode_pkg::MC_IO_READ8 || operation == spk286_microcode_pkg::MC_IO_WRITE8",
+    "muldiv_byte": "operation == spk286_microcode_pkg::MC_MULDIV8",
+    "muldiv_immediate": "operation == spk286_microcode_pkg::MC_IMUL_IMM16",
+    "system_is_gdtr": "operation == spk286_microcode_pkg::MC_SYSTEM_STORE_GDTR || operation == spk286_microcode_pkg::MC_SYSTEM_LOAD_GDTR",
+    "fetch_tmp1": "operation == spk286_microcode_pkg::MC_FETCH_IMM16_TMP1",
+    "result_operation": "operation == spk286_microcode_pkg::MC_WRITE_RESULT_REG8 || operation == spk286_microcode_pkg::MC_WRITE_RESULT_RM8 || operation == spk286_microcode_pkg::MC_WRITE_RESULT_REG16 || operation == spk286_microcode_pkg::MC_WRITE_RESULT_RM16 ||\n                              (operation == spk286_microcode_pkg::MC_WRITE_RESULT_DST || operation == spk286_microcode_pkg::MC_WRITE_RESULT_DST8)"
+  },
+  "changes": [
+    {
+      "signal": "if_control_operation",
+      "guard": "allowed && operation == spk286_microcode_pkg::MC_SET_IF",
+      "original_statement": "    assign if_control_operation = allowed && operation == spk286_microcode_pkg::MC_SET_IF;",
+      "replacement_statement": "    assign if_control_operation = implementation_allowed && operation == spk286_microcode_pkg::MC_SET_IF;",
+      "original_model": [
+        "and",
+        [
+          [
+            "permission",
+            "allowed"
+          ],
+          [
+            "compare",
+            "==",
+            32
+          ]
+        ]
+      ],
+      "replacement_model": [
+        "and",
+        [
+          [
+            "permission",
+            "implementation_allowed"
+          ],
+          [
+            "compare",
+            "==",
+            32
+          ]
+        ]
+      ]
+    },
+    {
+      "signal": "io_privilege_check",
+      "guard": "allowed && operation == spk286_microcode_pkg::MC_CHECK_IO_PRIVILEGE",
+      "original_statement": "    assign io_privilege_check = allowed && operation == spk286_microcode_pkg::MC_CHECK_IO_PRIVILEGE;",
+      "replacement_statement": "    assign io_privilege_check = implementation_allowed && operation == spk286_microcode_pkg::MC_CHECK_IO_PRIVILEGE;",
+      "original_model": [
+        "and",
+        [
+          [
+            "permission",
+            "allowed"
+          ],
+          [
+            "compare",
+            "==",
+            195
+          ]
+        ]
+      ],
+      "replacement_model": [
+        "and",
+        [
+          [
+            "permission",
+            "implementation_allowed"
+          ],
+          [
+            "compare",
+            "==",
+            195
+          ]
+        ]
+      ]
+    },
+    {
+      "signal": "io_operation",
+      "guard": "allowed && (operation == spk286_microcode_pkg::MC_IO_READ8 || operation == spk286_microcode_pkg::MC_IO_READ16 ||\n                                     operation == spk286_microcode_pkg::MC_IO_WRITE8 || operation == spk286_microcode_pkg::MC_IO_WRITE16)",
+      "original_statement": "    assign io_operation = allowed && (operation == spk286_microcode_pkg::MC_IO_READ8 || operation == spk286_microcode_pkg::MC_IO_READ16 ||\n                                     operation == spk286_microcode_pkg::MC_IO_WRITE8 || operation == spk286_microcode_pkg::MC_IO_WRITE16);",
+      "replacement_statement": "    assign io_operation = implementation_allowed && (operation == spk286_microcode_pkg::MC_IO_READ8 || operation == spk286_microcode_pkg::MC_IO_READ16 ||\n                                     operation == spk286_microcode_pkg::MC_IO_WRITE8 || operation == spk286_microcode_pkg::MC_IO_WRITE16);",
+      "original_model": [
+        "and",
+        [
+          [
+            "permission",
+            "allowed"
+          ],
+          [
+            "or",
+            [
+              [
+                "compare",
+                "==",
+                131
+              ],
+              [
+                "compare",
+                "==",
+                132
+              ],
+              [
+                "compare",
+                "==",
+                133
+              ],
+              [
+                "compare",
+                "==",
+                134
+              ]
+            ]
+          ]
+        ]
+      ],
+      "replacement_model": [
+        "and",
+        [
+          [
+            "permission",
+            "implementation_allowed"
+          ],
+          [
+            "or",
+            [
+              [
+                "compare",
+                "==",
+                131
+              ],
+              [
+                "compare",
+                "==",
+                132
+              ],
+              [
+                "compare",
+                "==",
+                133
+              ],
+              [
+                "compare",
+                "==",
+                134
+              ]
+            ]
+          ]
+        ]
+      ]
+    },
+    {
+      "signal": "fetch_port",
+      "guard": "allowed && operation == spk286_microcode_pkg::MC_FETCH_PORT",
+      "original_statement": "    assign fetch_port = allowed && operation == spk286_microcode_pkg::MC_FETCH_PORT;",
+      "replacement_statement": "    assign fetch_port = implementation_allowed && operation == spk286_microcode_pkg::MC_FETCH_PORT;",
+      "original_model": [
+        "and",
+        [
+          [
+            "permission",
+            "allowed"
+          ],
+          [
+            "compare",
+            "==",
+            135
+          ]
+        ]
+      ],
+      "replacement_model": [
+        "and",
+        [
+          [
+            "permission",
+            "implementation_allowed"
+          ],
+          [
+            "compare",
+            "==",
+            135
+          ]
+        ]
+      ]
+    },
+    {
+      "signal": "io_read",
+      "guard": "allowed && !io_privilege_fault && temporary_valid_q[1] && (operation == spk286_microcode_pkg::MC_IO_READ8 || operation == spk286_microcode_pkg::MC_IO_READ16)",
+      "original_statement": "    assign io_read = allowed && !io_privilege_fault && temporary_valid_q[1] && (operation == spk286_microcode_pkg::MC_IO_READ8 || operation == spk286_microcode_pkg::MC_IO_READ16);",
+      "replacement_statement": "    assign io_read = implementation_allowed && !io_privilege_fault && temporary_valid_q[1] && (operation == spk286_microcode_pkg::MC_IO_READ8 || operation == spk286_microcode_pkg::MC_IO_READ16);",
+      "original_model": [
+        "and",
+        [
+          [
+            "permission",
+            "allowed"
+          ],
+          [
+            "not",
+            [
+              "and",
+              [
+                [
+                  "context",
+                  "protected_msw[0]"
+                ],
+                [
+                  "context",
+                  "protected_cpl > architectural_flags[13:12]"
+                ],
+                [
+                  "or",
+                  [
+                    [
+                      "and",
+                      [
+                        [
+                          "permission",
+                          "allowed"
+                        ],
+                        [
+                          "compare",
+                          "==",
+                          32
+                        ]
+                      ]
+                    ],
+                    [
+                      "and",
+                      [
+                        [
+                          "permission",
+                          "allowed"
+                        ],
+                        [
+                          "compare",
+                          "==",
+                          195
+                        ]
+                      ]
+                    ],
+                    [
+                      "and",
+                      [
+                        [
+                          "permission",
+                          "allowed"
+                        ],
+                        [
+                          "or",
+                          [
+                            [
+                              "compare",
+                              "==",
+                              131
+                            ],
+                            [
+                              "compare",
+                              "==",
+                              132
+                            ],
+                            [
+                              "compare",
+                              "==",
+                              133
+                            ],
+                            [
+                              "compare",
+                              "==",
+                              134
+                            ]
+                          ]
+                        ]
+                      ]
+                    ]
+                  ]
+                ]
+              ]
+            ]
+          ],
+          [
+            "context",
+            "temporary_valid_q[1]"
+          ],
+          [
+            "or",
+            [
+              [
+                "compare",
+                "==",
+                131
+              ],
+              [
+                "compare",
+                "==",
+                132
+              ]
+            ]
+          ]
+        ]
+      ],
+      "replacement_model": [
+        "and",
+        [
+          [
+            "permission",
+            "implementation_allowed"
+          ],
+          [
+            "not",
+            [
+              "and",
+              [
+                [
+                  "context",
+                  "protected_msw[0]"
+                ],
+                [
+                  "context",
+                  "protected_cpl > architectural_flags[13:12]"
+                ],
+                [
+                  "or",
+                  [
+                    [
+                      "and",
+                      [
+                        [
+                          "permission",
+                          "allowed"
+                        ],
+                        [
+                          "compare",
+                          "==",
+                          32
+                        ]
+                      ]
+                    ],
+                    [
+                      "and",
+                      [
+                        [
+                          "permission",
+                          "allowed"
+                        ],
+                        [
+                          "compare",
+                          "==",
+                          195
+                        ]
+                      ]
+                    ],
+                    [
+                      "and",
+                      [
+                        [
+                          "permission",
+                          "allowed"
+                        ],
+                        [
+                          "or",
+                          [
+                            [
+                              "compare",
+                              "==",
+                              131
+                            ],
+                            [
+                              "compare",
+                              "==",
+                              132
+                            ],
+                            [
+                              "compare",
+                              "==",
+                              133
+                            ],
+                            [
+                              "compare",
+                              "==",
+                              134
+                            ]
+                          ]
+                        ]
+                      ]
+                    ]
+                  ]
+                ]
+              ]
+            ]
+          ],
+          [
+            "context",
+            "temporary_valid_q[1]"
+          ],
+          [
+            "or",
+            [
+              [
+                "compare",
+                "==",
+                131
+              ],
+              [
+                "compare",
+                "==",
+                132
+              ]
+            ]
+          ]
+        ]
+      ]
+    },
+    {
+      "signal": "io_write",
+      "guard": "allowed && !io_privilege_fault && &temporary_valid_q[1:0] && (operation == spk286_microcode_pkg::MC_IO_WRITE8 || operation == spk286_microcode_pkg::MC_IO_WRITE16)",
+      "original_statement": "    assign io_write = allowed && !io_privilege_fault && &temporary_valid_q[1:0] && (operation == spk286_microcode_pkg::MC_IO_WRITE8 || operation == spk286_microcode_pkg::MC_IO_WRITE16);",
+      "replacement_statement": "    assign io_write = implementation_allowed && !io_privilege_fault && &temporary_valid_q[1:0] && (operation == spk286_microcode_pkg::MC_IO_WRITE8 || operation == spk286_microcode_pkg::MC_IO_WRITE16);",
+      "original_model": [
+        "and",
+        [
+          [
+            "permission",
+            "allowed"
+          ],
+          [
+            "not",
+            [
+              "and",
+              [
+                [
+                  "context",
+                  "protected_msw[0]"
+                ],
+                [
+                  "context",
+                  "protected_cpl > architectural_flags[13:12]"
+                ],
+                [
+                  "or",
+                  [
+                    [
+                      "and",
+                      [
+                        [
+                          "permission",
+                          "allowed"
+                        ],
+                        [
+                          "compare",
+                          "==",
+                          32
+                        ]
+                      ]
+                    ],
+                    [
+                      "and",
+                      [
+                        [
+                          "permission",
+                          "allowed"
+                        ],
+                        [
+                          "compare",
+                          "==",
+                          195
+                        ]
+                      ]
+                    ],
+                    [
+                      "and",
+                      [
+                        [
+                          "permission",
+                          "allowed"
+                        ],
+                        [
+                          "or",
+                          [
+                            [
+                              "compare",
+                              "==",
+                              131
+                            ],
+                            [
+                              "compare",
+                              "==",
+                              132
+                            ],
+                            [
+                              "compare",
+                              "==",
+                              133
+                            ],
+                            [
+                              "compare",
+                              "==",
+                              134
+                            ]
+                          ]
+                        ]
+                      ]
+                    ]
+                  ]
+                ]
+              ]
+            ]
+          ],
+          [
+            "context",
+            "&temporary_valid_q[1:0]"
+          ],
+          [
+            "or",
+            [
+              [
+                "compare",
+                "==",
+                133
+              ],
+              [
+                "compare",
+                "==",
+                134
+              ]
+            ]
+          ]
+        ]
+      ],
+      "replacement_model": [
+        "and",
+        [
+          [
+            "permission",
+            "implementation_allowed"
+          ],
+          [
+            "not",
+            [
+              "and",
+              [
+                [
+                  "context",
+                  "protected_msw[0]"
+                ],
+                [
+                  "context",
+                  "protected_cpl > architectural_flags[13:12]"
+                ],
+                [
+                  "or",
+                  [
+                    [
+                      "and",
+                      [
+                        [
+                          "permission",
+                          "allowed"
+                        ],
+                        [
+                          "compare",
+                          "==",
+                          32
+                        ]
+                      ]
+                    ],
+                    [
+                      "and",
+                      [
+                        [
+                          "permission",
+                          "allowed"
+                        ],
+                        [
+                          "compare",
+                          "==",
+                          195
+                        ]
+                      ]
+                    ],
+                    [
+                      "and",
+                      [
+                        [
+                          "permission",
+                          "allowed"
+                        ],
+                        [
+                          "or",
+                          [
+                            [
+                              "compare",
+                              "==",
+                              131
+                            ],
+                            [
+                              "compare",
+                              "==",
+                              132
+                            ],
+                            [
+                              "compare",
+                              "==",
+                              133
+                            ],
+                            [
+                              "compare",
+                              "==",
+                              134
+                            ]
+                          ]
+                        ]
+                      ]
+                    ]
+                  ]
+                ]
+              ]
+            ]
+          ],
+          [
+            "context",
+            "&temporary_valid_q[1:0]"
+          ],
+          [
+            "or",
+            [
+              [
+                "compare",
+                "==",
+                133
+              ],
+              [
+                "compare",
+                "==",
+                134
+              ]
+            ]
+          ]
+        ]
+      ]
+    },
+    {
+      "signal": "string_step_source",
+      "guard": "allowed && operation == spk286_microcode_pkg::MC_STEP_STRING_SOURCE",
+      "original_statement": "    assign string_step_source = allowed && operation == spk286_microcode_pkg::MC_STEP_STRING_SOURCE;",
+      "replacement_statement": "    assign string_step_source = implementation_allowed && operation == spk286_microcode_pkg::MC_STEP_STRING_SOURCE;",
+      "original_model": [
+        "and",
+        [
+          [
+            "permission",
+            "allowed"
+          ],
+          [
+            "compare",
+            "==",
+            122
+          ]
+        ]
+      ],
+      "replacement_model": [
+        "and",
+        [
+          [
+            "permission",
+            "implementation_allowed"
+          ],
+          [
+            "compare",
+            "==",
+            122
+          ]
+        ]
+      ]
+    },
+    {
+      "signal": "string_step_dest",
+      "guard": "allowed && operation == spk286_microcode_pkg::MC_STEP_STRING_DEST",
+      "original_statement": "    assign string_step_dest = allowed && operation == spk286_microcode_pkg::MC_STEP_STRING_DEST;",
+      "replacement_statement": "    assign string_step_dest = implementation_allowed && operation == spk286_microcode_pkg::MC_STEP_STRING_DEST;",
+      "original_model": [
+        "and",
+        [
+          [
+            "permission",
+            "allowed"
+          ],
+          [
+            "compare",
+            "==",
+            123
+          ]
+        ]
+      ],
+      "replacement_model": [
+        "and",
+        [
+          [
+            "permission",
+            "implementation_allowed"
+          ],
+          [
+            "compare",
+            "==",
+            123
+          ]
+        ]
+      ]
+    },
+    {
+      "signal": "string_count",
+      "guard": "allowed && operation == spk286_microcode_pkg::MC_REPEAT_COUNT",
+      "original_statement": "    assign string_count = allowed && operation == spk286_microcode_pkg::MC_REPEAT_COUNT;",
+      "replacement_statement": "    assign string_count = implementation_allowed && operation == spk286_microcode_pkg::MC_REPEAT_COUNT;",
+      "original_model": [
+        "and",
+        [
+          [
+            "permission",
+            "allowed"
+          ],
+          [
+            "compare",
+            "==",
+            124
+          ]
+        ]
+      ],
+      "replacement_model": [
+        "and",
+        [
+          [
+            "permission",
+            "implementation_allowed"
+          ],
+          [
+            "compare",
+            "==",
+            124
+          ]
+        ]
+      ]
+    },
+    {
+      "signal": "string_read0",
+      "guard": "allowed && operation == spk286_microcode_pkg::MC_READ_STRING_TMP0 && address_override",
+      "original_statement": "    assign string_read0 = allowed && operation == spk286_microcode_pkg::MC_READ_STRING_TMP0 && address_override;",
+      "replacement_statement": "    assign string_read0 = implementation_allowed && operation == spk286_microcode_pkg::MC_READ_STRING_TMP0 && address_override;",
+      "original_model": [
+        "and",
+        [
+          [
+            "permission",
+            "allowed"
+          ],
+          [
+            "compare",
+            "==",
+            125
+          ],
+          [
+            "context",
+            "address_override"
+          ]
+        ]
+      ],
+      "replacement_model": [
+        "and",
+        [
+          [
+            "permission",
+            "implementation_allowed"
+          ],
+          [
+            "compare",
+            "==",
+            125
+          ],
+          [
+            "context",
+            "address_override"
+          ]
+        ]
+      ]
+    },
+    {
+      "signal": "string_read1",
+      "guard": "allowed && operation == spk286_microcode_pkg::MC_READ_STRING_TMP1 && address_override",
+      "original_statement": "    assign string_read1 = allowed && operation == spk286_microcode_pkg::MC_READ_STRING_TMP1 && address_override;",
+      "replacement_statement": "    assign string_read1 = implementation_allowed && operation == spk286_microcode_pkg::MC_READ_STRING_TMP1 && address_override;",
+      "original_model": [
+        "and",
+        [
+          [
+            "permission",
+            "allowed"
+          ],
+          [
+            "compare",
+            "==",
+            126
+          ],
+          [
+            "context",
+            "address_override"
+          ]
+        ]
+      ],
+      "replacement_model": [
+        "and",
+        [
+          [
+            "permission",
+            "implementation_allowed"
+          ],
+          [
+            "compare",
+            "==",
+            126
+          ],
+          [
+            "context",
+            "address_override"
+          ]
+        ]
+      ]
+    },
+    {
+      "signal": "string_store",
+      "guard": "allowed && operation == spk286_microcode_pkg::MC_WRITE_STRING_TMP0 && address_override && temporary_valid_q[0]",
+      "original_statement": "    assign string_store = allowed && operation == spk286_microcode_pkg::MC_WRITE_STRING_TMP0 && address_override && temporary_valid_q[0];",
+      "replacement_statement": "    assign string_store = implementation_allowed && operation == spk286_microcode_pkg::MC_WRITE_STRING_TMP0 && address_override && temporary_valid_q[0];",
+      "original_model": [
+        "and",
+        [
+          [
+            "permission",
+            "allowed"
+          ],
+          [
+            "compare",
+            "==",
+            127
+          ],
+          [
+            "context",
+            "address_override"
+          ],
+          [
+            "context",
+            "temporary_valid_q[0]"
+          ]
+        ]
+      ],
+      "replacement_model": [
+        "and",
+        [
+          [
+            "permission",
+            "implementation_allowed"
+          ],
+          [
+            "compare",
+            "==",
+            127
+          ],
+          [
+            "context",
+            "address_override"
+          ],
+          [
+            "context",
+            "temporary_valid_q[0]"
+          ]
+        ]
+      ]
+    },
+    {
+      "signal": "string_read_acc",
+      "guard": "allowed && operation == spk286_microcode_pkg::MC_READ_STRING_ACCUMULATOR",
+      "original_statement": "    assign string_read_acc = allowed && operation == spk286_microcode_pkg::MC_READ_STRING_ACCUMULATOR;",
+      "replacement_statement": "    assign string_read_acc = implementation_allowed && operation == spk286_microcode_pkg::MC_READ_STRING_ACCUMULATOR;",
+      "original_model": [
+        "and",
+        [
+          [
+            "permission",
+            "allowed"
+          ],
+          [
+            "compare",
+            "==",
+            129
+          ]
+        ]
+      ],
+      "replacement_model": [
+        "and",
+        [
+          [
+            "permission",
+            "implementation_allowed"
+          ],
+          [
+            "compare",
+            "==",
+            129
+          ]
+        ]
+      ]
+    },
+    {
+      "signal": "string_write_acc",
+      "guard": "allowed && operation == spk286_microcode_pkg::MC_WRITE_STRING_ACCUMULATOR && temporary_valid_q[0]",
+      "original_statement": "    assign string_write_acc = allowed && operation == spk286_microcode_pkg::MC_WRITE_STRING_ACCUMULATOR && temporary_valid_q[0];",
+      "replacement_statement": "    assign string_write_acc = implementation_allowed && operation == spk286_microcode_pkg::MC_WRITE_STRING_ACCUMULATOR && temporary_valid_q[0];",
+      "original_model": [
+        "and",
+        [
+          [
+            "permission",
+            "allowed"
+          ],
+          [
+            "compare",
+            "==",
+            130
+          ],
+          [
+            "context",
+            "temporary_valid_q[0]"
+          ]
+        ]
+      ],
+      "replacement_model": [
+        "and",
+        [
+          [
+            "permission",
+            "implementation_allowed"
+          ],
+          [
+            "compare",
+            "==",
+            130
+          ],
+          [
+            "context",
+            "temporary_valid_q[0]"
+          ]
+        ]
+      ]
+    },
+    {
+      "signal": "check_push2",
+      "guard": "allowed && operation==spk286_microcode_pkg::MC_CHECK_PUSH2",
+      "original_statement": "    assign check_push2=allowed && operation==spk286_microcode_pkg::MC_CHECK_PUSH2;",
+      "replacement_statement": "    assign check_push2=implementation_allowed && operation==spk286_microcode_pkg::MC_CHECK_PUSH2;",
+      "original_model": [
+        "and",
+        [
+          [
+            "permission",
+            "allowed"
+          ],
+          [
+            "compare",
+            "==",
+            113
+          ]
+        ]
+      ],
+      "replacement_model": [
+        "and",
+        [
+          [
+            "permission",
+            "implementation_allowed"
+          ],
+          [
+            "compare",
+            "==",
+            113
+          ]
+        ]
+      ]
+    },
+    {
+      "signal": "check_pop2",
+      "guard": "allowed && operation==spk286_microcode_pkg::MC_CHECK_POP2",
+      "original_statement": "    assign check_pop2=allowed && operation==spk286_microcode_pkg::MC_CHECK_POP2;",
+      "replacement_statement": "    assign check_pop2=implementation_allowed && operation==spk286_microcode_pkg::MC_CHECK_POP2;",
+      "original_model": [
+        "and",
+        [
+          [
+            "permission",
+            "allowed"
+          ],
+          [
+            "compare",
+            "==",
+            114
+          ]
+        ]
+      ],
+      "replacement_model": [
+        "and",
+        [
+          [
+            "permission",
+            "implementation_allowed"
+          ],
+          [
+            "compare",
+            "==",
+            114
+          ]
+        ]
+      ]
+    },
+    {
+      "signal": "check_call_frame",
+      "guard": "allowed && operation == spk286_microcode_pkg::MC_CHECK_CALL_FRAME",
+      "original_statement": "    assign check_call_frame = allowed && operation == spk286_microcode_pkg::MC_CHECK_CALL_FRAME;",
+      "replacement_statement": "    assign check_call_frame = implementation_allowed && operation == spk286_microcode_pkg::MC_CHECK_CALL_FRAME;",
+      "original_model": [
+        "and",
+        [
+          [
+            "permission",
+            "allowed"
+          ],
+          [
+            "compare",
+            "==",
+            164
+          ]
+        ]
+      ],
+      "replacement_model": [
+        "and",
+        [
+          [
+            "permission",
+            "implementation_allowed"
+          ],
+          [
+            "compare",
+            "==",
+            164
+          ]
+        ]
+      ]
+    },
+    {
+      "signal": "copy_call_parameters",
+      "guard": "allowed && operation == spk286_microcode_pkg::MC_COPY_CALL_PARAMETERS",
+      "original_statement": "    assign copy_call_parameters = allowed && operation == spk286_microcode_pkg::MC_COPY_CALL_PARAMETERS;",
+      "replacement_statement": "    assign copy_call_parameters = implementation_allowed && operation == spk286_microcode_pkg::MC_COPY_CALL_PARAMETERS;",
+      "original_model": [
+        "and",
+        [
+          [
+            "permission",
+            "allowed"
+          ],
+          [
+            "compare",
+            "==",
+            165
+          ]
+        ]
+      ],
+      "replacement_model": [
+        "and",
+        [
+          [
+            "permission",
+            "implementation_allowed"
+          ],
+          [
+            "compare",
+            "==",
+            165
+          ]
+        ]
+      ]
+    },
+    {
+      "signal": "add_allocation_sp",
+      "guard": "allowed && operation==spk286_microcode_pkg::MC_ADD_ALLOCATION_SP && allocation_valid_q && !iret_outer_required",
+      "original_statement": "    assign add_allocation_sp=allowed && operation==spk286_microcode_pkg::MC_ADD_ALLOCATION_SP && allocation_valid_q && !iret_outer_required;",
+      "replacement_statement": "    assign add_allocation_sp=implementation_allowed && operation==spk286_microcode_pkg::MC_ADD_ALLOCATION_SP && allocation_valid_q && !iret_outer_required;",
+      "original_model": [
+        "and",
+        [
+          [
+            "permission",
+            "allowed"
+          ],
+          [
+            "compare",
+            "==",
+            115
+          ],
+          [
+            "context",
+            "allocation_valid_q"
+          ],
+          [
+            "not",
+            [
+              "and",
+              [
+                [
+                  "context",
+                  "protected_msw[0]"
+                ],
+                [
+                  "context",
+                  "protected_return_cursor_q"
+                ],
+                [
+                  "context",
+                  "temporary_valid_q[1]"
+                ],
+                [
+                  "context",
+                  "tmp1_q[1:0] > protected_cpl"
+                ]
+              ]
+            ]
+          ]
+        ]
+      ],
+      "replacement_model": [
+        "and",
+        [
+          [
+            "permission",
+            "implementation_allowed"
+          ],
+          [
+            "compare",
+            "==",
+            115
+          ],
+          [
+            "context",
+            "allocation_valid_q"
+          ],
+          [
+            "not",
+            [
+              "and",
+              [
+                [
+                  "context",
+                  "protected_msw[0]"
+                ],
+                [
+                  "context",
+                  "protected_return_cursor_q"
+                ],
+                [
+                  "context",
+                  "temporary_valid_q[1]"
+                ],
+                [
+                  "context",
+                  "tmp1_q[1:0] > protected_cpl"
+                ]
+              ]
+            ]
+          ]
+        ]
+      ]
+    },
+    {
+      "signal": "frame_read_gpr",
+      "guard": "allowed && operation >= spk286_microcode_pkg::MC_READ_AX_TMP0 && operation <= spk286_microcode_pkg::MC_READ_DI_TMP0",
+      "original_statement": "    assign frame_read_gpr = allowed && operation >= spk286_microcode_pkg::MC_READ_AX_TMP0 && operation <= spk286_microcode_pkg::MC_READ_DI_TMP0;",
+      "replacement_statement": "    assign frame_read_gpr = implementation_allowed && operation >= spk286_microcode_pkg::MC_READ_AX_TMP0 && operation <= spk286_microcode_pkg::MC_READ_DI_TMP0;",
+      "original_model": [
+        "and",
+        [
+          [
+            "permission",
+            "allowed"
+          ],
+          [
+            "compare",
+            ">=",
+            78
+          ],
+          [
+            "compare",
+            "<=",
+            85
+          ]
+        ]
+      ],
+      "replacement_model": [
+        "and",
+        [
+          [
+            "permission",
+            "implementation_allowed"
+          ],
+          [
+            "compare",
+            ">=",
+            78
+          ],
+          [
+            "compare",
+            "<=",
+            85
+          ]
+        ]
+      ]
+    },
+    {
+      "signal": "frame_write_gpr",
+      "guard": "allowed && operation >= spk286_microcode_pkg::MC_WRITE_AX_TMP0 && operation <= spk286_microcode_pkg::MC_WRITE_DI_TMP0 && temporary_valid_q[0]",
+      "original_statement": "    assign frame_write_gpr = allowed && operation >= spk286_microcode_pkg::MC_WRITE_AX_TMP0 && operation <= spk286_microcode_pkg::MC_WRITE_DI_TMP0 && temporary_valid_q[0];",
+      "replacement_statement": "    assign frame_write_gpr = implementation_allowed && operation >= spk286_microcode_pkg::MC_WRITE_AX_TMP0 && operation <= spk286_microcode_pkg::MC_WRITE_DI_TMP0 && temporary_valid_q[0];",
+      "original_model": [
+        "and",
+        [
+          [
+            "permission",
+            "allowed"
+          ],
+          [
+            "compare",
+            ">=",
+            86
+          ],
+          [
+            "compare",
+            "<=",
+            93
+          ],
+          [
+            "context",
+            "temporary_valid_q[0]"
+          ]
+        ]
+      ],
+      "replacement_model": [
+        "and",
+        [
+          [
+            "permission",
+            "implementation_allowed"
+          ],
+          [
+            "compare",
+            ">=",
+            86
+          ],
+          [
+            "compare",
+            "<=",
+            93
+          ],
+          [
+            "context",
+            "temporary_valid_q[0]"
+          ]
+        ]
+      ]
+    },
+    {
+      "signal": "save_auxiliary",
+      "guard": "allowed && operation == spk286_microcode_pkg::MC_SAVE_AUX_TMP0 && temporary_valid_q[0]",
+      "original_statement": "    assign save_auxiliary = allowed && operation == spk286_microcode_pkg::MC_SAVE_AUX_TMP0 && temporary_valid_q[0];",
+      "replacement_statement": "    assign save_auxiliary = implementation_allowed && operation == spk286_microcode_pkg::MC_SAVE_AUX_TMP0 && temporary_valid_q[0];",
+      "original_model": [
+        "and",
+        [
+          [
+            "permission",
+            "allowed"
+          ],
+          [
+            "compare",
+            "==",
+            94
+          ],
+          [
+            "context",
+            "temporary_valid_q[0]"
+          ]
+        ]
+      ],
+      "replacement_model": [
+        "and",
+        [
+          [
+            "permission",
+            "implementation_allowed"
+          ],
+          [
+            "compare",
+            "==",
+            94
+          ],
+          [
+            "context",
+            "temporary_valid_q[0]"
+          ]
+        ]
+      ]
+    },
+    {
+      "signal": "restore_auxiliary",
+      "guard": "allowed && operation == spk286_microcode_pkg::MC_RESTORE_AUX_TMP0 && auxiliary_valid_q",
+      "original_statement": "    assign restore_auxiliary = allowed && operation == spk286_microcode_pkg::MC_RESTORE_AUX_TMP0 && auxiliary_valid_q;",
+      "replacement_statement": "    assign restore_auxiliary = implementation_allowed && operation == spk286_microcode_pkg::MC_RESTORE_AUX_TMP0 && auxiliary_valid_q;",
+      "original_model": [
+        "and",
+        [
+          [
+            "permission",
+            "allowed"
+          ],
+          [
+            "compare",
+            "==",
+            95
+          ],
+          [
+            "context",
+            "auxiliary_valid_q"
+          ]
+        ]
+      ],
+      "replacement_model": [
+        "and",
+        [
+          [
+            "permission",
+            "implementation_allowed"
+          ],
+          [
+            "compare",
+            "==",
+            95
+          ],
+          [
+            "context",
+            "auxiliary_valid_q"
+          ]
+        ]
+      ]
+    },
+    {
+      "signal": "save_allocation",
+      "guard": "allowed && operation == spk286_microcode_pkg::MC_SAVE_ALLOCATION_TMP0 && temporary_valid_q[0]",
+      "original_statement": "    assign save_allocation = allowed && operation == spk286_microcode_pkg::MC_SAVE_ALLOCATION_TMP0 && temporary_valid_q[0];",
+      "replacement_statement": "    assign save_allocation = implementation_allowed && operation == spk286_microcode_pkg::MC_SAVE_ALLOCATION_TMP0 && temporary_valid_q[0];",
+      "original_model": [
+        "and",
+        [
+          [
+            "permission",
+            "allowed"
+          ],
+          [
+            "compare",
+            "==",
+            96
+          ],
+          [
+            "context",
+            "temporary_valid_q[0]"
+          ]
+        ]
+      ],
+      "replacement_model": [
+        "and",
+        [
+          [
+            "permission",
+            "implementation_allowed"
+          ],
+          [
+            "compare",
+            "==",
+            96
+          ],
+          [
+            "context",
+            "temporary_valid_q[0]"
+          ]
+        ]
+      ]
+    },
+    {
+      "signal": "load_counter",
+      "guard": "allowed && operation == spk286_microcode_pkg::MC_LOAD_COUNTER_TMP1 && temporary_valid_q[1]",
+      "original_statement": "    assign load_counter = allowed && operation == spk286_microcode_pkg::MC_LOAD_COUNTER_TMP1 && temporary_valid_q[1];",
+      "replacement_statement": "    assign load_counter = implementation_allowed && operation == spk286_microcode_pkg::MC_LOAD_COUNTER_TMP1 && temporary_valid_q[1];",
+      "original_model": [
+        "and",
+        [
+          [
+            "permission",
+            "allowed"
+          ],
+          [
+            "compare",
+            "==",
+            97
+          ],
+          [
+            "context",
+            "temporary_valid_q[1]"
+          ]
+        ]
+      ],
+      "replacement_model": [
+        "and",
+        [
+          [
+            "permission",
+            "implementation_allowed"
+          ],
+          [
+            "compare",
+            "==",
+            97
+          ],
+          [
+            "context",
+            "temporary_valid_q[1]"
+          ]
+        ]
+      ]
+    },
+    {
+      "signal": "decrement_counter",
+      "guard": "allowed && operation == spk286_microcode_pkg::MC_DECREMENT_COUNTER && counter_valid_q && counter_q != 0",
+      "original_statement": "    assign decrement_counter = allowed && operation == spk286_microcode_pkg::MC_DECREMENT_COUNTER && counter_valid_q && counter_q != 0;",
+      "replacement_statement": "    assign decrement_counter = implementation_allowed && operation == spk286_microcode_pkg::MC_DECREMENT_COUNTER && counter_valid_q && counter_q != 0;",
+      "original_model": [
+        "and",
+        [
+          [
+            "permission",
+            "allowed"
+          ],
+          [
+            "compare",
+            "==",
+            98
+          ],
+          [
+            "context",
+            "counter_valid_q"
+          ],
+          [
+            "context",
+            "counter_q != 0"
+          ]
+        ]
+      ],
+      "replacement_model": [
+        "and",
+        [
+          [
+            "permission",
+            "implementation_allowed"
+          ],
+          [
+            "compare",
+            "==",
+            98
+          ],
+          [
+            "context",
+            "counter_valid_q"
+          ],
+          [
+            "context",
+            "counter_q != 0"
+          ]
+        ]
+      ]
+    },
+    {
+      "signal": "counter_branch",
+      "guard": "allowed && counter_valid_q && (operation == spk286_microcode_pkg::MC_BRANCH_ZERO || operation == spk286_microcode_pkg::MC_BRANCH_NONZERO)",
+      "original_statement": "    assign counter_branch = allowed && counter_valid_q && (operation == spk286_microcode_pkg::MC_BRANCH_ZERO || operation == spk286_microcode_pkg::MC_BRANCH_NONZERO);",
+      "replacement_statement": "    assign counter_branch = implementation_allowed && counter_valid_q && (operation == spk286_microcode_pkg::MC_BRANCH_ZERO || operation == spk286_microcode_pkg::MC_BRANCH_NONZERO);",
+      "original_model": [
+        "and",
+        [
+          [
+            "permission",
+            "allowed"
+          ],
+          [
+            "context",
+            "counter_valid_q"
+          ],
+          [
+            "or",
+            [
+              [
+                "compare",
+                "==",
+                99
+              ],
+              [
+                "compare",
+                "==",
+                100
+              ]
+            ]
+          ]
+        ]
+      ],
+      "replacement_model": [
+        "and",
+        [
+          [
+            "permission",
+            "implementation_allowed"
+          ],
+          [
+            "context",
+            "counter_valid_q"
+          ],
+          [
+            "or",
+            [
+              [
+                "compare",
+                "==",
+                99
+              ],
+              [
+                "compare",
+                "==",
+                100
+              ]
+            ]
+          ]
+        ]
+      ]
+    },
+    {
+      "signal": "check_push8",
+      "guard": "allowed && operation == spk286_microcode_pkg::MC_CHECK_PUSH8",
+      "original_statement": "    assign check_push8 = allowed && operation == spk286_microcode_pkg::MC_CHECK_PUSH8;",
+      "replacement_statement": "    assign check_push8 = implementation_allowed && operation == spk286_microcode_pkg::MC_CHECK_PUSH8;",
+      "original_model": [
+        "and",
+        [
+          [
+            "permission",
+            "allowed"
+          ],
+          [
+            "compare",
+            "==",
+            101
+          ]
+        ]
+      ],
+      "replacement_model": [
+        "and",
+        [
+          [
+            "permission",
+            "implementation_allowed"
+          ],
+          [
+            "compare",
+            "==",
+            101
+          ]
+        ]
+      ]
+    },
+    {
+      "signal": "check_pop8",
+      "guard": "allowed && operation == spk286_microcode_pkg::MC_CHECK_POP8",
+      "original_statement": "    assign check_pop8 = allowed && operation == spk286_microcode_pkg::MC_CHECK_POP8;",
+      "replacement_statement": "    assign check_pop8 = implementation_allowed && operation == spk286_microcode_pkg::MC_CHECK_POP8;",
+      "original_model": [
+        "and",
+        [
+          [
+            "permission",
+            "allowed"
+          ],
+          [
+            "compare",
+            "==",
+            102
+          ]
+        ]
+      ],
+      "replacement_model": [
+        "and",
+        [
+          [
+            "permission",
+            "implementation_allowed"
+          ],
+          [
+            "compare",
+            "==",
+            102
+          ]
+        ]
+      ]
+    },
+    {
+      "signal": "begin_stack_cursor",
+      "guard": "allowed && operation == spk286_microcode_pkg::MC_BEGIN_STACK_CURSOR",
+      "original_statement": "    assign begin_stack_cursor = allowed && operation == spk286_microcode_pkg::MC_BEGIN_STACK_CURSOR;",
+      "replacement_statement": "    assign begin_stack_cursor = implementation_allowed && operation == spk286_microcode_pkg::MC_BEGIN_STACK_CURSOR;",
+      "original_model": [
+        "and",
+        [
+          [
+            "permission",
+            "allowed"
+          ],
+          [
+            "compare",
+            "==",
+            103
+          ]
+        ]
+      ],
+      "replacement_model": [
+        "and",
+        [
+          [
+            "permission",
+            "implementation_allowed"
+          ],
+          [
+            "compare",
+            "==",
+            103
+          ]
+        ]
+      ]
+    },
+    {
+      "signal": "read_stack_cursor",
+      "guard": "allowed && operation == spk286_microcode_pkg::MC_READ_STACK_CURSOR_TMP0 && stack_cursor_valid_q",
+      "original_statement": "    assign read_stack_cursor = allowed && operation == spk286_microcode_pkg::MC_READ_STACK_CURSOR_TMP0 && stack_cursor_valid_q;",
+      "replacement_statement": "    assign read_stack_cursor = implementation_allowed && operation == spk286_microcode_pkg::MC_READ_STACK_CURSOR_TMP0 && stack_cursor_valid_q;",
+      "original_model": [
+        "and",
+        [
+          [
+            "permission",
+            "allowed"
+          ],
+          [
+            "compare",
+            "==",
+            112
+          ],
+          [
+            "context",
+            "stack_cursor_valid_q"
+          ]
+        ]
+      ],
+      "replacement_model": [
+        "and",
+        [
+          [
+            "permission",
+            "implementation_allowed"
+          ],
+          [
+            "compare",
+            "==",
+            112
+          ],
+          [
+            "context",
+            "stack_cursor_valid_q"
+          ]
+        ]
+      ]
+    },
+    {
+      "signal": "check_stack_word",
+      "guard": "allowed && operation == spk286_microcode_pkg::MC_CHECK_STACK_TMP0 && temporary_valid_q[0]",
+      "original_statement": "    assign check_stack_word = allowed && operation == spk286_microcode_pkg::MC_CHECK_STACK_TMP0 && temporary_valid_q[0];",
+      "replacement_statement": "    assign check_stack_word = implementation_allowed && operation == spk286_microcode_pkg::MC_CHECK_STACK_TMP0 && temporary_valid_q[0];",
+      "original_model": [
+        "and",
+        [
+          [
+            "permission",
+            "allowed"
+          ],
+          [
+            "compare",
+            "==",
+            104
+          ],
+          [
+            "context",
+            "temporary_valid_q[0]"
+          ]
+        ]
+      ],
+      "replacement_model": [
+        "and",
+        [
+          [
+            "permission",
+            "implementation_allowed"
+          ],
+          [
+            "compare",
+            "==",
+            104
+          ],
+          [
+            "context",
+            "temporary_valid_q[0]"
+          ]
+        ]
+      ]
+    },
+    {
+      "signal": "check_rm32",
+      "guard": "allowed && operation == spk286_microcode_pkg::MC_CHECK_RM32",
+      "original_statement": "    assign check_rm32 = allowed && operation == spk286_microcode_pkg::MC_CHECK_RM32;",
+      "replacement_statement": "    assign check_rm32 = implementation_allowed && operation == spk286_microcode_pkg::MC_CHECK_RM32;",
+      "original_model": [
+        "and",
+        [
+          [
+            "permission",
+            "allowed"
+          ],
+          [
+            "compare",
+            "==",
+            109
+          ]
+        ]
+      ],
+      "replacement_model": [
+        "and",
+        [
+          [
+            "permission",
+            "implementation_allowed"
+          ],
+          [
+            "compare",
+            "==",
+            109
+          ]
+        ]
+      ]
+    },
+    {
+      "signal": "check_bounds",
+      "guard": "allowed && operation == spk286_microcode_pkg::MC_CHECK_BOUNDS && auxiliary_valid_q && &temporary_valid_q[1:0]",
+      "original_statement": "    assign check_bounds = allowed && operation == spk286_microcode_pkg::MC_CHECK_BOUNDS && auxiliary_valid_q && &temporary_valid_q[1:0];",
+      "replacement_statement": "    assign check_bounds = implementation_allowed && operation == spk286_microcode_pkg::MC_CHECK_BOUNDS && auxiliary_valid_q && &temporary_valid_q[1:0];",
+      "original_model": [
+        "and",
+        [
+          [
+            "permission",
+            "allowed"
+          ],
+          [
+            "compare",
+            "==",
+            111
+          ],
+          [
+            "context",
+            "auxiliary_valid_q"
+          ],
+          [
+            "context",
+            "&temporary_valid_q[1:0]"
+          ]
+        ]
+      ],
+      "replacement_model": [
+        "and",
+        [
+          [
+            "permission",
+            "implementation_allowed"
+          ],
+          [
+            "compare",
+            "==",
+            111
+          ],
+          [
+            "context",
+            "auxiliary_valid_q"
+          ],
+          [
+            "context",
+            "&temporary_valid_q[1:0]"
+          ]
+        ]
+      ]
+    },
+    {
+      "signal": "set_frame_address",
+      "guard": "allowed && operation == spk286_microcode_pkg::MC_SET_STACK_ADDRESS_TMP0 && temporary_valid_q[0]",
+      "original_statement": "    assign set_frame_address = allowed && operation == spk286_microcode_pkg::MC_SET_STACK_ADDRESS_TMP0 && temporary_valid_q[0];",
+      "replacement_statement": "    assign set_frame_address = implementation_allowed && operation == spk286_microcode_pkg::MC_SET_STACK_ADDRESS_TMP0 && temporary_valid_q[0];",
+      "original_model": [
+        "and",
+        [
+          [
+            "permission",
+            "allowed"
+          ],
+          [
+            "compare",
+            "==",
+            105
+          ],
+          [
+            "context",
+            "temporary_valid_q[0]"
+          ]
+        ]
+      ],
+      "replacement_model": [
+        "and",
+        [
+          [
+            "permission",
+            "implementation_allowed"
+          ],
+          [
+            "compare",
+            "==",
+            105
+          ],
+          [
+            "context",
+            "temporary_valid_q[0]"
+          ]
+        ]
+      ]
+    },
+    {
+      "signal": "read_frame_address",
+      "guard": "allowed && operation == spk286_microcode_pkg::MC_READ_STACK_ADDRESS_TMP0 && frame_address_valid_q",
+      "original_statement": "    assign read_frame_address = allowed && operation == spk286_microcode_pkg::MC_READ_STACK_ADDRESS_TMP0 && frame_address_valid_q;",
+      "replacement_statement": "    assign read_frame_address = implementation_allowed && operation == spk286_microcode_pkg::MC_READ_STACK_ADDRESS_TMP0 && frame_address_valid_q;",
+      "original_model": [
+        "and",
+        [
+          [
+            "permission",
+            "allowed"
+          ],
+          [
+            "compare",
+            "==",
+            106
+          ],
+          [
+            "context",
+            "frame_address_valid_q"
+          ]
+        ]
+      ],
+      "replacement_model": [
+        "and",
+        [
+          [
+            "permission",
+            "implementation_allowed"
+          ],
+          [
+            "compare",
+            "==",
+            106
+          ],
+          [
+            "context",
+            "frame_address_valid_q"
+          ]
+        ]
+      ]
+    },
+    {
+      "signal": "decrement_frame_address",
+      "guard": "allowed && operation == spk286_microcode_pkg::MC_DECREMENT_STACK_ADDRESS && frame_address_valid_q",
+      "original_statement": "    assign decrement_frame_address = allowed && operation == spk286_microcode_pkg::MC_DECREMENT_STACK_ADDRESS && frame_address_valid_q;",
+      "replacement_statement": "    assign decrement_frame_address = implementation_allowed && operation == spk286_microcode_pkg::MC_DECREMENT_STACK_ADDRESS && frame_address_valid_q;",
+      "original_model": [
+        "and",
+        [
+          [
+            "permission",
+            "allowed"
+          ],
+          [
+            "compare",
+            "==",
+            107
+          ],
+          [
+            "context",
+            "frame_address_valid_q"
+          ]
+        ]
+      ],
+      "replacement_model": [
+        "and",
+        [
+          [
+            "permission",
+            "implementation_allowed"
+          ],
+          [
+            "compare",
+            "==",
+            107
+          ],
+          [
+            "context",
+            "frame_address_valid_q"
+          ]
+        ]
+      ]
+    },
+    {
+      "signal": "allocate_stack",
+      "guard": "allowed && operation == spk286_microcode_pkg::MC_ALLOCATE_STACK && allocation_valid_q && stack_cursor_valid_q",
+      "original_statement": "    assign allocate_stack = allowed && operation == spk286_microcode_pkg::MC_ALLOCATE_STACK && allocation_valid_q && stack_cursor_valid_q;",
+      "replacement_statement": "    assign allocate_stack = implementation_allowed && operation == spk286_microcode_pkg::MC_ALLOCATE_STACK && allocation_valid_q && stack_cursor_valid_q;",
+      "original_model": [
+        "and",
+        [
+          [
+            "permission",
+            "allowed"
+          ],
+          [
+            "compare",
+            "==",
+            108
+          ],
+          [
+            "context",
+            "allocation_valid_q"
+          ],
+          [
+            "context",
+            "stack_cursor_valid_q"
+          ]
+        ]
+      ],
+      "replacement_model": [
+        "and",
+        [
+          [
+            "permission",
+            "implementation_allowed"
+          ],
+          [
+            "compare",
+            "==",
+            108
+          ],
+          [
+            "context",
+            "allocation_valid_q"
+          ],
+          [
+            "context",
+            "stack_cursor_valid_q"
+          ]
+        ]
+      ]
+    },
+    {
+      "signal": "set_ea_plus2",
+      "guard": "allowed && operation == spk286_microcode_pkg::MC_SET_EA_PLUS2",
+      "original_statement": "    assign set_ea_plus2 = allowed && operation == spk286_microcode_pkg::MC_SET_EA_PLUS2;",
+      "replacement_statement": "    assign set_ea_plus2 = implementation_allowed && operation == spk286_microcode_pkg::MC_SET_EA_PLUS2;",
+      "original_model": [
+        "and",
+        [
+          [
+            "permission",
+            "allowed"
+          ],
+          [
+            "compare",
+            "==",
+            110
+          ]
+        ]
+      ],
+      "replacement_model": [
+        "and",
+        [
+          [
+            "permission",
+            "implementation_allowed"
+          ],
+          [
+            "compare",
+            "==",
+            110
+          ]
+        ]
+      ]
+    },
+    {
+      "signal": "npx_esc_check",
+      "guard": "allowed && operation == spk286_microcode_pkg::MC_CHECK_NPX_ESC",
+      "original_statement": "    assign npx_esc_check = allowed && operation == spk286_microcode_pkg::MC_CHECK_NPX_ESC;",
+      "replacement_statement": "    assign npx_esc_check = implementation_allowed && operation == spk286_microcode_pkg::MC_CHECK_NPX_ESC;",
+      "original_model": [
+        "and",
+        [
+          [
+            "permission",
+            "allowed"
+          ],
+          [
+            "compare",
+            "==",
+            196
+          ]
+        ]
+      ],
+      "replacement_model": [
+        "and",
+        [
+          [
+            "permission",
+            "implementation_allowed"
+          ],
+          [
+            "compare",
+            "==",
+            196
+          ]
+        ]
+      ]
+    },
+    {
+      "signal": "npx_wait_check",
+      "guard": "allowed && operation == spk286_microcode_pkg::MC_CHECK_NPX_WAIT",
+      "original_statement": "    assign npx_wait_check = allowed && operation == spk286_microcode_pkg::MC_CHECK_NPX_WAIT;",
+      "replacement_statement": "    assign npx_wait_check = implementation_allowed && operation == spk286_microcode_pkg::MC_CHECK_NPX_WAIT;",
+      "original_model": [
+        "and",
+        [
+          [
+            "permission",
+            "allowed"
+          ],
+          [
+            "compare",
+            "==",
+            197
+          ]
+        ]
+      ],
+      "replacement_model": [
+        "and",
+        [
+          [
+            "permission",
+            "implementation_allowed"
+          ],
+          [
+            "compare",
+            "==",
+            197
+          ]
+        ]
+      ]
+    },
+    {
+      "signal": "muldiv_request",
+      "guard": "allowed && (muldiv_byte || muldiv_immediate || operation == spk286_microcode_pkg::MC_MULDIV16) &&\n                            temporary_valid_q[0] && (!muldiv_immediate || temporary_valid_q[1]) && !flags_valid_q",
+      "original_statement": "    assign muldiv_request = allowed && (muldiv_byte || muldiv_immediate || operation == spk286_microcode_pkg::MC_MULDIV16) &&\n                            temporary_valid_q[0] && (!muldiv_immediate || temporary_valid_q[1]) && !flags_valid_q;",
+      "replacement_statement": "    assign muldiv_request = implementation_allowed && (muldiv_byte || muldiv_immediate || operation == spk286_microcode_pkg::MC_MULDIV16) &&\n                            temporary_valid_q[0] && (!muldiv_immediate || temporary_valid_q[1]) && !flags_valid_q;",
+      "original_model": [
+        "and",
+        [
+          [
+            "permission",
+            "allowed"
+          ],
+          [
+            "or",
+            [
+              [
+                "compare",
+                "==",
+                116
+              ],
+              [
+                "compare",
+                "==",
+                118
+              ],
+              [
+                "compare",
+                "==",
+                117
+              ]
+            ]
+          ],
+          [
+            "context",
+            "temporary_valid_q[0]"
+          ],
+          [
+            "or",
+            [
+              [
+                "not",
+                [
+                  "compare",
+                  "==",
+                  118
+                ]
+              ],
+              [
+                "context",
+                "temporary_valid_q[1]"
+              ]
+            ]
+          ],
+          [
+            "not",
+            [
+              "context",
+              "flags_valid_q"
+            ]
+          ]
+        ]
+      ],
+      "replacement_model": [
+        "and",
+        [
+          [
+            "permission",
+            "implementation_allowed"
+          ],
+          [
+            "or",
+            [
+              [
+                "compare",
+                "==",
+                116
+              ],
+              [
+                "compare",
+                "==",
+                118
+              ],
+              [
+                "compare",
+                "==",
+                117
+              ]
+            ]
+          ],
+          [
+            "context",
+            "temporary_valid_q[0]"
+          ],
+          [
+            "or",
+            [
+              [
+                "not",
+                [
+                  "compare",
+                  "==",
+                  118
+                ]
+              ],
+              [
+                "context",
+                "temporary_valid_q[1]"
+              ]
+            ]
+          ],
+          [
+            "not",
+            [
+              "context",
+              "flags_valid_q"
+            ]
+          ]
+        ]
+      ]
+    },
+    {
+      "signal": "write_result_ax",
+      "guard": "allowed && operation == spk286_microcode_pkg::MC_WRITE_RESULT_AX16 && temporary_valid_q[2]",
+      "original_statement": "    assign write_result_ax = allowed && operation == spk286_microcode_pkg::MC_WRITE_RESULT_AX16 && temporary_valid_q[2];",
+      "replacement_statement": "    assign write_result_ax = implementation_allowed && operation == spk286_microcode_pkg::MC_WRITE_RESULT_AX16 && temporary_valid_q[2];",
+      "original_model": [
+        "and",
+        [
+          [
+            "permission",
+            "allowed"
+          ],
+          [
+            "compare",
+            "==",
+            119
+          ],
+          [
+            "context",
+            "temporary_valid_q[2]"
+          ]
+        ]
+      ],
+      "replacement_model": [
+        "and",
+        [
+          [
+            "permission",
+            "implementation_allowed"
+          ],
+          [
+            "compare",
+            "==",
+            119
+          ],
+          [
+            "context",
+            "temporary_valid_q[2]"
+          ]
+        ]
+      ]
+    },
+    {
+      "signal": "write_result_dx",
+      "guard": "allowed && operation == spk286_microcode_pkg::MC_WRITE_RESULT_DX16 && auxiliary_valid_q && result_high_pending_q",
+      "original_statement": "    assign write_result_dx = allowed && operation == spk286_microcode_pkg::MC_WRITE_RESULT_DX16 && auxiliary_valid_q && result_high_pending_q;",
+      "replacement_statement": "    assign write_result_dx = implementation_allowed && operation == spk286_microcode_pkg::MC_WRITE_RESULT_DX16 && auxiliary_valid_q && result_high_pending_q;",
+      "original_model": [
+        "and",
+        [
+          [
+            "permission",
+            "allowed"
+          ],
+          [
+            "compare",
+            "==",
+            120
+          ],
+          [
+            "context",
+            "auxiliary_valid_q"
+          ],
+          [
+            "context",
+            "result_high_pending_q"
+          ]
+        ]
+      ],
+      "replacement_model": [
+        "and",
+        [
+          [
+            "permission",
+            "implementation_allowed"
+          ],
+          [
+            "compare",
+            "==",
+            120
+          ],
+          [
+            "context",
+            "auxiliary_valid_q"
+          ],
+          [
+            "context",
+            "result_high_pending_q"
+          ]
+        ]
+      ]
+    },
+    {
+      "signal": "adjust_request",
+      "guard": "allowed && operation == spk286_microcode_pkg::MC_ADJUST && &temporary_valid_q[1:0] && !flags_valid_q",
+      "original_statement": "    assign adjust_request = allowed && operation == spk286_microcode_pkg::MC_ADJUST && &temporary_valid_q[1:0] && !flags_valid_q;",
+      "replacement_statement": "    assign adjust_request = implementation_allowed && operation == spk286_microcode_pkg::MC_ADJUST && &temporary_valid_q[1:0] && !flags_valid_q;",
+      "original_model": [
+        "and",
+        [
+          [
+            "permission",
+            "allowed"
+          ],
+          [
+            "compare",
+            "==",
+            74
+          ],
+          [
+            "context",
+            "&temporary_valid_q[1:0]"
+          ],
+          [
+            "not",
+            [
+              "context",
+              "flags_valid_q"
+            ]
+          ]
+        ]
+      ],
+      "replacement_model": [
+        "and",
+        [
+          [
+            "permission",
+            "implementation_allowed"
+          ],
+          [
+            "compare",
+            "==",
+            74
+          ],
+          [
+            "context",
+            "&temporary_valid_q[1:0]"
+          ],
+          [
+            "not",
+            [
+              "context",
+              "flags_valid_q"
+            ]
+          ]
+        ]
+      ]
+    },
+    {
+      "signal": "check_arithmetic",
+      "guard": "allowed && operation == spk286_microcode_pkg::MC_CHECK_ARITHMETIC",
+      "original_statement": "    assign check_arithmetic = allowed && operation == spk286_microcode_pkg::MC_CHECK_ARITHMETIC;",
+      "replacement_statement": "    assign check_arithmetic = implementation_allowed && operation == spk286_microcode_pkg::MC_CHECK_ARITHMETIC;",
+      "original_model": [
+        "and",
+        [
+          [
+            "permission",
+            "allowed"
+          ],
+          [
+            "compare",
+            "==",
+            75
+          ]
+        ]
+      ],
+      "replacement_model": [
+        "and",
+        [
+          [
+            "permission",
+            "implementation_allowed"
+          ],
+          [
+            "compare",
+            "==",
+            75
+          ]
+        ]
+      ]
+    },
+    {
+      "signal": "read_segment",
+      "guard": "allowed && operation == spk286_microcode_pkg::MC_READ_SEG16_TMP0",
+      "original_statement": "    assign read_segment = allowed && operation == spk286_microcode_pkg::MC_READ_SEG16_TMP0;",
+      "replacement_statement": "    assign read_segment = implementation_allowed && operation == spk286_microcode_pkg::MC_READ_SEG16_TMP0;",
+      "original_model": [
+        "and",
+        [
+          [
+            "permission",
+            "allowed"
+          ],
+          [
+            "compare",
+            "==",
+            76
+          ]
+        ]
+      ],
+      "replacement_model": [
+        "and",
+        [
+          [
+            "permission",
+            "implementation_allowed"
+          ],
+          [
+            "compare",
+            "==",
+            76
+          ]
+        ]
+      ]
+    },
+    {
+      "signal": "segment_write",
+      "guard": "allowed && operation == spk286_microcode_pkg::MC_WRITE_SEG16_TMP0 &&\n                           temporary_valid_q[0] && !protected_msw[0]",
+      "original_statement": "    assign segment_write = allowed && operation == spk286_microcode_pkg::MC_WRITE_SEG16_TMP0 &&\n                           temporary_valid_q[0] && !protected_msw[0];",
+      "replacement_statement": "    assign segment_write = implementation_allowed && operation == spk286_microcode_pkg::MC_WRITE_SEG16_TMP0 &&\n                           temporary_valid_q[0] && !protected_msw[0];",
+      "original_model": [
+        "and",
+        [
+          [
+            "permission",
+            "allowed"
+          ],
+          [
+            "compare",
+            "==",
+            77
+          ],
+          [
+            "context",
+            "temporary_valid_q[0]"
+          ],
+          [
+            "not",
+            [
+              "context",
+              "protected_msw[0]"
+            ]
+          ]
+        ]
+      ],
+      "replacement_model": [
+        "and",
+        [
+          [
+            "permission",
+            "implementation_allowed"
+          ],
+          [
+            "compare",
+            "==",
+            77
+          ],
+          [
+            "context",
+            "temporary_valid_q[0]"
+          ],
+          [
+            "not",
+            [
+              "context",
+              "protected_msw[0]"
+            ]
+          ]
+        ]
+      ]
+    },
+    {
+      "signal": "system_table_store",
+      "guard": "allowed && (operation == spk286_microcode_pkg::MC_SYSTEM_STORE_GDTR || operation == spk286_microcode_pkg::MC_SYSTEM_STORE_IDTR)",
+      "original_statement": "    assign system_table_store = allowed && (operation == spk286_microcode_pkg::MC_SYSTEM_STORE_GDTR || operation == spk286_microcode_pkg::MC_SYSTEM_STORE_IDTR);",
+      "replacement_statement": "    assign system_table_store = implementation_allowed && (operation == spk286_microcode_pkg::MC_SYSTEM_STORE_GDTR || operation == spk286_microcode_pkg::MC_SYSTEM_STORE_IDTR);",
+      "original_model": [
+        "and",
+        [
+          [
+            "permission",
+            "allowed"
+          ],
+          [
+            "or",
+            [
+              [
+                "compare",
+                "==",
+                136
+              ],
+              [
+                "compare",
+                "==",
+                137
+              ]
+            ]
+          ]
+        ]
+      ],
+      "replacement_model": [
+        "and",
+        [
+          [
+            "permission",
+            "implementation_allowed"
+          ],
+          [
+            "or",
+            [
+              [
+                "compare",
+                "==",
+                136
+              ],
+              [
+                "compare",
+                "==",
+                137
+              ]
+            ]
+          ]
+        ]
+      ]
+    },
+    {
+      "signal": "system_table_load",
+      "guard": "allowed && (operation == spk286_microcode_pkg::MC_SYSTEM_LOAD_GDTR || operation == spk286_microcode_pkg::MC_SYSTEM_LOAD_IDTR)",
+      "original_statement": "    assign system_table_load = allowed && (operation == spk286_microcode_pkg::MC_SYSTEM_LOAD_GDTR || operation == spk286_microcode_pkg::MC_SYSTEM_LOAD_IDTR);",
+      "replacement_statement": "    assign system_table_load = implementation_allowed && (operation == spk286_microcode_pkg::MC_SYSTEM_LOAD_GDTR || operation == spk286_microcode_pkg::MC_SYSTEM_LOAD_IDTR);",
+      "original_model": [
+        "and",
+        [
+          [
+            "permission",
+            "allowed"
+          ],
+          [
+            "or",
+            [
+              [
+                "compare",
+                "==",
+                138
+              ],
+              [
+                "compare",
+                "==",
+                139
+              ]
+            ]
+          ]
+        ]
+      ],
+      "replacement_model": [
+        "and",
+        [
+          [
+            "permission",
+            "implementation_allowed"
+          ],
+          [
+            "or",
+            [
+              [
+                "compare",
+                "==",
+                138
+              ],
+              [
+                "compare",
+                "==",
+                139
+              ]
+            ]
+          ]
+        ]
+      ]
+    },
+    {
+      "signal": "system_msw_store",
+      "guard": "allowed && operation == spk286_microcode_pkg::MC_SYSTEM_STORE_MSW",
+      "original_statement": "    assign system_msw_store = allowed && operation == spk286_microcode_pkg::MC_SYSTEM_STORE_MSW;",
+      "replacement_statement": "    assign system_msw_store = implementation_allowed && operation == spk286_microcode_pkg::MC_SYSTEM_STORE_MSW;",
+      "original_model": [
+        "and",
+        [
+          [
+            "permission",
+            "allowed"
+          ],
+          [
+            "compare",
+            "==",
+            140
+          ]
+        ]
+      ],
+      "replacement_model": [
+        "and",
+        [
+          [
+            "permission",
+            "implementation_allowed"
+          ],
+          [
+            "compare",
+            "==",
+            140
+          ]
+        ]
+      ]
+    },
+    {
+      "signal": "system_msw_load",
+      "guard": "allowed && operation == spk286_microcode_pkg::MC_SYSTEM_LOAD_MSW",
+      "original_statement": "    assign system_msw_load = allowed && operation == spk286_microcode_pkg::MC_SYSTEM_LOAD_MSW;",
+      "replacement_statement": "    assign system_msw_load = implementation_allowed && operation == spk286_microcode_pkg::MC_SYSTEM_LOAD_MSW;",
+      "original_model": [
+        "and",
+        [
+          [
+            "permission",
+            "allowed"
+          ],
+          [
+            "compare",
+            "==",
+            141
+          ]
+        ]
+      ],
+      "replacement_model": [
+        "and",
+        [
+          [
+            "permission",
+            "implementation_allowed"
+          ],
+          [
+            "compare",
+            "==",
+            141
+          ]
+        ]
+      ]
+    },
+    {
+      "signal": "system_ldtr_store",
+      "guard": "allowed && operation == spk286_microcode_pkg::MC_SYSTEM_STORE_LDTR",
+      "original_statement": "    assign system_ldtr_store = allowed && operation == spk286_microcode_pkg::MC_SYSTEM_STORE_LDTR;",
+      "replacement_statement": "    assign system_ldtr_store = implementation_allowed && operation == spk286_microcode_pkg::MC_SYSTEM_STORE_LDTR;",
+      "original_model": [
+        "and",
+        [
+          [
+            "permission",
+            "allowed"
+          ],
+          [
+            "compare",
+            "==",
+            142
+          ]
+        ]
+      ],
+      "replacement_model": [
+        "and",
+        [
+          [
+            "permission",
+            "implementation_allowed"
+          ],
+          [
+            "compare",
+            "==",
+            142
+          ]
+        ]
+      ]
+    },
+    {
+      "signal": "system_tr_store",
+      "guard": "allowed && operation == spk286_microcode_pkg::MC_SYSTEM_STORE_TR",
+      "original_statement": "    assign system_tr_store = allowed && operation == spk286_microcode_pkg::MC_SYSTEM_STORE_TR;",
+      "replacement_statement": "    assign system_tr_store = implementation_allowed && operation == spk286_microcode_pkg::MC_SYSTEM_STORE_TR;",
+      "original_model": [
+        "and",
+        [
+          [
+            "permission",
+            "allowed"
+          ],
+          [
+            "compare",
+            "==",
+            143
+          ]
+        ]
+      ],
+      "replacement_model": [
+        "and",
+        [
+          [
+            "permission",
+            "implementation_allowed"
+          ],
+          [
+            "compare",
+            "==",
+            143
+          ]
+        ]
+      ]
+    },
+    {
+      "signal": "system_protected_check",
+      "guard": "allowed && operation == spk286_microcode_pkg::MC_CHECK_PROTECTED_MODE",
+      "original_statement": "    assign system_protected_check = allowed && operation == spk286_microcode_pkg::MC_CHECK_PROTECTED_MODE;",
+      "replacement_statement": "    assign system_protected_check = implementation_allowed && operation == spk286_microcode_pkg::MC_CHECK_PROTECTED_MODE;",
+      "original_model": [
+        "and",
+        [
+          [
+            "permission",
+            "allowed"
+          ],
+          [
+            "compare",
+            "==",
+            193
+          ]
+        ]
+      ],
+      "replacement_model": [
+        "and",
+        [
+          [
+            "permission",
+            "implementation_allowed"
+          ],
+          [
+            "compare",
+            "==",
+            193
+          ]
+        ]
+      ]
+    },
+    {
+      "signal": "system_privilege_check",
+      "guard": "allowed && operation == spk286_microcode_pkg::MC_CHECK_SYSTEM_PRIVILEGE",
+      "original_statement": "    assign system_privilege_check = allowed && operation == spk286_microcode_pkg::MC_CHECK_SYSTEM_PRIVILEGE;",
+      "replacement_statement": "    assign system_privilege_check = implementation_allowed && operation == spk286_microcode_pkg::MC_CHECK_SYSTEM_PRIVILEGE;",
+      "original_model": [
+        "and",
+        [
+          [
+            "permission",
+            "allowed"
+          ],
+          [
+            "compare",
+            "==",
+            194
+          ]
+        ]
+      ],
+      "replacement_model": [
+        "and",
+        [
+          [
+            "permission",
+            "implementation_allowed"
+          ],
+          [
+            "compare",
+            "==",
+            194
+          ]
+        ]
+      ]
+    },
+    {
+      "signal": "system_verify_read",
+      "guard": "allowed && operation == spk286_microcode_pkg::MC_SYSTEM_VERIFY_READ",
+      "original_statement": "    assign system_verify_read = allowed && operation == spk286_microcode_pkg::MC_SYSTEM_VERIFY_READ;",
+      "replacement_statement": "    assign system_verify_read = implementation_allowed && operation == spk286_microcode_pkg::MC_SYSTEM_VERIFY_READ;",
+      "original_model": [
+        "and",
+        [
+          [
+            "permission",
+            "allowed"
+          ],
+          [
+            "compare",
+            "==",
+            146
+          ]
+        ]
+      ],
+      "replacement_model": [
+        "and",
+        [
+          [
+            "permission",
+            "implementation_allowed"
+          ],
+          [
+            "compare",
+            "==",
+            146
+          ]
+        ]
+      ]
+    },
+    {
+      "signal": "system_verify_write",
+      "guard": "allowed && operation == spk286_microcode_pkg::MC_SYSTEM_VERIFY_WRITE",
+      "original_statement": "    assign system_verify_write = allowed && operation == spk286_microcode_pkg::MC_SYSTEM_VERIFY_WRITE;",
+      "replacement_statement": "    assign system_verify_write = implementation_allowed && operation == spk286_microcode_pkg::MC_SYSTEM_VERIFY_WRITE;",
+      "original_model": [
+        "and",
+        [
+          [
+            "permission",
+            "allowed"
+          ],
+          [
+            "compare",
+            "==",
+            147
+          ]
+        ]
+      ],
+      "replacement_model": [
+        "and",
+        [
+          [
+            "permission",
+            "implementation_allowed"
+          ],
+          [
+            "compare",
+            "==",
+            147
+          ]
+        ]
+      ]
+    },
+    {
+      "signal": "arpl_check_operation",
+      "guard": "allowed && operation == spk286_microcode_pkg::MC_SYSTEM_ARPL_CHECK",
+      "original_statement": "    assign arpl_check_operation = allowed && operation == spk286_microcode_pkg::MC_SYSTEM_ARPL_CHECK;",
+      "replacement_statement": "    assign arpl_check_operation = implementation_allowed && operation == spk286_microcode_pkg::MC_SYSTEM_ARPL_CHECK;",
+      "original_model": [
+        "and",
+        [
+          [
+            "permission",
+            "allowed"
+          ],
+          [
+            "compare",
+            "==",
+            166
+          ]
+        ]
+      ],
+      "replacement_model": [
+        "and",
+        [
+          [
+            "permission",
+            "implementation_allowed"
+          ],
+          [
+            "compare",
+            "==",
+            166
+          ]
+        ]
+      ]
+    },
+    {
+      "signal": "arpl_operation",
+      "guard": "allowed && operation == spk286_microcode_pkg::MC_SYSTEM_ARPL && &temporary_valid_q[1:0]",
+      "original_statement": "    assign arpl_operation = allowed && operation == spk286_microcode_pkg::MC_SYSTEM_ARPL && &temporary_valid_q[1:0];",
+      "replacement_statement": "    assign arpl_operation = implementation_allowed && operation == spk286_microcode_pkg::MC_SYSTEM_ARPL && &temporary_valid_q[1:0];",
+      "original_model": [
+        "and",
+        [
+          [
+            "permission",
+            "allowed"
+          ],
+          [
+            "compare",
+            "==",
+            167
+          ],
+          [
+            "context",
+            "&temporary_valid_q[1:0]"
+          ]
+        ]
+      ],
+      "replacement_model": [
+        "and",
+        [
+          [
+            "permission",
+            "implementation_allowed"
+          ],
+          [
+            "compare",
+            "==",
+            167
+          ],
+          [
+            "context",
+            "&temporary_valid_q[1:0]"
+          ]
+        ]
+      ]
+    },
+    {
+      "signal": "clts_operation",
+      "guard": "allowed && operation == spk286_microcode_pkg::MC_SYSTEM_CLTS",
+      "original_statement": "    assign clts_operation = allowed && operation == spk286_microcode_pkg::MC_SYSTEM_CLTS;",
+      "replacement_statement": "    assign clts_operation = implementation_allowed && operation == spk286_microcode_pkg::MC_SYSTEM_CLTS;",
+      "original_model": [
+        "and",
+        [
+          [
+            "permission",
+            "allowed"
+          ],
+          [
+            "compare",
+            "==",
+            168
+          ]
+        ]
+      ],
+      "replacement_model": [
+        "and",
+        [
+          [
+            "permission",
+            "implementation_allowed"
+          ],
+          [
+            "compare",
+            "==",
+            168
+          ]
+        ]
+      ]
+    },
+    {
+      "signal": "descriptor_load_ldtr",
+      "guard": "allowed && operation == spk286_microcode_pkg::MC_SYSTEM_LOAD_LDTR",
+      "original_statement": "    assign descriptor_load_ldtr = allowed && operation == spk286_microcode_pkg::MC_SYSTEM_LOAD_LDTR;",
+      "replacement_statement": "    assign descriptor_load_ldtr = implementation_allowed && operation == spk286_microcode_pkg::MC_SYSTEM_LOAD_LDTR;",
+      "original_model": [
+        "and",
+        [
+          [
+            "permission",
+            "allowed"
+          ],
+          [
+            "compare",
+            "==",
+            144
+          ]
+        ]
+      ],
+      "replacement_model": [
+        "and",
+        [
+          [
+            "permission",
+            "implementation_allowed"
+          ],
+          [
+            "compare",
+            "==",
+            144
+          ]
+        ]
+      ]
+    },
+    {
+      "signal": "descriptor_load_tr",
+      "guard": "allowed && operation == spk286_microcode_pkg::MC_SYSTEM_LOAD_TR",
+      "original_statement": "    assign descriptor_load_tr = allowed && operation == spk286_microcode_pkg::MC_SYSTEM_LOAD_TR;",
+      "replacement_statement": "    assign descriptor_load_tr = implementation_allowed && operation == spk286_microcode_pkg::MC_SYSTEM_LOAD_TR;",
+      "original_model": [
+        "and",
+        [
+          [
+            "permission",
+            "allowed"
+          ],
+          [
+            "compare",
+            "==",
+            145
+          ]
+        ]
+      ],
+      "replacement_model": [
+        "and",
+        [
+          [
+            "permission",
+            "implementation_allowed"
+          ],
+          [
+            "compare",
+            "==",
+            145
+          ]
+        ]
+      ]
+    },
+    {
+      "signal": "descriptor_load_access",
+      "guard": "allowed && operation == spk286_microcode_pkg::MC_SYSTEM_LOAD_ACCESS",
+      "original_statement": "    assign descriptor_load_access = allowed && operation == spk286_microcode_pkg::MC_SYSTEM_LOAD_ACCESS;",
+      "replacement_statement": "    assign descriptor_load_access = implementation_allowed && operation == spk286_microcode_pkg::MC_SYSTEM_LOAD_ACCESS;",
+      "original_model": [
+        "and",
+        [
+          [
+            "permission",
+            "allowed"
+          ],
+          [
+            "compare",
+            "==",
+            148
+          ]
+        ]
+      ],
+      "replacement_model": [
+        "and",
+        [
+          [
+            "permission",
+            "implementation_allowed"
+          ],
+          [
+            "compare",
+            "==",
+            148
+          ]
+        ]
+      ]
+    },
+    {
+      "signal": "descriptor_load_limit",
+      "guard": "allowed && operation == spk286_microcode_pkg::MC_SYSTEM_LOAD_LIMIT",
+      "original_statement": "    assign descriptor_load_limit = allowed && operation == spk286_microcode_pkg::MC_SYSTEM_LOAD_LIMIT;",
+      "replacement_statement": "    assign descriptor_load_limit = implementation_allowed && operation == spk286_microcode_pkg::MC_SYSTEM_LOAD_LIMIT;",
+      "original_model": [
+        "and",
+        [
+          [
+            "permission",
+            "allowed"
+          ],
+          [
+            "compare",
+            "==",
+            149
+          ]
+        ]
+      ],
+      "replacement_model": [
+        "and",
+        [
+          [
+            "permission",
+            "implementation_allowed"
+          ],
+          [
+            "compare",
+            "==",
+            149
+          ]
+        ]
+      ]
+    },
+    {
+      "signal": "segment_reload_operation",
+      "guard": "allowed && operation == spk286_microcode_pkg::MC_WRITE_SEG16_TMP0 &&\n                                     temporary_valid_q[0] && protected_msw[0]",
+      "original_statement": "    assign segment_reload_operation = allowed && operation == spk286_microcode_pkg::MC_WRITE_SEG16_TMP0 &&\n                                     temporary_valid_q[0] && protected_msw[0];",
+      "replacement_statement": "    assign segment_reload_operation = implementation_allowed && operation == spk286_microcode_pkg::MC_WRITE_SEG16_TMP0 &&\n                                     temporary_valid_q[0] && protected_msw[0];",
+      "original_model": [
+        "and",
+        [
+          [
+            "permission",
+            "allowed"
+          ],
+          [
+            "compare",
+            "==",
+            77
+          ],
+          [
+            "context",
+            "temporary_valid_q[0]"
+          ],
+          [
+            "context",
+            "protected_msw[0]"
+          ]
+        ]
+      ],
+      "replacement_model": [
+        "and",
+        [
+          [
+            "permission",
+            "implementation_allowed"
+          ],
+          [
+            "compare",
+            "==",
+            77
+          ],
+          [
+            "context",
+            "temporary_valid_q[0]"
+          ],
+          [
+            "context",
+            "protected_msw[0]"
+          ]
+        ]
+      ]
+    },
+    {
+      "signal": "jmp_gate_cs_validation_operation",
+      "guard": "allowed && protected_msw[0] &&\n                                              operation == spk286_microcode_pkg::MC_VALIDATE_CS &&\n                                              call_gate_candidate_valid_q && !event_gate_candidate_valid_q",
+      "original_statement": "    assign jmp_gate_cs_validation_operation = allowed && protected_msw[0] &&\n                                              operation == spk286_microcode_pkg::MC_VALIDATE_CS &&\n                                              call_gate_candidate_valid_q && !event_gate_candidate_valid_q;",
+      "replacement_statement": "    assign jmp_gate_cs_validation_operation = implementation_allowed && protected_msw[0] &&\n                                              operation == spk286_microcode_pkg::MC_VALIDATE_CS &&\n                                              call_gate_candidate_valid_q && !event_gate_candidate_valid_q;",
+      "original_model": [
+        "and",
+        [
+          [
+            "permission",
+            "allowed"
+          ],
+          [
+            "context",
+            "protected_msw[0]"
+          ],
+          [
+            "compare",
+            "==",
+            150
+          ],
+          [
+            "context",
+            "call_gate_candidate_valid_q"
+          ],
+          [
+            "not",
+            [
+              "context",
+              "event_gate_candidate_valid_q"
+            ]
+          ]
+        ]
+      ],
+      "replacement_model": [
+        "and",
+        [
+          [
+            "permission",
+            "implementation_allowed"
+          ],
+          [
+            "context",
+            "protected_msw[0]"
+          ],
+          [
+            "compare",
+            "==",
+            150
+          ],
+          [
+            "context",
+            "call_gate_candidate_valid_q"
+          ],
+          [
+            "not",
+            [
+              "context",
+              "event_gate_candidate_valid_q"
+            ]
+          ]
+        ]
+      ]
+    },
+    {
+      "signal": "cs_validation_operation",
+      "guard": "allowed && protected_msw[0] &&\n                                     ((operation == spk286_microcode_pkg::MC_VALIDATE_CS &&\n                                       !jmp_gate_cs_validation_operation) ||\n                                      (operation == spk286_microcode_pkg::MC_VALIDATE_CALL_CS &&\n                                       !call_gate_candidate_valid_q))",
+      "original_statement": "    assign cs_validation_operation = allowed && protected_msw[0] &&\n                                     ((operation == spk286_microcode_pkg::MC_VALIDATE_CS &&\n                                       !jmp_gate_cs_validation_operation) ||\n                                      (operation == spk286_microcode_pkg::MC_VALIDATE_CALL_CS &&\n                                       !call_gate_candidate_valid_q));",
+      "replacement_statement": "    assign cs_validation_operation = implementation_allowed && protected_msw[0] &&\n                                     ((operation == spk286_microcode_pkg::MC_VALIDATE_CS &&\n                                       !jmp_gate_cs_validation_operation) ||\n                                      (operation == spk286_microcode_pkg::MC_VALIDATE_CALL_CS &&\n                                       !call_gate_candidate_valid_q));",
+      "original_model": [
+        "and",
+        [
+          [
+            "permission",
+            "allowed"
+          ],
+          [
+            "context",
+            "protected_msw[0]"
+          ],
+          [
+            "or",
+            [
+              [
+                "and",
+                [
+                  [
+                    "compare",
+                    "==",
+                    150
+                  ],
+                  [
+                    "not",
+                    [
+                      "and",
+                      [
+                        [
+                          "permission",
+                          "allowed"
+                        ],
+                        [
+                          "context",
+                          "protected_msw[0]"
+                        ],
+                        [
+                          "compare",
+                          "==",
+                          150
+                        ],
+                        [
+                          "context",
+                          "call_gate_candidate_valid_q"
+                        ],
+                        [
+                          "not",
+                          [
+                            "context",
+                            "event_gate_candidate_valid_q"
+                          ]
+                        ]
+                      ]
+                    ]
+                  ]
+                ]
+              ],
+              [
+                "and",
+                [
+                  [
+                    "compare",
+                    "==",
+                    160
+                  ],
+                  [
+                    "not",
+                    [
+                      "context",
+                      "call_gate_candidate_valid_q"
+                    ]
+                  ]
+                ]
+              ]
+            ]
+          ]
+        ]
+      ],
+      "replacement_model": [
+        "and",
+        [
+          [
+            "permission",
+            "implementation_allowed"
+          ],
+          [
+            "context",
+            "protected_msw[0]"
+          ],
+          [
+            "or",
+            [
+              [
+                "and",
+                [
+                  [
+                    "compare",
+                    "==",
+                    150
+                  ],
+                  [
+                    "not",
+                    [
+                      "and",
+                      [
+                        [
+                          "permission",
+                          "allowed"
+                        ],
+                        [
+                          "context",
+                          "protected_msw[0]"
+                        ],
+                        [
+                          "compare",
+                          "==",
+                          150
+                        ],
+                        [
+                          "context",
+                          "call_gate_candidate_valid_q"
+                        ],
+                        [
+                          "not",
+                          [
+                            "context",
+                            "event_gate_candidate_valid_q"
+                          ]
+                        ]
+                      ]
+                    ]
+                  ]
+                ]
+              ],
+              [
+                "and",
+                [
+                  [
+                    "compare",
+                    "==",
+                    160
+                  ],
+                  [
+                    "not",
+                    [
+                      "context",
+                      "call_gate_candidate_valid_q"
+                    ]
+                  ]
+                ]
+              ]
+            ]
+          ]
+        ]
+      ]
+    },
+    {
+      "signal": "call_gate_validation_operation",
+      "guard": "allowed && operation == spk286_microcode_pkg::MC_VALIDATE_CALL_GATE && protected_msw[0]",
+      "original_statement": "    assign call_gate_validation_operation = allowed && operation == spk286_microcode_pkg::MC_VALIDATE_CALL_GATE && protected_msw[0];",
+      "replacement_statement": "    assign call_gate_validation_operation = implementation_allowed && operation == spk286_microcode_pkg::MC_VALIDATE_CALL_GATE && protected_msw[0];",
+      "original_model": [
+        "and",
+        [
+          [
+            "permission",
+            "allowed"
+          ],
+          [
+            "compare",
+            "==",
+            159
+          ],
+          [
+            "context",
+            "protected_msw[0]"
+          ]
+        ]
+      ],
+      "replacement_model": [
+        "and",
+        [
+          [
+            "permission",
+            "implementation_allowed"
+          ],
+          [
+            "compare",
+            "==",
+            159
+          ],
+          [
+            "context",
+            "protected_msw[0]"
+          ]
+        ]
+      ]
+    },
+    {
+      "signal": "call_stack_validation_operation",
+      "guard": "allowed && operation == spk286_microcode_pkg::MC_VALIDATE_CALL_STACK",
+      "original_statement": "    assign call_stack_validation_operation = allowed && operation == spk286_microcode_pkg::MC_VALIDATE_CALL_STACK;",
+      "replacement_statement": "    assign call_stack_validation_operation = implementation_allowed && operation == spk286_microcode_pkg::MC_VALIDATE_CALL_STACK;",
+      "original_model": [
+        "and",
+        [
+          [
+            "permission",
+            "allowed"
+          ],
+          [
+            "compare",
+            "==",
+            161
+          ]
+        ]
+      ],
+      "replacement_model": [
+        "and",
+        [
+          [
+            "permission",
+            "implementation_allowed"
+          ],
+          [
+            "compare",
+            "==",
+            161
+          ]
+        ]
+      ]
+    },
+    {
+      "signal": "call_ss_validation_operation",
+      "guard": "allowed && operation == spk286_microcode_pkg::MC_VALIDATE_CALL_SS && protected_msw[0]",
+      "original_statement": "    assign call_ss_validation_operation = allowed && operation == spk286_microcode_pkg::MC_VALIDATE_CALL_SS && protected_msw[0];",
+      "replacement_statement": "    assign call_ss_validation_operation = implementation_allowed && operation == spk286_microcode_pkg::MC_VALIDATE_CALL_SS && protected_msw[0];",
+      "original_model": [
+        "and",
+        [
+          [
+            "permission",
+            "allowed"
+          ],
+          [
+            "compare",
+            "==",
+            162
+          ],
+          [
+            "context",
+            "protected_msw[0]"
+          ]
+        ]
+      ],
+      "replacement_model": [
+        "and",
+        [
+          [
+            "permission",
+            "implementation_allowed"
+          ],
+          [
+            "compare",
+            "==",
+            162
+          ],
+          [
+            "context",
+            "protected_msw[0]"
+          ]
+        ]
+      ]
+    },
+    {
+      "signal": "call_gate_stack_switch_operation",
+      "guard": "allowed && operation == spk286_microcode_pkg::MC_CALL_GATE_STACK_SWITCH",
+      "original_statement": "    assign call_gate_stack_switch_operation = allowed && operation == spk286_microcode_pkg::MC_CALL_GATE_STACK_SWITCH;",
+      "replacement_statement": "    assign call_gate_stack_switch_operation = implementation_allowed && operation == spk286_microcode_pkg::MC_CALL_GATE_STACK_SWITCH;",
+      "original_model": [
+        "and",
+        [
+          [
+            "permission",
+            "allowed"
+          ],
+          [
+            "compare",
+            "==",
+            163
+          ]
+        ]
+      ],
+      "replacement_model": [
+        "and",
+        [
+          [
+            "permission",
+            "implementation_allowed"
+          ],
+          [
+            "compare",
+            "==",
+            163
+          ]
+        ]
+      ]
+    },
+    {
+      "signal": "iret_cs_validation_operation",
+      "guard": "allowed && operation == spk286_microcode_pkg::MC_VALIDATE_IRET_CS && protected_msw[0]",
+      "original_statement": "    assign iret_cs_validation_operation = allowed && operation == spk286_microcode_pkg::MC_VALIDATE_IRET_CS && protected_msw[0];",
+      "replacement_statement": "    assign iret_cs_validation_operation = implementation_allowed && operation == spk286_microcode_pkg::MC_VALIDATE_IRET_CS && protected_msw[0];",
+      "original_model": [
+        "and",
+        [
+          [
+            "permission",
+            "allowed"
+          ],
+          [
+            "compare",
+            "==",
+            156
+          ],
+          [
+            "context",
+            "protected_msw[0]"
+          ]
+        ]
+      ],
+      "replacement_model": [
+        "and",
+        [
+          [
+            "permission",
+            "implementation_allowed"
+          ],
+          [
+            "compare",
+            "==",
+            156
+          ],
+          [
+            "context",
+            "protected_msw[0]"
+          ]
+        ]
+      ]
+    },
+    {
+      "signal": "iret_outer_frame_operation",
+      "guard": "allowed && operation == spk286_microcode_pkg::MC_IRET_OUTER_FRAME",
+      "original_statement": "    assign iret_outer_frame_operation = allowed && operation == spk286_microcode_pkg::MC_IRET_OUTER_FRAME;",
+      "replacement_statement": "    assign iret_outer_frame_operation = implementation_allowed && operation == spk286_microcode_pkg::MC_IRET_OUTER_FRAME;",
+      "original_model": [
+        "and",
+        [
+          [
+            "permission",
+            "allowed"
+          ],
+          [
+            "compare",
+            "==",
+            157
+          ]
+        ]
+      ],
+      "replacement_model": [
+        "and",
+        [
+          [
+            "permission",
+            "implementation_allowed"
+          ],
+          [
+            "compare",
+            "==",
+            157
+          ]
+        ]
+      ]
+    },
+    {
+      "signal": "iret_ss_validation_operation",
+      "guard": "allowed && operation == spk286_microcode_pkg::MC_VALIDATE_IRET_SS && protected_msw[0]",
+      "original_statement": "    assign iret_ss_validation_operation = allowed && operation == spk286_microcode_pkg::MC_VALIDATE_IRET_SS && protected_msw[0];",
+      "replacement_statement": "    assign iret_ss_validation_operation = implementation_allowed && operation == spk286_microcode_pkg::MC_VALIDATE_IRET_SS && protected_msw[0];",
+      "original_model": [
+        "and",
+        [
+          [
+            "permission",
+            "allowed"
+          ],
+          [
+            "compare",
+            "==",
+            158
+          ],
+          [
+            "context",
+            "protected_msw[0]"
+          ]
+        ]
+      ],
+      "replacement_model": [
+        "and",
+        [
+          [
+            "permission",
+            "implementation_allowed"
+          ],
+          [
+            "compare",
+            "==",
+            158
+          ],
+          [
+            "context",
+            "protected_msw[0]"
+          ]
+        ]
+      ]
+    },
+    {
+      "signal": "event_gate_operation",
+      "guard": "allowed && operation == spk286_microcode_pkg::MC_VALIDATE_EVENT_GATE",
+      "original_statement": "    assign event_gate_operation = allowed && operation == spk286_microcode_pkg::MC_VALIDATE_EVENT_GATE;",
+      "replacement_statement": "    assign event_gate_operation = implementation_allowed && operation == spk286_microcode_pkg::MC_VALIDATE_EVENT_GATE;",
+      "original_model": [
+        "and",
+        [
+          [
+            "permission",
+            "allowed"
+          ],
+          [
+            "compare",
+            "==",
+            151
+          ]
+        ]
+      ],
+      "replacement_model": [
+        "and",
+        [
+          [
+            "permission",
+            "implementation_allowed"
+          ],
+          [
+            "compare",
+            "==",
+            151
+          ]
+        ]
+      ]
+    },
+    {
+      "signal": "event_gate_ip_operation",
+      "guard": "allowed && operation == spk286_microcode_pkg::MC_EVENT_GATE_IP",
+      "original_statement": "    assign event_gate_ip_operation = allowed && operation == spk286_microcode_pkg::MC_EVENT_GATE_IP;",
+      "replacement_statement": "    assign event_gate_ip_operation = implementation_allowed && operation == spk286_microcode_pkg::MC_EVENT_GATE_IP;",
+      "original_model": [
+        "and",
+        [
+          [
+            "permission",
+            "allowed"
+          ],
+          [
+            "compare",
+            "==",
+            152
+          ]
+        ]
+      ],
+      "replacement_model": [
+        "and",
+        [
+          [
+            "permission",
+            "implementation_allowed"
+          ],
+          [
+            "compare",
+            "==",
+            152
+          ]
+        ]
+      ]
+    },
+    {
+      "signal": "event_gate_cs_operation",
+      "guard": "allowed && operation == spk286_microcode_pkg::MC_EVENT_GATE_CS",
+      "original_statement": "    assign event_gate_cs_operation = allowed && operation == spk286_microcode_pkg::MC_EVENT_GATE_CS;",
+      "replacement_statement": "    assign event_gate_cs_operation = implementation_allowed && operation == spk286_microcode_pkg::MC_EVENT_GATE_CS;",
+      "original_model": [
+        "and",
+        [
+          [
+            "permission",
+            "allowed"
+          ],
+          [
+            "compare",
+            "==",
+            153
+          ]
+        ]
+      ],
+      "replacement_model": [
+        "and",
+        [
+          [
+            "permission",
+            "implementation_allowed"
+          ],
+          [
+            "compare",
+            "==",
+            153
+          ]
+        ]
+      ]
+    },
+    {
+      "signal": "constant_zero",
+      "guard": "allowed && operation == spk286_microcode_pkg::MC_CONST_ZERO_TMP1",
+      "original_statement": "    assign constant_zero = allowed && operation == spk286_microcode_pkg::MC_CONST_ZERO_TMP1;",
+      "replacement_statement": "    assign constant_zero = implementation_allowed && operation == spk286_microcode_pkg::MC_CONST_ZERO_TMP1;",
+      "original_model": [
+        "and",
+        [
+          [
+            "permission",
+            "allowed"
+          ],
+          [
+            "compare",
+            "==",
+            72
+          ]
+        ]
+      ],
+      "replacement_model": [
+        "and",
+        [
+          [
+            "permission",
+            "implementation_allowed"
+          ],
+          [
+            "compare",
+            "==",
+            72
+          ]
+        ]
+      ]
+    },
+    {
+      "signal": "constant_ones",
+      "guard": "allowed && operation == spk286_microcode_pkg::MC_CONST_ONES_TMP1",
+      "original_statement": "    assign constant_ones = allowed && operation == spk286_microcode_pkg::MC_CONST_ONES_TMP1;",
+      "replacement_statement": "    assign constant_ones = implementation_allowed && operation == spk286_microcode_pkg::MC_CONST_ONES_TMP1;",
+      "original_model": [
+        "and",
+        [
+          [
+            "permission",
+            "allowed"
+          ],
+          [
+            "compare",
+            "==",
+            73
+          ]
+        ]
+      ],
+      "replacement_model": [
+        "and",
+        [
+          [
+            "permission",
+            "implementation_allowed"
+          ],
+          [
+            "compare",
+            "==",
+            73
+          ]
+        ]
+      ]
+    },
+    {
+      "signal": "dispatch_request",
+      "guard": "allowed && operation == spk286_microcode_pkg::MC_DISPATCH_DECODED",
+      "original_statement": "    assign dispatch_request = allowed && operation == spk286_microcode_pkg::MC_DISPATCH_DECODED;",
+      "replacement_statement": "    assign dispatch_request = implementation_allowed && operation == spk286_microcode_pkg::MC_DISPATCH_DECODED;",
+      "original_model": [
+        "and",
+        [
+          [
+            "permission",
+            "allowed"
+          ],
+          [
+            "compare",
+            "==",
+            71
+          ]
+        ]
+      ],
+      "replacement_model": [
+        "and",
+        [
+          [
+            "permission",
+            "implementation_allowed"
+          ],
+          [
+            "compare",
+            "==",
+            71
+          ]
+        ]
+      ]
+    },
+    {
+      "signal": "read_ea",
+      "guard": "allowed && operation == spk286_microcode_pkg::MC_READ_EA",
+      "original_statement": "    assign read_ea = allowed && operation == spk286_microcode_pkg::MC_READ_EA;",
+      "replacement_statement": "    assign read_ea = implementation_allowed && operation == spk286_microcode_pkg::MC_READ_EA;",
+      "original_model": [
+        "and",
+        [
+          [
+            "permission",
+            "allowed"
+          ],
+          [
+            "compare",
+            "==",
+            64
+          ]
+        ]
+      ],
+      "replacement_model": [
+        "and",
+        [
+          [
+            "permission",
+            "implementation_allowed"
+          ],
+          [
+            "compare",
+            "==",
+            64
+          ]
+        ]
+      ]
+    },
+    {
+      "signal": "read_target",
+      "guard": "allowed && operation == spk286_microcode_pkg::MC_READ_TARGET16_TMP1",
+      "original_statement": "    assign read_target = allowed && operation == spk286_microcode_pkg::MC_READ_TARGET16_TMP1;",
+      "replacement_statement": "    assign read_target = implementation_allowed && operation == spk286_microcode_pkg::MC_READ_TARGET16_TMP1;",
+      "original_model": [
+        "and",
+        [
+          [
+            "permission",
+            "allowed"
+          ],
+          [
+            "compare",
+            "==",
+            67
+          ]
+        ]
+      ],
+      "replacement_model": [
+        "and",
+        [
+          [
+            "permission",
+            "implementation_allowed"
+          ],
+          [
+            "compare",
+            "==",
+            67
+          ]
+        ]
+      ]
+    },
+    {
+      "signal": "move_source",
+      "guard": "allowed && operation == spk286_microcode_pkg::MC_MOVE_SOURCE16_TMP1 && temporary_valid_q[1]",
+      "original_statement": "    assign move_source = allowed && operation == spk286_microcode_pkg::MC_MOVE_SOURCE16_TMP1 && temporary_valid_q[1];",
+      "replacement_statement": "    assign move_source = implementation_allowed && operation == spk286_microcode_pkg::MC_MOVE_SOURCE16_TMP1 && temporary_valid_q[1];",
+      "original_model": [
+        "and",
+        [
+          [
+            "permission",
+            "allowed"
+          ],
+          [
+            "compare",
+            "==",
+            68
+          ],
+          [
+            "context",
+            "temporary_valid_q[1]"
+          ]
+        ]
+      ],
+      "replacement_model": [
+        "and",
+        [
+          [
+            "permission",
+            "implementation_allowed"
+          ],
+          [
+            "compare",
+            "==",
+            68
+          ],
+          [
+            "context",
+            "temporary_valid_q[1]"
+          ]
+        ]
+      ]
+    },
+    {
+      "signal": "set_address",
+      "guard": "allowed && operation == spk286_microcode_pkg::MC_SET_ADDRESS_TMP1 && temporary_valid_q[1]",
+      "original_statement": "    assign set_address = allowed && operation == spk286_microcode_pkg::MC_SET_ADDRESS_TMP1 && temporary_valid_q[1];",
+      "replacement_statement": "    assign set_address = implementation_allowed && operation == spk286_microcode_pkg::MC_SET_ADDRESS_TMP1 && temporary_valid_q[1];",
+      "original_model": [
+        "and",
+        [
+          [
+            "permission",
+            "allowed"
+          ],
+          [
+            "compare",
+            "==",
+            69
+          ],
+          [
+            "context",
+            "temporary_valid_q[1]"
+          ]
+        ]
+      ],
+      "replacement_model": [
+        "and",
+        [
+          [
+            "permission",
+            "implementation_allowed"
+          ],
+          [
+            "compare",
+            "==",
+            69
+          ],
+          [
+            "context",
+            "temporary_valid_q[1]"
+          ]
+        ]
+      ]
+    },
+    {
+      "signal": "add_base",
+      "guard": "allowed && operation == spk286_microcode_pkg::MC_ADD_BASE_TMP0_TMP1 && temporary_valid_q[0]",
+      "original_statement": "    assign add_base = allowed && operation == spk286_microcode_pkg::MC_ADD_BASE_TMP0_TMP1 && temporary_valid_q[0];",
+      "replacement_statement": "    assign add_base = implementation_allowed && operation == spk286_microcode_pkg::MC_ADD_BASE_TMP0_TMP1 && temporary_valid_q[0];",
+      "original_model": [
+        "and",
+        [
+          [
+            "permission",
+            "allowed"
+          ],
+          [
+            "compare",
+            "==",
+            70
+          ],
+          [
+            "context",
+            "temporary_valid_q[0]"
+          ]
+        ]
+      ],
+      "replacement_model": [
+        "and",
+        [
+          [
+            "permission",
+            "implementation_allowed"
+          ],
+          [
+            "compare",
+            "==",
+            70
+          ],
+          [
+            "context",
+            "temporary_valid_q[0]"
+          ]
+        ]
+      ]
+    },
+    {
+      "signal": "shift_request",
+      "guard": "allowed && operation == spk286_microcode_pkg::MC_SHIFT && &temporary_valid_q[1:0] && !flags_valid_q",
+      "original_statement": "    assign shift_request = allowed && operation == spk286_microcode_pkg::MC_SHIFT && &temporary_valid_q[1:0] && !flags_valid_q;",
+      "replacement_statement": "    assign shift_request = implementation_allowed && operation == spk286_microcode_pkg::MC_SHIFT && &temporary_valid_q[1:0] && !flags_valid_q;",
+      "original_model": [
+        "and",
+        [
+          [
+            "permission",
+            "allowed"
+          ],
+          [
+            "compare",
+            "==",
+            62
+          ],
+          [
+            "context",
+            "&temporary_valid_q[1:0]"
+          ],
+          [
+            "not",
+            [
+              "context",
+              "flags_valid_q"
+            ]
+          ]
+        ]
+      ],
+      "replacement_model": [
+        "and",
+        [
+          [
+            "permission",
+            "implementation_allowed"
+          ],
+          [
+            "compare",
+            "==",
+            62
+          ],
+          [
+            "context",
+            "&temporary_valid_q[1:0]"
+          ],
+          [
+            "not",
+            [
+              "context",
+              "flags_valid_q"
+            ]
+          ]
+        ]
+      ]
+    },
+    {
+      "signal": "count_low",
+      "guard": "allowed && operation == spk286_microcode_pkg::MC_COUNT_LOW_TMP1",
+      "original_statement": "    assign count_low = allowed && operation == spk286_microcode_pkg::MC_COUNT_LOW_TMP1;",
+      "replacement_statement": "    assign count_low = implementation_allowed && operation == spk286_microcode_pkg::MC_COUNT_LOW_TMP1;",
+      "original_model": [
+        "and",
+        [
+          [
+            "permission",
+            "allowed"
+          ],
+          [
+            "compare",
+            "==",
+            63
+          ]
+        ]
+      ],
+      "replacement_model": [
+        "and",
+        [
+          [
+            "permission",
+            "implementation_allowed"
+          ],
+          [
+            "compare",
+            "==",
+            63
+          ]
+        ]
+      ]
+    },
+    {
+      "signal": "carry_fill_byte",
+      "guard": "allowed && operation == spk286_microcode_pkg::MC_CARRY_FILL8 && temporary_valid_q[0]",
+      "original_statement": "    assign carry_fill_byte = allowed && operation == spk286_microcode_pkg::MC_CARRY_FILL8 && temporary_valid_q[0];",
+      "replacement_statement": "    assign carry_fill_byte = implementation_allowed && operation == spk286_microcode_pkg::MC_CARRY_FILL8 && temporary_valid_q[0];",
+      "original_model": [
+        "and",
+        [
+          [
+            "permission",
+            "allowed"
+          ],
+          [
+            "compare",
+            "==",
+            172
+          ],
+          [
+            "context",
+            "temporary_valid_q[0]"
+          ]
+        ]
+      ],
+      "replacement_model": [
+        "and",
+        [
+          [
+            "permission",
+            "implementation_allowed"
+          ],
+          [
+            "compare",
+            "==",
+            172
+          ],
+          [
+            "context",
+            "temporary_valid_q[0]"
+          ]
+        ]
+      ]
+    },
+    {
+      "signal": "direct_flags",
+      "guard": "allowed && operation == spk286_microcode_pkg::MC_FLAGS_DECODED",
+      "original_statement": "    assign direct_flags = allowed && operation == spk286_microcode_pkg::MC_FLAGS_DECODED;",
+      "replacement_statement": "    assign direct_flags = implementation_allowed && operation == spk286_microcode_pkg::MC_FLAGS_DECODED;",
+      "original_model": [
+        "and",
+        [
+          [
+            "permission",
+            "allowed"
+          ],
+          [
+            "compare",
+            "==",
+            58
+          ]
+        ]
+      ],
+      "replacement_model": [
+        "and",
+        [
+          [
+            "permission",
+            "implementation_allowed"
+          ],
+          [
+            "compare",
+            "==",
+            58
+          ]
+        ]
+      ]
+    },
+    {
+      "signal": "sign_extend_byte",
+      "guard": "allowed && operation == spk286_microcode_pkg::MC_SIGN_EXTEND8 && temporary_valid_q[0]",
+      "original_statement": "    assign sign_extend_byte = allowed && operation == spk286_microcode_pkg::MC_SIGN_EXTEND8 && temporary_valid_q[0];",
+      "replacement_statement": "    assign sign_extend_byte = implementation_allowed && operation == spk286_microcode_pkg::MC_SIGN_EXTEND8 && temporary_valid_q[0];",
+      "original_model": [
+        "and",
+        [
+          [
+            "permission",
+            "allowed"
+          ],
+          [
+            "compare",
+            "==",
+            59
+          ],
+          [
+            "context",
+            "temporary_valid_q[0]"
+          ]
+        ]
+      ],
+      "replacement_model": [
+        "and",
+        [
+          [
+            "permission",
+            "implementation_allowed"
+          ],
+          [
+            "compare",
+            "==",
+            59
+          ],
+          [
+            "context",
+            "temporary_valid_q[0]"
+          ]
+        ]
+      ]
+    },
+    {
+      "signal": "sign_fill_word",
+      "guard": "allowed && operation == spk286_microcode_pkg::MC_SIGN_FILL16 && temporary_valid_q[0]",
+      "original_statement": "    assign sign_fill_word = allowed && operation == spk286_microcode_pkg::MC_SIGN_FILL16 && temporary_valid_q[0];",
+      "replacement_statement": "    assign sign_fill_word = implementation_allowed && operation == spk286_microcode_pkg::MC_SIGN_FILL16 && temporary_valid_q[0];",
+      "original_model": [
+        "and",
+        [
+          [
+            "permission",
+            "allowed"
+          ],
+          [
+            "compare",
+            "==",
+            60
+          ],
+          [
+            "context",
+            "temporary_valid_q[0]"
+          ]
+        ]
+      ],
+      "replacement_model": [
+        "and",
+        [
+          [
+            "permission",
+            "implementation_allowed"
+          ],
+          [
+            "compare",
+            "==",
+            60
+          ],
+          [
+            "context",
+            "temporary_valid_q[0]"
+          ]
+        ]
+      ]
+    },
+    {
+      "signal": "constant_one",
+      "guard": "allowed && operation == spk286_microcode_pkg::MC_CONST_ONE_TMP1",
+      "original_statement": "    assign constant_one = allowed && operation == spk286_microcode_pkg::MC_CONST_ONE_TMP1;",
+      "replacement_statement": "    assign constant_one = implementation_allowed && operation == spk286_microcode_pkg::MC_CONST_ONE_TMP1;",
+      "original_model": [
+        "and",
+        [
+          [
+            "permission",
+            "allowed"
+          ],
+          [
+            "compare",
+            "==",
+            61
+          ]
+        ]
+      ],
+      "replacement_model": [
+        "and",
+        [
+          [
+            "permission",
+            "implementation_allowed"
+          ],
+          [
+            "compare",
+            "==",
+            61
+          ]
+        ]
+      ]
+    },
+    {
+      "signal": "push_operation",
+      "guard": "allowed && operation == spk286_microcode_pkg::MC_PUSH16 && temporary_valid_q[0]",
+      "original_statement": "    assign push_operation = allowed && operation == spk286_microcode_pkg::MC_PUSH16 && temporary_valid_q[0];",
+      "replacement_statement": "    assign push_operation = implementation_allowed && operation == spk286_microcode_pkg::MC_PUSH16 && temporary_valid_q[0];",
+      "original_model": [
+        "and",
+        [
+          [
+            "permission",
+            "allowed"
+          ],
+          [
+            "compare",
+            "==",
+            21
+          ],
+          [
+            "context",
+            "temporary_valid_q[0]"
+          ]
+        ]
+      ],
+      "replacement_model": [
+        "and",
+        [
+          [
+            "permission",
+            "implementation_allowed"
+          ],
+          [
+            "compare",
+            "==",
+            21
+          ],
+          [
+            "context",
+            "temporary_valid_q[0]"
+          ]
+        ]
+      ]
+    },
+    {
+      "signal": "push_event_error",
+      "guard": "allowed && operation == spk286_microcode_pkg::MC_PUSH_EVENT_ERROR",
+      "original_statement": "    assign push_event_error = allowed && operation == spk286_microcode_pkg::MC_PUSH_EVENT_ERROR;",
+      "replacement_statement": "    assign push_event_error = implementation_allowed && operation == spk286_microcode_pkg::MC_PUSH_EVENT_ERROR;",
+      "original_model": [
+        "and",
+        [
+          [
+            "permission",
+            "allowed"
+          ],
+          [
+            "compare",
+            "==",
+            155
+          ]
+        ]
+      ],
+      "replacement_model": [
+        "and",
+        [
+          [
+            "permission",
+            "implementation_allowed"
+          ],
+          [
+            "compare",
+            "==",
+            155
+          ]
+        ]
+      ]
+    },
+    {
+      "signal": "pop_operation",
+      "guard": "allowed && (operation == spk286_microcode_pkg::MC_POP16 ||\n                                      operation == spk286_microcode_pkg::MC_POP16_TMP1 ||\n                                      operation == spk286_microcode_pkg::MC_POP16_TMP2 || iret_outer_pop)",
+      "original_statement": "    assign pop_operation = allowed && (operation == spk286_microcode_pkg::MC_POP16 ||\n                                      operation == spk286_microcode_pkg::MC_POP16_TMP1 ||\n                                      operation == spk286_microcode_pkg::MC_POP16_TMP2 || iret_outer_pop);",
+      "replacement_statement": "    assign pop_operation = implementation_allowed && (operation == spk286_microcode_pkg::MC_POP16 ||\n                                      operation == spk286_microcode_pkg::MC_POP16_TMP1 ||\n                                      operation == spk286_microcode_pkg::MC_POP16_TMP2 || iret_outer_pop);",
+      "original_model": [
+        "and",
+        [
+          [
+            "permission",
+            "allowed"
+          ],
+          [
+            "or",
+            [
+              [
+                "compare",
+                "==",
+                22
+              ],
+              [
+                "compare",
+                "==",
+                43
+              ],
+              [
+                "compare",
+                "==",
+                44
+              ],
+              [
+                "and",
+                [
+                  [
+                    "and",
+                    [
+                      [
+                        "permission",
+                        "allowed"
+                      ],
+                      [
+                        "compare",
+                        "==",
+                        157
+                      ]
+                    ]
+                  ],
+                  [
+                    "and",
+                    [
+                      [
+                        "context",
+                        "protected_msw[0]"
+                      ],
+                      [
+                        "context",
+                        "protected_return_cursor_q"
+                      ],
+                      [
+                        "context",
+                        "temporary_valid_q[1]"
+                      ],
+                      [
+                        "context",
+                        "tmp1_q[1:0] > protected_cpl"
+                      ]
+                    ]
+                  ],
+                  [
+                    "context",
+                    "iret_outer_phase_q < 2'd2"
+                  ]
+                ]
+              ]
+            ]
+          ]
+        ]
+      ],
+      "replacement_model": [
+        "and",
+        [
+          [
+            "permission",
+            "implementation_allowed"
+          ],
+          [
+            "or",
+            [
+              [
+                "compare",
+                "==",
+                22
+              ],
+              [
+                "compare",
+                "==",
+                43
+              ],
+              [
+                "compare",
+                "==",
+                44
+              ],
+              [
+                "and",
+                [
+                  [
+                    "and",
+                    [
+                      [
+                        "permission",
+                        "allowed"
+                      ],
+                      [
+                        "compare",
+                        "==",
+                        157
+                      ]
+                    ]
+                  ],
+                  [
+                    "and",
+                    [
+                      [
+                        "context",
+                        "protected_msw[0]"
+                      ],
+                      [
+                        "context",
+                        "protected_return_cursor_q"
+                      ],
+                      [
+                        "context",
+                        "temporary_valid_q[1]"
+                      ],
+                      [
+                        "context",
+                        "tmp1_q[1:0] > protected_cpl"
+                      ]
+                    ]
+                  ],
+                  [
+                    "context",
+                    "iret_outer_phase_q < 2'd2"
+                  ]
+                ]
+              ]
+            ]
+          ]
+        ]
+      ]
+    },
+    {
+      "signal": "read_ip",
+      "guard": "allowed && operation == spk286_microcode_pkg::MC_READ_IP16",
+      "original_statement": "    assign read_ip = allowed && operation == spk286_microcode_pkg::MC_READ_IP16;",
+      "replacement_statement": "    assign read_ip = implementation_allowed && operation == spk286_microcode_pkg::MC_READ_IP16;",
+      "original_model": [
+        "and",
+        [
+          [
+            "permission",
+            "allowed"
+          ],
+          [
+            "compare",
+            "==",
+            23
+          ]
+        ]
+      ],
+      "replacement_model": [
+        "and",
+        [
+          [
+            "permission",
+            "implementation_allowed"
+          ],
+          [
+            "compare",
+            "==",
+            23
+          ]
+        ]
+      ]
+    },
+    {
+      "signal": "target_relative",
+      "guard": "allowed && operation == spk286_microcode_pkg::MC_TARGET_REL16 && temporary_valid_q[1]",
+      "original_statement": "    assign target_relative = allowed && operation == spk286_microcode_pkg::MC_TARGET_REL16 && temporary_valid_q[1];",
+      "replacement_statement": "    assign target_relative = implementation_allowed && operation == spk286_microcode_pkg::MC_TARGET_REL16 && temporary_valid_q[1];",
+      "original_model": [
+        "and",
+        [
+          [
+            "permission",
+            "allowed"
+          ],
+          [
+            "compare",
+            "==",
+            24
+          ],
+          [
+            "context",
+            "temporary_valid_q[1]"
+          ]
+        ]
+      ],
+      "replacement_model": [
+        "and",
+        [
+          [
+            "permission",
+            "implementation_allowed"
+          ],
+          [
+            "compare",
+            "==",
+            24
+          ],
+          [
+            "context",
+            "temporary_valid_q[1]"
+          ]
+        ]
+      ]
+    },
+    {
+      "signal": "target_absolute",
+      "guard": "allowed && operation == spk286_microcode_pkg::MC_TARGET_ABS16 && temporary_valid_q[0]",
+      "original_statement": "    assign target_absolute = allowed && operation == spk286_microcode_pkg::MC_TARGET_ABS16 && temporary_valid_q[0];",
+      "replacement_statement": "    assign target_absolute = implementation_allowed && operation == spk286_microcode_pkg::MC_TARGET_ABS16 && temporary_valid_q[0];",
+      "original_model": [
+        "and",
+        [
+          [
+            "permission",
+            "allowed"
+          ],
+          [
+            "compare",
+            "==",
+            25
+          ],
+          [
+            "context",
+            "temporary_valid_q[0]"
+          ]
+        ]
+      ],
+      "replacement_model": [
+        "and",
+        [
+          [
+            "permission",
+            "implementation_allowed"
+          ],
+          [
+            "compare",
+            "==",
+            25
+          ],
+          [
+            "context",
+            "temporary_valid_q[0]"
+          ]
+        ]
+      ]
+    },
+    {
+      "signal": "redirect_operation",
+      "guard": "allowed && operation == spk286_microcode_pkg::MC_REDIRECT && target_valid_q",
+      "original_statement": "    assign redirect_operation = allowed && operation == spk286_microcode_pkg::MC_REDIRECT && target_valid_q;",
+      "replacement_statement": "    assign redirect_operation = implementation_allowed && operation == spk286_microcode_pkg::MC_REDIRECT && target_valid_q;",
+      "original_model": [
+        "and",
+        [
+          [
+            "permission",
+            "allowed"
+          ],
+          [
+            "compare",
+            "==",
+            26
+          ],
+          [
+            "context",
+            "target_valid_q"
+          ]
+        ]
+      ],
+      "replacement_model": [
+        "and",
+        [
+          [
+            "permission",
+            "implementation_allowed"
+          ],
+          [
+            "compare",
+            "==",
+            26
+          ],
+          [
+            "context",
+            "target_valid_q"
+          ]
+        ]
+      ]
+    },
+    {
+      "signal": "adjust_stack",
+      "guard": "allowed && operation == spk286_microcode_pkg::MC_ADJUST_SP16 && temporary_valid_q[1]",
+      "original_statement": "    assign adjust_stack = allowed && operation == spk286_microcode_pkg::MC_ADJUST_SP16 && temporary_valid_q[1];",
+      "replacement_statement": "    assign adjust_stack = implementation_allowed && operation == spk286_microcode_pkg::MC_ADJUST_SP16 && temporary_valid_q[1];",
+      "original_model": [
+        "and",
+        [
+          [
+            "permission",
+            "allowed"
+          ],
+          [
+            "compare",
+            "==",
+            27
+          ],
+          [
+            "context",
+            "temporary_valid_q[1]"
+          ]
+        ]
+      ],
+      "replacement_model": [
+        "and",
+        [
+          [
+            "permission",
+            "implementation_allowed"
+          ],
+          [
+            "compare",
+            "==",
+            27
+          ],
+          [
+            "context",
+            "temporary_valid_q[1]"
+          ]
+        ]
+      ]
+    },
+    {
+      "signal": "count_operation",
+      "guard": "allowed && operation == spk286_microcode_pkg::MC_COUNT",
+      "original_statement": "    assign count_operation = allowed && operation == spk286_microcode_pkg::MC_COUNT;",
+      "replacement_statement": "    assign count_operation = implementation_allowed && operation == spk286_microcode_pkg::MC_COUNT;",
+      "original_model": [
+        "and",
+        [
+          [
+            "permission",
+            "allowed"
+          ],
+          [
+            "compare",
+            "==",
+            28
+          ]
+        ]
+      ],
+      "replacement_model": [
+        "and",
+        [
+          [
+            "permission",
+            "implementation_allowed"
+          ],
+          [
+            "compare",
+            "==",
+            28
+          ]
+        ]
+      ]
+    },
+    {
+      "signal": "check_operand",
+      "guard": "allowed && operation == spk286_microcode_pkg::MC_CHECK_RM16",
+      "original_statement": "    assign check_operand = allowed && operation == spk286_microcode_pkg::MC_CHECK_RM16;",
+      "replacement_statement": "    assign check_operand = implementation_allowed && operation == spk286_microcode_pkg::MC_CHECK_RM16;",
+      "original_model": [
+        "and",
+        [
+          [
+            "permission",
+            "allowed"
+          ],
+          [
+            "compare",
+            "==",
+            19
+          ]
+        ]
+      ],
+      "replacement_model": [
+        "and",
+        [
+          [
+            "permission",
+            "implementation_allowed"
+          ],
+          [
+            "compare",
+            "==",
+            19
+          ]
+        ]
+      ]
+    },
+    {
+      "signal": "fetch_byte",
+      "guard": "allowed && operation == spk286_microcode_pkg::MC_FETCH_IMM8",
+      "original_statement": "    assign fetch_byte = allowed && operation == spk286_microcode_pkg::MC_FETCH_IMM8;",
+      "replacement_statement": "    assign fetch_byte = implementation_allowed && operation == spk286_microcode_pkg::MC_FETCH_IMM8;",
+      "original_model": [
+        "and",
+        [
+          [
+            "permission",
+            "allowed"
+          ],
+          [
+            "compare",
+            "==",
+            29
+          ]
+        ]
+      ],
+      "replacement_model": [
+        "and",
+        [
+          [
+            "permission",
+            "implementation_allowed"
+          ],
+          [
+            "compare",
+            "==",
+            29
+          ]
+        ]
+      ]
+    },
+    {
+      "signal": "fetch_byte_tmp1",
+      "guard": "allowed && operation == spk286_microcode_pkg::MC_FETCH_IMM8_TMP1",
+      "original_statement": "    assign fetch_byte_tmp1 = allowed && operation == spk286_microcode_pkg::MC_FETCH_IMM8_TMP1;",
+      "replacement_statement": "    assign fetch_byte_tmp1 = implementation_allowed && operation == spk286_microcode_pkg::MC_FETCH_IMM8_TMP1;",
+      "original_model": [
+        "and",
+        [
+          [
+            "permission",
+            "allowed"
+          ],
+          [
+            "compare",
+            "==",
+            50
+          ]
+        ]
+      ],
+      "replacement_model": [
+        "and",
+        [
+          [
+            "permission",
+            "implementation_allowed"
+          ],
+          [
+            "compare",
+            "==",
+            50
+          ]
+        ]
+      ]
+    },
+    {
+      "signal": "read_flags",
+      "guard": "allowed && operation == spk286_microcode_pkg::MC_READ_FLAGS",
+      "original_statement": "    assign read_flags = allowed && operation == spk286_microcode_pkg::MC_READ_FLAGS;",
+      "replacement_statement": "    assign read_flags = implementation_allowed && operation == spk286_microcode_pkg::MC_READ_FLAGS;",
+      "original_model": [
+        "and",
+        [
+          [
+            "permission",
+            "allowed"
+          ],
+          [
+            "compare",
+            "==",
+            30
+          ]
+        ]
+      ],
+      "replacement_model": [
+        "and",
+        [
+          [
+            "permission",
+            "implementation_allowed"
+          ],
+          [
+            "compare",
+            "==",
+            30
+          ]
+        ]
+      ]
+    },
+    {
+      "signal": "restore_flags",
+      "guard": "allowed && operation == spk286_microcode_pkg::MC_RESTORE_FLAGS && temporary_valid_q[0]",
+      "original_statement": "    assign restore_flags = allowed && operation == spk286_microcode_pkg::MC_RESTORE_FLAGS && temporary_valid_q[0];",
+      "replacement_statement": "    assign restore_flags = implementation_allowed && operation == spk286_microcode_pkg::MC_RESTORE_FLAGS && temporary_valid_q[0];",
+      "original_model": [
+        "and",
+        [
+          [
+            "permission",
+            "allowed"
+          ],
+          [
+            "compare",
+            "==",
+            31
+          ],
+          [
+            "context",
+            "temporary_valid_q[0]"
+          ]
+        ]
+      ],
+      "replacement_model": [
+        "and",
+        [
+          [
+            "permission",
+            "implementation_allowed"
+          ],
+          [
+            "compare",
+            "==",
+            31
+          ],
+          [
+            "context",
+            "temporary_valid_q[0]"
+          ]
+        ]
+      ]
+    },
+    {
+      "signal": "clear_if_tf",
+      "guard": "allowed && operation == spk286_microcode_pkg::MC_CLEAR_IF_TF",
+      "original_statement": "    assign clear_if_tf = allowed && operation == spk286_microcode_pkg::MC_CLEAR_IF_TF;",
+      "replacement_statement": "    assign clear_if_tf = implementation_allowed && operation == spk286_microcode_pkg::MC_CLEAR_IF_TF;",
+      "original_model": [
+        "and",
+        [
+          [
+            "permission",
+            "allowed"
+          ],
+          [
+            "compare",
+            "==",
+            39
+          ]
+        ]
+      ],
+      "replacement_model": [
+        "and",
+        [
+          [
+            "permission",
+            "implementation_allowed"
+          ],
+          [
+            "compare",
+            "==",
+            39
+          ]
+        ]
+      ]
+    },
+    {
+      "signal": "read_event_flags",
+      "guard": "allowed && operation == spk286_microcode_pkg::MC_EVENT_FLAGS",
+      "original_statement": "    assign read_event_flags = allowed && operation == spk286_microcode_pkg::MC_EVENT_FLAGS;",
+      "replacement_statement": "    assign read_event_flags = implementation_allowed && operation == spk286_microcode_pkg::MC_EVENT_FLAGS;",
+      "original_model": [
+        "and",
+        [
+          [
+            "permission",
+            "allowed"
+          ],
+          [
+            "compare",
+            "==",
+            36
+          ]
+        ]
+      ],
+      "replacement_model": [
+        "and",
+        [
+          [
+            "permission",
+            "implementation_allowed"
+          ],
+          [
+            "compare",
+            "==",
+            36
+          ]
+        ]
+      ]
+    },
+    {
+      "signal": "read_event_cs",
+      "guard": "allowed && operation == spk286_microcode_pkg::MC_EVENT_CS",
+      "original_statement": "    assign read_event_cs = allowed && operation == spk286_microcode_pkg::MC_EVENT_CS;",
+      "replacement_statement": "    assign read_event_cs = implementation_allowed && operation == spk286_microcode_pkg::MC_EVENT_CS;",
+      "original_model": [
+        "and",
+        [
+          [
+            "permission",
+            "allowed"
+          ],
+          [
+            "compare",
+            "==",
+            37
+          ]
+        ]
+      ],
+      "replacement_model": [
+        "and",
+        [
+          [
+            "permission",
+            "implementation_allowed"
+          ],
+          [
+            "compare",
+            "==",
+            37
+          ]
+        ]
+      ]
+    },
+    {
+      "signal": "read_event_ip",
+      "guard": "allowed && operation == spk286_microcode_pkg::MC_EVENT_IP",
+      "original_statement": "    assign read_event_ip = allowed && operation == spk286_microcode_pkg::MC_EVENT_IP;",
+      "replacement_statement": "    assign read_event_ip = implementation_allowed && operation == spk286_microcode_pkg::MC_EVENT_IP;",
+      "original_model": [
+        "and",
+        [
+          [
+            "permission",
+            "allowed"
+          ],
+          [
+            "compare",
+            "==",
+            38
+          ]
+        ]
+      ],
+      "replacement_model": [
+        "and",
+        [
+          [
+            "permission",
+            "implementation_allowed"
+          ],
+          [
+            "compare",
+            "==",
+            38
+          ]
+        ]
+      ]
+    },
+    {
+      "signal": "vector_ip",
+      "guard": "allowed && operation == spk286_microcode_pkg::MC_VECTOR_IP",
+      "original_statement": "    assign vector_ip = allowed && operation == spk286_microcode_pkg::MC_VECTOR_IP;",
+      "replacement_statement": "    assign vector_ip = implementation_allowed && operation == spk286_microcode_pkg::MC_VECTOR_IP;",
+      "original_model": [
+        "and",
+        [
+          [
+            "permission",
+            "allowed"
+          ],
+          [
+            "compare",
+            "==",
+            40
+          ]
+        ]
+      ],
+      "replacement_model": [
+        "and",
+        [
+          [
+            "permission",
+            "implementation_allowed"
+          ],
+          [
+            "compare",
+            "==",
+            40
+          ]
+        ]
+      ]
+    },
+    {
+      "signal": "vector_cs",
+      "guard": "allowed && operation == spk286_microcode_pkg::MC_VECTOR_CS",
+      "original_statement": "    assign vector_cs = allowed && operation == spk286_microcode_pkg::MC_VECTOR_CS;",
+      "replacement_statement": "    assign vector_cs = implementation_allowed && operation == spk286_microcode_pkg::MC_VECTOR_CS;",
+      "original_model": [
+        "and",
+        [
+          [
+            "permission",
+            "allowed"
+          ],
+          [
+            "compare",
+            "==",
+            41
+          ]
+        ]
+      ],
+      "replacement_model": [
+        "and",
+        [
+          [
+            "permission",
+            "implementation_allowed"
+          ],
+          [
+            "compare",
+            "==",
+            41
+          ]
+        ]
+      ]
+    },
+    {
+      "signal": "clear_event_flags",
+      "guard": "allowed && operation == spk286_microcode_pkg::MC_CLEAR_EVENT_FLAGS",
+      "original_statement": "    assign clear_event_flags = allowed && operation == spk286_microcode_pkg::MC_CLEAR_EVENT_FLAGS;",
+      "replacement_statement": "    assign clear_event_flags = implementation_allowed && operation == spk286_microcode_pkg::MC_CLEAR_EVENT_FLAGS;",
+      "original_model": [
+        "and",
+        [
+          [
+            "permission",
+            "allowed"
+          ],
+          [
+            "compare",
+            "==",
+            154
+          ]
+        ]
+      ],
+      "replacement_model": [
+        "and",
+        [
+          [
+            "permission",
+            "implementation_allowed"
+          ],
+          [
+            "compare",
+            "==",
+            154
+          ]
+        ]
+      ]
+    },
+    {
+      "signal": "commit_context",
+      "guard": "allowed && operation == spk286_microcode_pkg::MC_CONTEXT_COMMIT && &temporary_valid_q[1:0]",
+      "original_statement": "    assign commit_context = allowed && operation == spk286_microcode_pkg::MC_CONTEXT_COMMIT && &temporary_valid_q[1:0];",
+      "replacement_statement": "    assign commit_context = implementation_allowed && operation == spk286_microcode_pkg::MC_CONTEXT_COMMIT && &temporary_valid_q[1:0];",
+      "original_model": [
+        "and",
+        [
+          [
+            "permission",
+            "allowed"
+          ],
+          [
+            "compare",
+            "==",
+            42
+          ],
+          [
+            "context",
+            "&temporary_valid_q[1:0]"
+          ]
+        ]
+      ],
+      "replacement_model": [
+        "and",
+        [
+          [
+            "permission",
+            "implementation_allowed"
+          ],
+          [
+            "compare",
+            "==",
+            42
+          ],
+          [
+            "context",
+            "&temporary_valid_q[1:0]"
+          ]
+        ]
+      ]
+    },
+    {
+      "signal": "iret_commit",
+      "guard": "allowed && operation == spk286_microcode_pkg::MC_IRET_COMMIT && &temporary_valid_q",
+      "original_statement": "    assign iret_commit = allowed && operation == spk286_microcode_pkg::MC_IRET_COMMIT && &temporary_valid_q;",
+      "replacement_statement": "    assign iret_commit = implementation_allowed && operation == spk286_microcode_pkg::MC_IRET_COMMIT && &temporary_valid_q;",
+      "original_model": [
+        "and",
+        [
+          [
+            "permission",
+            "allowed"
+          ],
+          [
+            "compare",
+            "==",
+            45
+          ],
+          [
+            "context",
+            "&temporary_valid_q"
+          ]
+        ]
+      ],
+      "replacement_model": [
+        "and",
+        [
+          [
+            "permission",
+            "implementation_allowed"
+          ],
+          [
+            "compare",
+            "==",
+            45
+          ],
+          [
+            "context",
+            "&temporary_valid_q"
+          ]
+        ]
+      ]
+    },
+    {
+      "signal": "ack_operation",
+      "guard": "allowed && operation == spk286_microcode_pkg::MC_EVENT_ACK",
+      "original_statement": "    assign ack_operation = allowed && operation == spk286_microcode_pkg::MC_EVENT_ACK;",
+      "replacement_statement": "    assign ack_operation = implementation_allowed && operation == spk286_microcode_pkg::MC_EVENT_ACK;",
+      "original_model": [
+        "and",
+        [
+          [
+            "permission",
+            "allowed"
+          ],
+          [
+            "compare",
+            "==",
+            35
+          ]
+        ]
+      ],
+      "replacement_model": [
+        "and",
+        [
+          [
+            "permission",
+            "implementation_allowed"
+          ],
+          [
+            "compare",
+            "==",
+            35
+          ]
+        ]
+      ]
+    },
+    {
+      "signal": "request_event",
+      "guard": "allowed && operation == spk286_microcode_pkg::MC_REQUEST_EVENT",
+      "original_statement": "    assign request_event = allowed && operation == spk286_microcode_pkg::MC_REQUEST_EVENT;",
+      "replacement_statement": "    assign request_event = implementation_allowed && operation == spk286_microcode_pkg::MC_REQUEST_EVENT;",
+      "original_model": [
+        "and",
+        [
+          [
+            "permission",
+            "allowed"
+          ],
+          [
+            "compare",
+            "==",
+            34
+          ]
+        ]
+      ],
+      "replacement_model": [
+        "and",
+        [
+          [
+            "permission",
+            "implementation_allowed"
+          ],
+          [
+            "compare",
+            "==",
+            34
+          ]
+        ]
+      ]
+    },
+    {
+      "signal": "halt_operation",
+      "guard": "allowed && operation == spk286_microcode_pkg::MC_HALT",
+      "original_statement": "    assign halt_operation = allowed && operation == spk286_microcode_pkg::MC_HALT;",
+      "replacement_statement": "    assign halt_operation = implementation_allowed && operation == spk286_microcode_pkg::MC_HALT;",
+      "original_model": [
+        "and",
+        [
+          [
+            "permission",
+            "allowed"
+          ],
+          [
+            "compare",
+            "==",
+            33
+          ]
+        ]
+      ],
+      "replacement_model": [
+        "and",
+        [
+          [
+            "permission",
+            "implementation_allowed"
+          ],
+          [
+            "compare",
+            "==",
+            33
+          ]
+        ]
+      ]
+    },
+    {
+      "signal": "task_switch_operation",
+      "guard": "allowed && operation == spk286_microcode_pkg::MC_TASK_SWITCH",
+      "original_statement": "    assign task_switch_operation = allowed && operation == spk286_microcode_pkg::MC_TASK_SWITCH;",
+      "replacement_statement": "    assign task_switch_operation = implementation_allowed && operation == spk286_microcode_pkg::MC_TASK_SWITCH;",
+      "original_model": [
+        "and",
+        [
+          [
+            "permission",
+            "allowed"
+          ],
+          [
+            "compare",
+            "==",
+            169
+          ]
+        ]
+      ],
+      "replacement_model": [
+        "and",
+        [
+          [
+            "permission",
+            "implementation_allowed"
+          ],
+          [
+            "compare",
+            "==",
+            169
+          ]
+        ]
+      ]
+    },
+    {
+      "signal": "task_return_operation",
+      "guard": "allowed && operation == spk286_microcode_pkg::MC_TASK_RETURN &&\n                                   protected_msw[0] && architectural_flags[14]",
+      "original_statement": "    assign task_return_operation = allowed && operation == spk286_microcode_pkg::MC_TASK_RETURN &&\n                                   protected_msw[0] && architectural_flags[14];",
+      "replacement_statement": "    assign task_return_operation = implementation_allowed && operation == spk286_microcode_pkg::MC_TASK_RETURN &&\n                                   protected_msw[0] && architectural_flags[14];",
+      "original_model": [
+        "and",
+        [
+          [
+            "permission",
+            "allowed"
+          ],
+          [
+            "compare",
+            "==",
+            170
+          ],
+          [
+            "context",
+            "protected_msw[0]"
+          ],
+          [
+            "context",
+            "architectural_flags[14]"
+          ]
+        ]
+      ],
+      "replacement_model": [
+        "and",
+        [
+          [
+            "permission",
+            "implementation_allowed"
+          ],
+          [
+            "compare",
+            "==",
+            170
+          ],
+          [
+            "context",
+            "protected_msw[0]"
+          ],
+          [
+            "context",
+            "architectural_flags[14]"
+          ]
+        ]
+      ]
+    },
+    {
+      "signal": "immediate_fetch",
+      "guard": "allowed && immediate_operation && !register_pending_q &&\n                             (!immediate_rm || decode_modrm_valid)",
+      "original_statement": "    assign immediate_fetch = allowed && immediate_operation && !register_pending_q &&\n                             (!immediate_rm || decode_modrm_valid);",
+      "replacement_statement": "    assign immediate_fetch = implementation_allowed && immediate_operation && !register_pending_q &&\n                             (!immediate_rm || decode_modrm_valid);",
+      "original_model": [
+        "and",
+        [
+          [
+            "permission",
+            "allowed"
+          ],
+          [
+            "rep_zero",
+            "immediate_operation"
+          ],
+          [
+            "not",
+            [
+              "context",
+              "register_pending_q"
+            ]
+          ],
+          [
+            "or",
+            [
+              [
+                "not",
+                [
+                  "context",
+                  "immediate_rm"
+                ]
+              ],
+              [
+                "context",
+                "decode_modrm_valid"
+              ]
+            ]
+          ]
+        ]
+      ],
+      "replacement_model": [
+        "and",
+        [
+          [
+            "permission",
+            "implementation_allowed"
+          ],
+          [
+            "rep_zero",
+            "immediate_operation"
+          ],
+          [
+            "not",
+            [
+              "context",
+              "register_pending_q"
+            ]
+          ],
+          [
+            "or",
+            [
+              [
+                "not",
+                [
+                  "context",
+                  "immediate_rm"
+                ]
+              ],
+              [
+                "context",
+                "decode_modrm_valid"
+              ]
+            ]
+          ]
+        ]
+      ]
+    },
+    {
+      "signal": "register_capture",
+      "guard": "allowed && register_decode && !decode_modrm_valid &&\n                              decode_byte_ready && byte_valid && byte_data[7:6] == 2'b11",
+      "original_statement": "    assign register_capture = allowed && register_decode && !decode_modrm_valid &&\n                              decode_byte_ready && byte_valid && byte_data[7:6] == 2'b11;",
+      "replacement_statement": "    assign register_capture = implementation_allowed && register_decode && !decode_modrm_valid &&\n                              decode_byte_ready && byte_valid && byte_data[7:6] == 2'b11;",
+      "original_model": [
+        "and",
+        [
+          [
+            "permission",
+            "allowed"
+          ],
+          [
+            "rep_zero",
+            "register_decode"
+          ],
+          [
+            "not",
+            [
+              "context",
+              "decode_modrm_valid"
+            ]
+          ],
+          [
+            "context",
+            "decode_byte_ready"
+          ],
+          [
+            "context",
+            "byte_valid"
+          ],
+          [
+            "context",
+            "byte_data[7:6] == 2'b11"
+          ]
+        ]
+      ],
+      "replacement_model": [
+        "and",
+        [
+          [
+            "permission",
+            "implementation_allowed"
+          ],
+          [
+            "rep_zero",
+            "register_decode"
+          ],
+          [
+            "not",
+            [
+              "context",
+              "decode_modrm_valid"
+            ]
+          ],
+          [
+            "context",
+            "decode_byte_ready"
+          ],
+          [
+            "context",
+            "byte_valid"
+          ],
+          [
+            "context",
+            "byte_data[7:6] == 2'b11"
+          ]
+        ]
+      ]
+    },
+    {
+      "signal": "direct_register_capture",
+      "guard": "allowed && unary_direct && !register_pending_q",
+      "original_statement": "    assign direct_register_capture = allowed && unary_direct && !register_pending_q;",
+      "replacement_statement": "    assign direct_register_capture = implementation_allowed && unary_direct && !register_pending_q;",
+      "original_model": [
+        "and",
+        [
+          [
+            "permission",
+            "allowed"
+          ],
+          [
+            "rep_zero",
+            "unary_direct"
+          ],
+          [
+            "not",
+            [
+              "context",
+              "register_pending_q"
+            ]
+          ]
+        ]
+      ],
+      "replacement_model": [
+        "and",
+        [
+          [
+            "permission",
+            "implementation_allowed"
+          ],
+          [
+            "rep_zero",
+            "unary_direct"
+          ],
+          [
+            "not",
+            [
+              "context",
+              "register_pending_q"
+            ]
+          ]
+        ]
+      ]
+    },
+    {
+      "signal": "register_complete",
+      "guard": "allowed && register_pending_q &&\n                               ((register_decode && operand_register_direct && decode_done) ||\n                                (immediate_operation && immediate_register) || unary_direct)",
+      "original_statement": "    assign register_complete = allowed && register_pending_q &&\n                               ((register_decode && operand_register_direct && decode_done) ||\n                                (immediate_operation && immediate_register) || unary_direct);",
+      "replacement_statement": "    assign register_complete = implementation_allowed && register_pending_q &&\n                               ((register_decode && operand_register_direct && decode_done) ||\n                                (immediate_operation && immediate_register) || unary_direct);",
+      "original_model": [
+        "and",
+        [
+          [
+            "permission",
+            "allowed"
+          ],
+          [
+            "context",
+            "register_pending_q"
+          ],
+          [
+            "or",
+            [
+              [
+                "and",
+                [
+                  [
+                    "rep_zero",
+                    "register_decode"
+                  ],
+                  [
+                    "context",
+                    "operand_register_direct"
+                  ],
+                  [
+                    "context",
+                    "decode_done"
+                  ]
+                ]
+              ],
+              [
+                "and",
+                [
+                  [
+                    "rep_zero",
+                    "immediate_operation"
+                  ],
+                  [
+                    "or",
+                    [
+                      [
+                        "not",
+                        [
+                          "context",
+                          "immediate_rm"
+                        ]
+                      ],
+                      [
+                        "and",
+                        [
+                          [
+                            "context",
+                            "decode_modrm_valid"
+                          ],
+                          [
+                            "context",
+                            "operand_register_direct"
+                          ]
+                        ]
+                      ]
+                    ]
+                  ]
+                ]
+              ],
+              [
+                "rep_zero",
+                "unary_direct"
+              ]
+            ]
+          ]
+        ]
+      ],
+      "replacement_model": [
+        "and",
+        [
+          [
+            "permission",
+            "implementation_allowed"
+          ],
+          [
+            "context",
+            "register_pending_q"
+          ],
+          [
+            "or",
+            [
+              [
+                "and",
+                [
+                  [
+                    "rep_zero",
+                    "register_decode"
+                  ],
+                  [
+                    "context",
+                    "operand_register_direct"
+                  ],
+                  [
+                    "context",
+                    "decode_done"
+                  ]
+                ]
+              ],
+              [
+                "and",
+                [
+                  [
+                    "rep_zero",
+                    "immediate_operation"
+                  ],
+                  [
+                    "or",
+                    [
+                      [
+                        "not",
+                        [
+                          "context",
+                          "immediate_rm"
+                        ]
+                      ],
+                      [
+                        "and",
+                        [
+                          [
+                            "context",
+                            "decode_modrm_valid"
+                          ],
+                          [
+                            "context",
+                            "operand_register_direct"
+                          ]
+                        ]
+                      ]
+                    ]
+                  ]
+                ]
+              ],
+              [
+                "rep_zero",
+                "unary_direct"
+              ]
+            ]
+          ]
+        ]
+      ]
+    },
+    {
+      "signal": "fetch_word",
+      "guard": "allowed && (operation == spk286_microcode_pkg::MC_FETCH_IMM16 || fetch_tmp1)",
+      "original_statement": "    assign fetch_word = allowed && (operation == spk286_microcode_pkg::MC_FETCH_IMM16 || fetch_tmp1);",
+      "replacement_statement": "    assign fetch_word = implementation_allowed && (operation == spk286_microcode_pkg::MC_FETCH_IMM16 || fetch_tmp1);",
+      "original_model": [
+        "and",
+        [
+          [
+            "permission",
+            "allowed"
+          ],
+          [
+            "or",
+            [
+              [
+                "compare",
+                "==",
+                1
+              ],
+              [
+                "compare",
+                "==",
+                11
+              ]
+            ]
+          ]
+        ]
+      ],
+      "replacement_model": [
+        "and",
+        [
+          [
+            "permission",
+            "implementation_allowed"
+          ],
+          [
+            "or",
+            [
+              [
+                "compare",
+                "==",
+                1
+              ],
+              [
+                "compare",
+                "==",
+                11
+              ]
+            ]
+          ]
+        ]
+      ]
+    },
+    {
+      "signal": "fetch_signed_byte",
+      "guard": "allowed && (operation == spk286_microcode_pkg::MC_FETCH_IMM8S_TMP1 || operation == spk286_microcode_pkg::MC_FETCH_IMM8S_TMP0)",
+      "original_statement": "    assign fetch_signed_byte = allowed && (operation == spk286_microcode_pkg::MC_FETCH_IMM8S_TMP1 || operation == spk286_microcode_pkg::MC_FETCH_IMM8S_TMP0);",
+      "replacement_statement": "    assign fetch_signed_byte = implementation_allowed && (operation == spk286_microcode_pkg::MC_FETCH_IMM8S_TMP1 || operation == spk286_microcode_pkg::MC_FETCH_IMM8S_TMP0);",
+      "original_model": [
+        "and",
+        [
+          [
+            "permission",
+            "allowed"
+          ],
+          [
+            "or",
+            [
+              [
+                "compare",
+                "==",
+                12
+              ],
+              [
+                "compare",
+                "==",
+                20
+              ]
+            ]
+          ]
+        ]
+      ],
+      "replacement_model": [
+        "and",
+        [
+          [
+            "permission",
+            "implementation_allowed"
+          ],
+          [
+            "or",
+            [
+              [
+                "compare",
+                "==",
+                12
+              ],
+              [
+                "compare",
+                "==",
+                20
+              ]
+            ]
+          ]
+        ]
+      ]
+    },
+    {
+      "signal": "move_word",
+      "guard": "allowed && (operation == spk286_microcode_pkg::MC_MOVE || operation == spk286_microcode_pkg::MC_MOVE8) && temporary_valid_q[0]",
+      "original_statement": "    assign move_word = allowed && (operation == spk286_microcode_pkg::MC_MOVE || operation == spk286_microcode_pkg::MC_MOVE8) && temporary_valid_q[0];",
+      "replacement_statement": "    assign move_word = implementation_allowed && (operation == spk286_microcode_pkg::MC_MOVE || operation == spk286_microcode_pkg::MC_MOVE8) && temporary_valid_q[0];",
+      "original_model": [
+        "and",
+        [
+          [
+            "permission",
+            "allowed"
+          ],
+          [
+            "or",
+            [
+              [
+                "compare",
+                "==",
+                2
+              ],
+              [
+                "compare",
+                "==",
+                54
+              ]
+            ]
+          ],
+          [
+            "context",
+            "temporary_valid_q[0]"
+          ]
+        ]
+      ],
+      "replacement_model": [
+        "and",
+        [
+          [
+            "permission",
+            "implementation_allowed"
+          ],
+          [
+            "or",
+            [
+              [
+                "compare",
+                "==",
+                2
+              ],
+              [
+                "compare",
+                "==",
+                54
+              ]
+            ]
+          ],
+          [
+            "context",
+            "temporary_valid_q[0]"
+          ]
+        ]
+      ]
+    },
+    {
+      "signal": "read_destination",
+      "guard": "allowed && (operation == spk286_microcode_pkg::MC_READ_DST16 || operation == spk286_microcode_pkg::MC_READ_DST8)",
+      "original_statement": "    assign read_destination = allowed && (operation == spk286_microcode_pkg::MC_READ_DST16 || operation == spk286_microcode_pkg::MC_READ_DST8);",
+      "replacement_statement": "    assign read_destination = implementation_allowed && (operation == spk286_microcode_pkg::MC_READ_DST16 || operation == spk286_microcode_pkg::MC_READ_DST8);",
+      "original_model": [
+        "and",
+        [
+          [
+            "permission",
+            "allowed"
+          ],
+          [
+            "or",
+            [
+              [
+                "compare",
+                "==",
+                13
+              ],
+              [
+                "compare",
+                "==",
+                53
+              ]
+            ]
+          ]
+        ]
+      ],
+      "replacement_model": [
+        "and",
+        [
+          [
+            "permission",
+            "implementation_allowed"
+          ],
+          [
+            "or",
+            [
+              [
+                "compare",
+                "==",
+                13
+              ],
+              [
+                "compare",
+                "==",
+                53
+              ]
+            ]
+          ]
+        ]
+      ]
+    },
+    {
+      "signal": "decode_operand",
+      "guard": "allowed && (operation == spk286_microcode_pkg::MC_DECODE_MODRM ||\n                                        (register_decode && !unary_direct))",
+      "original_statement": "    assign decode_operand = allowed && (operation == spk286_microcode_pkg::MC_DECODE_MODRM ||\n                                        (register_decode && !unary_direct));",
+      "replacement_statement": "    assign decode_operand = implementation_allowed && (operation == spk286_microcode_pkg::MC_DECODE_MODRM ||\n                                        (register_decode && !unary_direct));",
+      "original_model": [
+        "and",
+        [
+          [
+            "permission",
+            "allowed"
+          ],
+          [
+            "or",
+            [
+              [
+                "compare",
+                "==",
+                4
+              ],
+              [
+                "and",
+                [
+                  [
+                    "rep_zero",
+                    "register_decode"
+                  ],
+                  [
+                    "not",
+                    [
+                      "rep_zero",
+                      "unary_direct"
+                    ]
+                  ]
+                ]
+              ]
+            ]
+          ]
+        ]
+      ],
+      "replacement_model": [
+        "and",
+        [
+          [
+            "permission",
+            "implementation_allowed"
+          ],
+          [
+            "or",
+            [
+              [
+                "compare",
+                "==",
+                4
+              ],
+              [
+                "and",
+                [
+                  [
+                    "rep_zero",
+                    "register_decode"
+                  ],
+                  [
+                    "not",
+                    [
+                      "rep_zero",
+                      "unary_direct"
+                    ]
+                  ]
+                ]
+              ]
+            ]
+          ]
+        ]
+      ]
+    },
+    {
+      "signal": "commit_result",
+      "guard": "allowed && result_operation && temporary_valid_q[2] && !result_disposed_q",
+      "original_statement": "    assign commit_result = allowed && result_operation && temporary_valid_q[2] && !result_disposed_q;",
+      "replacement_statement": "    assign commit_result = implementation_allowed && result_operation && temporary_valid_q[2] && !result_disposed_q;",
+      "original_model": [
+        "and",
+        [
+          [
+            "permission",
+            "allowed"
+          ],
+          [
+            "or",
+            [
+              [
+                "compare",
+                "==",
+                55
+              ],
+              [
+                "compare",
+                "==",
+                56
+              ],
+              [
+                "compare",
+                "==",
+                15
+              ],
+              [
+                "compare",
+                "==",
+                16
+              ],
+              [
+                "or",
+                [
+                  [
+                    "compare",
+                    "==",
+                    17
+                  ],
+                  [
+                    "compare",
+                    "==",
+                    57
+                  ]
+                ]
+              ]
+            ]
+          ],
+          [
+            "context",
+            "temporary_valid_q[2]"
+          ],
+          [
+            "not",
+            [
+              "context",
+              "result_disposed_q"
+            ]
+          ]
+        ]
+      ],
+      "replacement_model": [
+        "and",
+        [
+          [
+            "permission",
+            "implementation_allowed"
+          ],
+          [
+            "or",
+            [
+              [
+                "compare",
+                "==",
+                55
+              ],
+              [
+                "compare",
+                "==",
+                56
+              ],
+              [
+                "compare",
+                "==",
+                15
+              ],
+              [
+                "compare",
+                "==",
+                16
+              ],
+              [
+                "or",
+                [
+                  [
+                    "compare",
+                    "==",
+                    17
+                  ],
+                  [
+                    "compare",
+                    "==",
+                    57
+                  ]
+                ]
+              ]
+            ]
+          ],
+          [
+            "context",
+            "temporary_valid_q[2]"
+          ],
+          [
+            "not",
+            [
+              "context",
+              "result_disposed_q"
+            ]
+          ]
+        ]
+      ]
+    },
+    {
+      "signal": "compute_alu",
+      "guard": "allowed && operation == spk286_microcode_pkg::MC_ALU && temporary_valid_q[0] && temporary_valid_q[1] && !flags_valid_q",
+      "original_statement": "    assign compute_alu = allowed && operation == spk286_microcode_pkg::MC_ALU && temporary_valid_q[0] && temporary_valid_q[1] && !flags_valid_q;",
+      "replacement_statement": "    assign compute_alu = implementation_allowed && operation == spk286_microcode_pkg::MC_ALU && temporary_valid_q[0] && temporary_valid_q[1] && !flags_valid_q;",
+      "original_model": [
+        "and",
+        [
+          [
+            "permission",
+            "allowed"
+          ],
+          [
+            "compare",
+            "==",
+            14
+          ],
+          [
+            "context",
+            "temporary_valid_q[0]"
+          ],
+          [
+            "context",
+            "temporary_valid_q[1]"
+          ],
+          [
+            "not",
+            [
+              "context",
+              "flags_valid_q"
+            ]
+          ]
+        ]
+      ],
+      "replacement_model": [
+        "and",
+        [
+          [
+            "permission",
+            "implementation_allowed"
+          ],
+          [
+            "compare",
+            "==",
+            14
+          ],
+          [
+            "context",
+            "temporary_valid_q[0]"
+          ],
+          [
+            "context",
+            "temporary_valid_q[1]"
+          ],
+          [
+            "not",
+            [
+              "context",
+              "flags_valid_q"
+            ]
+          ]
+        ]
+      ]
+    },
+    {
+      "signal": "commit_flags",
+      "guard": "allowed && operation == spk286_microcode_pkg::MC_COMMIT_FLAGS && flags_valid_q && result_disposed_q",
+      "original_statement": "    assign commit_flags = allowed && operation == spk286_microcode_pkg::MC_COMMIT_FLAGS && flags_valid_q && result_disposed_q;",
+      "replacement_statement": "    assign commit_flags = implementation_allowed && operation == spk286_microcode_pkg::MC_COMMIT_FLAGS && flags_valid_q && result_disposed_q;",
+      "original_model": [
+        "and",
+        [
+          [
+            "permission",
+            "allowed"
+          ],
+          [
+            "compare",
+            "==",
+            18
+          ],
+          [
+            "context",
+            "flags_valid_q"
+          ],
+          [
+            "context",
+            "result_disposed_q"
+          ]
+        ]
+      ],
+      "replacement_model": [
+        "and",
+        [
+          [
+            "permission",
+            "implementation_allowed"
+          ],
+          [
+            "compare",
+            "==",
+            18
+          ],
+          [
+            "context",
+            "flags_valid_q"
+          ],
+          [
+            "context",
+            "result_disposed_q"
+          ]
+        ]
+      ]
+    }
+  ],
+  "procedural_rep_zero": {
+    "atoms": [
+      "immediate_operation",
+      "register_decode",
+      "unary_direct"
+    ],
+    "table_sha256": "16b7a8c0052cb112479673a13ef21a16a5294da34eb2a6689cbaaea2a06a244d"
+  }
+}

@@ -7,11 +7,15 @@ module spk286_instruction_schedule_tb;
     logic metadata_valid=1, metadata_freeze=0, read_wait_event=0, alignment_event=0;
     logic functional_retired=0, repeat_checkpoint=0;
     logic [9:0] metadata_clocks=2, repeat_next_clocks=5;
+    logic target_length_ready=1;
+    logic [3:0] target_length_clocks=0;
     wire active, body_active, retire_pending, head_permit, deadline_ready, retire_fire;
     wire [9:0] elapsed_clocks, scheduled_clocks;
     wire implementation_extension;
     integer checks=0;
-    spk286_instruction_schedule dut(.*);
+    spk286_instruction_schedule dut(.execution_metadata_valid(metadata_valid),
+        .execution_metadata_clocks(metadata_clocks),
+        .execution_read_wait_event(read_wait_event), .*);
 
     task automatic check(input logic condition, input string label);
         begin
@@ -33,6 +37,7 @@ module spk286_instruction_schedule_tb;
             reset=1; cancel=0; preserve_cancel=0; start_interval=0; start_body=0;
             metadata_valid=1; metadata_freeze=0; functional_retired=0;
             read_wait_event=0; alignment_event=0; repeat_checkpoint=0;
+            target_length_ready=1; target_length_clocks=0;
             tick(0); reset=0;
         end
     endtask
@@ -95,6 +100,19 @@ module spk286_instruction_schedule_tb;
         functional_retired=1; edge_begin(1); check(retire_fire,"late functional result still publishes safely"); edge_end();
         functional_retired=0;
 
+        clear(); start(1,7); target_length_ready=0;
+        metadata_freeze=1; functional_retired=1; tick(0);
+        metadata_freeze=0; functional_retired=0;
+        for(integer k=0;k<7;k=k+1) tick(1);
+        check(retire_pending&&!deadline_ready&&!retire_fire,
+              "missing target length holds source beyond frozen base END");
+        metadata_clocks=2; target_length_clocks=3; target_length_ready=1; tick(0);
+        check(scheduled_clocks==10,"late target length extends frozen source base");
+        for(integer k=8;k<10;k=k+1) begin
+            edge_begin(1); check(!retire_fire,"base plus target encoding not early"); edge_end();
+        end
+        edge_begin(1); check(retire_fire,"source retires after seven plus three"); edge_end();
+
         clear(); start(1,195); read_wait_event=1;
         for(integer k=0;k<1100;k=k+1) tick(1);
         read_wait_event=0; check(elapsed_clocks==0&&scheduled_clocks==195,"unbounded READ waits do not saturate a debt");
@@ -107,6 +125,14 @@ module spk286_instruction_schedule_tb;
         functional_retired=1; tick(0); functional_retired=0;
         for(integer k=0;k<1022;k=k+1) tick(1);
         edge_begin(1); check(retire_fire,"saturation does not strand boot"); edge_end();
+
+        clear(); start(1,1023); target_length_ready=0; alignment_event=1;
+        for(integer k=0;k<512;k=k+1) tick(0);
+        alignment_event=0; target_length_clocks=10; target_length_ready=1; tick(0);
+        check(scheduled_clocks==1023,"maxbase plus saturated odd plus length cannot wrap a narrow sum");
+        functional_retired=1; tick(0); functional_retired=0;
+        for(integer k=0;k<1022;k=k+1) tick(1);
+        edge_begin(1); check(retire_fire,"max1023 plus max1023 plus length10 retains saturated deadline"); edge_end();
         $display("PROFILE_SCHEDULE_PASS checks%0d",checks); $finish;
     end
 endmodule

@@ -2,6 +2,7 @@
 module spk286_at_cpu_profile_tb;
     logic clk = 1'b0;
     logic reset = 1'b1;
+    logic apply = 1'b0;
     logic [2:0] requested = 3'd0;
     wire [2:0] active;
     wire pending, historical, phase_enable, phase_two, cpu_boundary;
@@ -20,7 +21,7 @@ module spk286_at_cpu_profile_tb;
 
     spk286_at_cpu_profile dut (.*);
     spk286_at_cpu_profile omitted_request (
-        .clk(clk), .reset(reset), .requested(), .active(missing_active),
+        .clk(clk), .reset(reset), .apply(1'b0), .requested(), .active(missing_active),
         .pending(missing_pending), .historical(missing_historical),
         .phase_enable(missing_phase), .phase_two(missing_two), .cpu_boundary(missing_cpu)
     );

@@ -7,6 +7,8 @@ module spk286_machine_cpu (
     // Match the production CPU profile interface; this bus stimulus driver
     // does not model instruction timing or historical speed throttling.
     input logic historical_enable, cpu_boundary, timing_read_wait_event,
+    input logic profile_change_pending,
+    output wire profile_change_ready,
     input logic [15:0] data_in,
     input logic intr, nmi, hold_request,
     output logic [23:0] address = 0,
@@ -36,6 +38,8 @@ module spk286_machine_cpu (
     output wire [3:0] debug_prefetch_count, debug_bus_state,
     output wire [7:0] debug_biu_detail
 );
+    // This peripheral stimulus fixture never supplies a CPU safe boundary.
+    assign profile_change_ready = 0;
     assign bus_lock = 0;
     assign hlda = hold_request && !bus_valid;
     assign {halted, shutdown, control_error, unsupported_opcode,

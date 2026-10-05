@@ -125,7 +125,8 @@ def oracle(op, ext, mod_valid, mode, reg, rm, pm, branch_known, taken, count_kno
     elif op == 0xD6: base, estimated, wait = 2, 1, 0
     elif 0xD8 <= op <= 0xDF: need_mod, estimated = 1, 1
     elif 0xE0 <= op <= 0xE3:
-        need_out, base = 1, (8 if taken else 4)
+        # Intel B-54 explicitly separates JCXZ7/4 from B-70 LOOP8/4.
+        need_out, base = 1, ((7 if op == 0xE3 else 8) if taken else 4)
         estimated = int(op == 0xE3 and (not branch_known or taken))
     elif op in (0xE8, 0xE9, 0xEB): base, estimated = 7, 1
     elif op == 0xEA: base, estimated = (23 if pm else 11), 1
@@ -165,7 +166,14 @@ def oracle(op, ext, mod_valid, mode, reg, rm, pm, branch_known, taken, count_kno
     elif rep == 1 and op not in (0xA6, 0xA7, 0xAE, 0xAF): estimated = 1
     qualified = int((not need_mod or mod_valid) and (not need_out or branch_known) and
                     (not need_count or count_known))
-    return qualified, estimated, need_mod, need_out, need_count, base, setup, iteration, wait, ea
+    # Source-form eligibility precedes a resolved Jcond outcome. A successful
+    # redirect in the caller owns actual taken-transfer qualification.
+    target = int(not ext and
+                 (0x70 <= op <= 0x7F or op in
+                  (0xE3, 0xE8, 0xE9, 0xEB, 0x9A, 0xEA, 0xC2, 0xC3, 0xCA, 0xCB) or
+                  (op == 0xFF and mod_valid and
+                   (reg in (2, 4) or reg in (3, 5) and mem))))
+    return qualified, estimated, need_mod, need_out, need_count, base, setup, iteration, wait, ea, target
 
 
 def vectors(path):
@@ -207,7 +215,7 @@ def vectors(path):
         r"(MC_ENTRY_\w+) = 10'd(\d+)", PKG.read_text())}
     for name, base in [("MC_ENTRY_EVENT_ENTRY", 23), ("MC_ENTRY_EVENT_ENTRY_PROTECTED", 40)]:
         append(0, 0, manual=constants[name], mod_valid=0, known_branch=0, known_count=0,
-               expected=(1, 1, 0, 0, 0, base, 0, 0, 1, 0))
+               expected=(1, 1, 0, 0, 0, base, 0, 0, 1, 0, 0))
     # Internal dispatch aliases also exist in the immutable functional ROM.
     # Their independent x86 form is explicit; do not infer expectations by
     # reading the metadata module's case labels or generated trace values.
@@ -233,7 +241,7 @@ def vectors(path):
                         append(op, ext, manual=constants["MC_ENTRY_" + name], mode=mode,
                                reg=reg, rm=rm, pm=pm)
     append(0, 0, manual=1023, mod_valid=0, known_branch=0, known_count=0,
-           expected=(1, 1, 0, 0, 0, 2, 0, 0, 1, 0))
+           expected=(1, 1, 0, 0, 0, 2, 0, 0, 1, 0, 0))
     path.write_text("".join(" ".join(map(str, row)) + "\n" for row in data), newline="\n")
     return {"cases": len(data), "normal_opcodes": len(normal), "extended_opcodes": 6,
             "all_modrm_bytes": True, "variable_count_values": 32, "include_guard": True,
@@ -276,6 +284,11 @@ def negatives(out):
         ("count-truncate", "{5'd0, count};", "{6'd0, count[3:0]};"),
         ("silent-default", "default: begin base_clocks = 10'd2; estimated = 1'b1; end\n        endcase",
          "default: begin base_clocks = 10'd0; estimated = 1'b0; end\n        endcase"),
+        ("jcxz-base", "(opcode == 8'hE3 ? 10'd7 : 10'd8)", "10'd8"),
+        ("loop-target-charge", "requires_target_length = opcode == 8'hE3;",
+         "requires_target_length = 1'b1;"),
+        ("jcond-outcome-late", "MC_ENTRY_BRANCH_REL8: begin\n                requires_target_length = 1'b1;",
+         "MC_ENTRY_BRANCH_REL8: begin\n                requires_target_length = branch_known && branch_taken;"),
     ]
     results = {}
     for label, before, after in mutations:

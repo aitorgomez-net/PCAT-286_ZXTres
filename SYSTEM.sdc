@@ -5,6 +5,22 @@
 derive_pll_clocks
 derive_clock_uncertainty
 
+# The palette's MLAB write address is synchronous to the video clock. Require
+# additional minimum route delay instead of relying on a hand-inserted LCELL
+# delay. Setup keeps its existing single-cycle requirement; no path is cut.
+# The palette is optional, so this collection is empty when VGA is disabled.
+set at_dac_write_index [get_registers -nowarn {*|vga_dac_io_inst|write_index[*]}]
+set at_dac_write_address [get_registers -nowarn {
+    *|dac|port_*_ram_rtl_*|*OBSERVABLEPORTAADDRESSREGOUT*
+    *|dac|sample_*_ram_rtl_*|*OBSERVABLEPORTAADDRESSREGOUT*
+}]
+post_message "AT SDC DAC minimum route: [get_collection_size $at_dac_write_index] sources, [get_collection_size $at_dac_write_address] endpoints"
+if {[get_collection_size $at_dac_write_index] && [get_collection_size $at_dac_write_address]} {
+    set_min_delay -from $at_dac_write_index -to $at_dac_write_address 0.500
+} elseif {[get_collection_size $at_dac_write_index]} {
+    error "AT SDC DAC write-address endpoint collection is empty"
+}
+
 proc at_clock {name} {
     set c [get_clocks -nowarn $name]
     if {[get_collection_size $c] != 1} { error "AT clock missing/ambiguous: $name" }

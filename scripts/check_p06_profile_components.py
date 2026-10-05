@@ -15,7 +15,9 @@ from run_p06_pilot import generic_stats
 def select(selected):
     paths = [p for p in sources() if p.name not in ("spk286.sv", "spk286_events.sv")]
     paths += [ROOT / "rtl/spk286_timing/spk286_instruction_timing.sv",
-              ROOT / "rtl/spk286_timing/spk286_instruction_schedule.sv"]
+              ROOT / "rtl/spk286_timing/spk286_instruction_schedule.sv",
+              ROOT / "rtl/spk286_timing/spk286_target_handoff.sv",
+              ROOT / "rtl/spk286_timing/spk286_target_replay.sv"]
     paths += list(selected.values())
     return paths
 

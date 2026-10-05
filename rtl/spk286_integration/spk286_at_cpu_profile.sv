@@ -1,4 +1,4 @@
-// Reset-applied CPU profile selector on the common 50 MHz fabric clock.
+// Boundary-applied CPU profile selector on the common 50 MHz fabric clock.
 // These outputs are synchronous enables, never generated clocks. The CPU
 // timing policy must schedule instruction/bus milestones independently.
 `timescale 1ns/1ps
@@ -7,6 +7,7 @@
 module spk286_at_cpu_profile (
     input  logic       clk,
     input  logic       reset,
+    input  logic       apply,
     input  logic [2:0] requested,
     output logic [2:0] active,
     output logic       pending,
@@ -56,7 +57,7 @@ module spk286_at_cpu_profile (
     assign cpu_boundary = !reset && (!historical || phase_two);
 
     always_ff @(posedge clk) begin
-        if (reset) begin
+        if (reset || ((apply === 1'b1) && pending)) begin
             active <= requested_normalized;
             phase_accumulator_q <= 6'd0;
             phase_parity_q <= 1'b0;

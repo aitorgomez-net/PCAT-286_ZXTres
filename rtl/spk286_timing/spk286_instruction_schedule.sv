@@ -10,6 +10,12 @@ module spk286_instruction_schedule (
     input logic start_interval, start_body,
     input logic metadata_valid, metadata_freeze,
     input logic [9:0] metadata_clocks,
+    // Admission metadata may inspect the next queue byte. The execution lane
+    // must match it while body_active is asserted, and uses retained context.
+    input logic execution_metadata_valid, execution_read_wait_event,
+    input logic [9:0] execution_metadata_clocks,
+    input logic target_length_ready,
+    input logic [3:0] target_length_clocks,
     input logic read_wait_event, alignment_event,
     input logic functional_retired,
     input logic repeat_checkpoint,
@@ -21,8 +27,12 @@ module spk286_instruction_schedule (
 );
     logic active_q, body_q, pending_q, qualified_q, frozen_q, admission_window_q;
     logic [9:0] elapsed_q, base_q, extra_q;
-    logic [10:0] elapsed_next, effective_base, extra_next, total;
-    logic metadata_available;
+    logic [10:0] elapsed_next, effective_base, extra_next;
+    logic [11:0] total;
+    logic [10:0] execution_elapsed_next, execution_base;
+    logic [11:0] execution_total;
+    logic [11:0] execution_sum_bits, execution_carry_bits;
+    logic execution_metadata_available;
 
     always_comb begin
         // Extra READ waits can be arbitrarily long. Count productive CPU
@@ -37,9 +47,28 @@ module spk286_instruction_schedule (
         // Current bus admissions may depend on an EU checkpoint permit. They
         // update the retained budget at this edge, never feed that permit
         // combinationally. Every reference precedes its functional retirement.
-        total = effective_base + {1'b0, extra_q};
-        if (total > 11'd1023) total = 11'd1023;
-        metadata_available = qualified_q || (!frozen_q && metadata_valid);
+        // The source's base freezes at functional END. Its independently
+        // qualified target encoding may arrive later, so this allowance must
+        // never be frozen with the earlier base or charged to the successor.
+        total = {1'b0, effective_base} + {2'd0, extra_q} + {8'd0, target_length_clocks};
+        if (total > 12'd1023) total = 12'd1023;
+        // Cut the admission-byte classifier out of retirement/EU backpressure.
+        // This is a parallel combinational lane, not a delayed pipeline stage.
+        execution_elapsed_next = {1'b0, elapsed_q} +
+                                 11'(cpu_boundary && !execution_read_wait_event);
+        if (execution_elapsed_next > 11'd1023) execution_elapsed_next = 11'd1023;
+        execution_base = (!frozen_q && execution_metadata_valid) ?
+                         {1'b0, execution_metadata_clocks} : {1'b0, base_q};
+        // Compress the three addends before the single carry-propagating sum.
+        // Keep the full result: the deadline comparison handles saturation
+        // directly, so metadata does not cross another clamp mux/comparator.
+        execution_sum_bits = {1'b0, execution_base} ^ {2'd0, extra_q} ^
+                             {8'd0, target_length_clocks};
+        execution_carry_bits = ({1'b0, execution_base} & {2'd0, extra_q}) |
+                               ({1'b0, execution_base} & {8'd0, target_length_clocks}) |
+                               ({2'd0, extra_q} & {8'd0, target_length_clocks});
+        execution_total = execution_sum_bits + (execution_carry_bits << 1);
+        execution_metadata_available = qualified_q || (!frozen_q && execution_metadata_valid);
     end
     assign active = historical_enable && active_q;
     assign body_active = historical_enable && body_q;
@@ -48,7 +77,9 @@ module spk286_instruction_schedule (
                          ((cpu_boundary || admission_window_q) &&
                           (!active_q || !body_q) && !pending_q);
     assign deadline_ready = !historical_enable ||
-                            (active_q && body_q && metadata_available && elapsed_next >= total);
+                            (active_q && body_q && execution_metadata_available && target_length_ready &&
+                             (execution_elapsed_next == 11'd1023 ||
+                              {1'b0, execution_elapsed_next} >= execution_total));
     assign retire_fire = !historical_enable ? functional_retired :
                          !reset && !cancel && cpu_boundary && deadline_ready &&
                          (pending_q || functional_retired);

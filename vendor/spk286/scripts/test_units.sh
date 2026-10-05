@@ -52,6 +52,8 @@ tests+=(spk286_task_late_publication)
 tests+=(spk286_null_ldtr)
 tests+=(spk286_immediate_execution spk286_immediate_throughput)
 tests+=(spk286_event_arbitration)
+tests+=(spk286_encoding_preview)
+tests+=(spk286_length_boundary)
 if [[ "$unit" != all ]]; then tests=("$unit"); fi
 
 for name in "${tests[@]}"; do

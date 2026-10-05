@@ -32,6 +32,9 @@ module spk286_instruction_timing (
     output logic [9:0] base_clocks,
     output logic [9:0] repeat_setup_clocks, repeat_iteration_clocks,
     output logic permits_read_wait,
+    // Potential source form only. The caller's successful redirect qualifies
+    // the actual transfer; Jcond outcome may be retained one edge later.
+    output logic requires_target_length,
     output logic [2:0] ea_clocks
 );
     import spk286_microcode_pkg::*;
@@ -54,6 +57,7 @@ module spk286_instruction_timing (
         permits_read_wait = 1'b1;
         string_form = 1'b0;
         ea_clocks = 3'd0;
+        requires_target_length = 1'b0;
         case (micro_entry)
             MC_ENTRY_MOV_R16_IMM16, MC_ENTRY_MOV_R8_IMM8: begin
                 base_clocks = 10'd2; permits_read_wait = 1'b0;
@@ -193,14 +197,17 @@ module spk286_instruction_timing (
                     3'd0, 3'd1: base_clocks = memory_form ? 10'd7 : 10'd2;
                     3'd2, 3'd4: begin
                         base_clocks = memory_form ? 10'd11 : 10'd7;
+                        requires_target_length = modrm_valid;
                         estimated = 1'b1; // next target instruction length absent
                     end
                     3'd3: begin
                         base_clocks = protected_mode ? 10'd29 : 10'd16;
+                        requires_target_length = modrm_valid && memory_form;
                         estimated = 1'b1; // gate/task and target length absent
                     end
                     3'd5: begin
                         base_clocks = protected_mode ? 10'd26 : 10'd15;
+                        requires_target_length = modrm_valid && memory_form;
                         estimated = 1'b1;
                     end
                     3'd6: base_clocks = memory_form ? 10'd5 : 10'd3;
@@ -208,36 +215,46 @@ module spk286_instruction_timing (
                 endcase
             end
             MC_ENTRY_CALL_REL16, MC_ENTRY_JMP_REL16: begin
+                requires_target_length = 1'b1;
                 base_clocks = 10'd7; estimated = 1'b1;
             end
             MC_ENTRY_BRANCH_REL8: begin
+                requires_target_length = 1'b1;
                 requires_outcome = opcode != 8'hEB;
                 base_clocks = (opcode == 8'hEB || branch_taken) ? 10'd7 : 10'd3;
                 estimated = opcode == 8'hEB || !branch_known || branch_taken;
             end
             MC_ENTRY_LOOP_REL8: begin
+                requires_target_length = opcode == 8'hE3;
                 requires_outcome = 1'b1;
-                base_clocks = branch_taken ? 10'd8 : 10'd4;
+                // B-54 JCXZ is 7/4; B-70 LOOP/LOOPE/LOOPNE are 8/4.
+                base_clocks = branch_taken ? (opcode == 8'hE3 ? 10'd7 : 10'd8) : 10'd4;
                 estimated = opcode == 8'hE3 && (!branch_known || branch_taken);
             end
             MC_ENTRY_RET_NEAR, MC_ENTRY_RET_IMM16: begin
+                requires_target_length = 1'b1;
                 base_clocks = 10'd11; estimated = 1'b1;
             end
             MC_ENTRY_CALL_FAR_IMM: begin
+                requires_target_length = 1'b1;
                 base_clocks = protected_mode ? 10'd26 : 10'd13; estimated = 1'b1;
             end
             MC_ENTRY_JMP_FAR_IMM: begin
+                requires_target_length = 1'b1;
                 base_clocks = protected_mode ? 10'd23 : 10'd11; estimated = 1'b1;
             end
             MC_ENTRY_CALL_FAR_RM: begin
+                requires_target_length = modrm_valid && memory_form;
                 requires_modrm = 1'b1;
                 base_clocks = protected_mode ? 10'd29 : 10'd16; estimated = 1'b1;
             end
             MC_ENTRY_JMP_FAR_RM: begin
+                requires_target_length = modrm_valid && memory_form;
                 requires_modrm = 1'b1;
                 base_clocks = protected_mode ? 10'd26 : 10'd15; estimated = 1'b1;
             end
             MC_ENTRY_RET_FAR, MC_ENTRY_RET_FAR_IMM: begin
+                requires_target_length = 1'b1;
                 base_clocks = protected_mode ? 10'd25 : 10'd15; estimated = 1'b1;
             end
             MC_ENTRY_INTERRUPT_RETURN: begin

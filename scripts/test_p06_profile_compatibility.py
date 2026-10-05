@@ -140,7 +140,7 @@ PROFILE_CONTROL = r'''
         if (p06_profile_argument == 0) p06_watchdog_multiplier = 1;
     end
     spk286_at_cpu_profile p06_clock (
-        .clk(clk), .reset(reset), .requested(p06_requested_profile),
+        .clk(clk), .reset(reset), .apply(1'b0), .requested(p06_requested_profile),
         .active(p06_active_profile), .pending(p06_profile_pending),
         .historical(p06_historical_enable), .phase_enable(p06_phase_enable),
         .phase_two(p06_phase_two), .cpu_boundary(p06_cpu_boundary)
@@ -193,7 +193,8 @@ def fixture(out, name):
             "max_stimulus": "unchanged",
         })
     profiled = instance.sub("spk286_profiled dut (.historical_enable(p06_historical_enable), "
-                            ".cpu_boundary(p06_cpu_boundary), .timing_read_wait_event(1'b0), .*);", adapted)
+                            ".cpu_boundary(p06_cpu_boundary), .timing_read_wait_event(1'b0), "
+                            ".profile_change_pending(1'b0), .profile_change_ready(), .*);", adapted)
     anchor = '`include "spk286_signals.svh"'
     if source.count(anchor) != 1:
         raise AssertionError(f"{name}: missing shared public signals")
@@ -447,6 +448,8 @@ def main():
     extras = [ROOT / "scripts/build_p06_profile_cpu.py",
               ROOT / "rtl/spk286_timing/spk286_instruction_schedule.sv",
               ROOT / "rtl/spk286_timing/spk286_instruction_timing.sv",
+              ROOT / "rtl/spk286_timing/spk286_target_handoff.sv",
+              ROOT / "rtl/spk286_timing/spk286_target_replay.sv",
               ROOT / "rtl/spk286_integration/spk286_at_cpu_profile.sv",
               CPU / "sim/unit/spk286_signals.svh", Path(__file__).resolve()]
     inputs = original + extras + [CPU / f"sim/unit/spk286_{name}_tb.sv" for name in units]
@@ -454,7 +457,7 @@ def main():
     generated = build(out / "generated")
     generated_hashes = {path.name: sha(path) for path in generated.values()}
     selected = [path for path in original if path.name not in {"spk286.sv", "spk286_events.sv"}]
-    selected += list(generated.values()) + extras[1:4]
+    selected += list(generated.values()) + extras[1:6]
     fixtures = {name: fixture(out, name) for name in units}
     if args.prepare_only:
         (out / "prepared.json").write_text(json.dumps({"status": "PREPARED_NOT_TESTED",

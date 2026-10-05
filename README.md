@@ -1,9 +1,9 @@
 # PCAT-286 for MiSTer
 
-Preserve floppy write payload through registered completion, verify write protection, repair microcode regression adapters and correct the 25 MHz fetch performance inversion.
+Qualify taken-transfer targets, streamline replay and execution deadline metadata, and allow the main-menu speed selection to take effect at a drained instruction boundary.
 
 This development snapshot is part of the consolidated chronological
-history. Its source state comes from 2026-10-04.
+history. Its source state comes from 2026-10-05.
 The latest revision contains the common technical reference and current
 validation instructions. Historical reports and compiled candidates are
 kept in the original development archive, outside this branch.

@@ -9,7 +9,7 @@ module spk286_profile_prefix_tb;
     integer edges = 0, case_id = 0, checks = 0, counted_prefixes = 0;
     integer expected_count, expected_budget, expected_estimated, timeout_count;
     logic checked;
-    spk286_profiled dut (.*);
+    spk286_profiled dut (.profile_change_pending(1'b0), .profile_change_ready(), .*);
 
     task automatic check(input logic condition, input string message);
         checks++;

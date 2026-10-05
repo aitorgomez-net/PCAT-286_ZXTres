@@ -5,7 +5,11 @@
 // The selected hardware has one profiled CPU; MAX bypasses its schedule.
 `include "rtl/spk286_timing/spk286_instruction_timing.sv"
 `include "rtl/spk286_timing/spk286_instruction_schedule.sv"
+`include "rtl/spk286_timing/spk286_target_handoff.sv"
+`include "rtl/spk286_timing/spk286_target_replay.sv"
+`include "vendor/spk286/rtl/spk286_encoding_preview.sv"
 `include "vendor/spk286/rtl/timed/spk286_profiled_events.sv"
+`include "vendor/spk286/rtl/timed/spk286_profiled_micro_executor.sv"
 `include "vendor/spk286/rtl/timed/spk286_profiled.sv"
 
 module spk286_machine_cpu (
@@ -15,6 +19,8 @@ module spk286_machine_cpu (
     input  logic         historical_enable,
     input  logic         cpu_boundary,
     input  logic         timing_read_wait_event,
+    input  logic         profile_change_pending,
+    output logic         profile_change_ready,
     input  logic         ready,
     input  logic [15:0]  data_in,
     input  logic         intr,
@@ -118,6 +124,8 @@ module spk286_machine_cpu (
         .historical_enable(applied_historical),
         .cpu_boundary(cpu_boundary),
         .timing_read_wait_event(timing_read_wait_event),
+        .profile_change_pending(profile_change_pending),
+        .profile_change_ready(profile_change_ready),
         // PCAT uses the baseline dependency-driven policy; policy selection
         // is intentionally kept local to the CPU integration boundary.
         .timing_policy_request(2'd0),
