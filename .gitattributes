@@ -13,6 +13,10 @@ sim/spk286_integration/spk286_instruction_timing_tb.sv text eol=lf
 # Firmware images and native timing captures must preserve their bytes.
 *.com binary
 SW/CPUTIME/** -text
+tests/firmware/pcat286_diag.asm text eol=lf
+tests/firmware/pcat286_diag.hex text eol=lf
+tests/firmware/pcat286_diag.json text eol=lf
+tests/firmware/pcat286_diag_rom_case.svh text eol=lf
 tests/firmware/pcat286_event_diag.asm text eol=lf
 tests/firmware/pcat286_event_diag.hex text eol=lf
 tests/firmware/pcat286_event_diag.json text eol=lf

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 root=$(cd "$(dirname "$0")/.." && pwd)
-build="$root/build/at-cdc"
+build="${PCAT_BUILD_DIR:-$root/build/at-cdc}"
 mkdir -p "$build"
 for tb in at_cdc_snapshot at_osd_cdc at_video_calc_cdc; do
   iverilog -g2012 -Wall -Wno-timescale -s "${tb}_tb" -o "$build/$tb.vvp" \

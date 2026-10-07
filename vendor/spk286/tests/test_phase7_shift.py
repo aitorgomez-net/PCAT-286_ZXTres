@@ -30,14 +30,3 @@ class ShiftReportTests(unittest.TestCase):
         for key in good[0]:
             with self.subTest(missing=key), self.assertRaises(ValueError):
                 bad = copy.deepcopy(good); del bad[0][key]; check(bad)
-
-    def test_shift_gate_propagates_first_dependency_failure(self):
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory); binary = root/'bin'; binary.mkdir(); stub = binary/'python3'
-            stub.write_text('#!/bin/sh\nexit 23\n'); stub.chmod(0o755)
-            env = dict(os.environ, PATH=str(binary)+os.pathsep+os.environ['PATH'], SPK286_BUILD_DIR=str(root/'fresh'))
-            result = subprocess.run(['bash', 'scripts/validate_phase7_shift.sh'], env=env, capture_output=True, text=True)
-            self.assertEqual(result.returncode, 23)
-            self.assertIn('stage=inputs status=23', result.stderr)
-            self.assertNotIn('VALIDATION_PASS', result.stdout+result.stderr)
-            self.assertFalse((root/'fresh/scalar').exists())

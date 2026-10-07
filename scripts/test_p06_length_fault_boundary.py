@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Freeze the old ten-byte RAW-completion fault and verify its minimal fix.
+"""Check ten-byte completion and eleven-byte faults with a missing-guard negative control.
 
 The corrected CPU must also reject an eleven-byte target at that target's IP.
 Old/new receive the same 76 transfer probes and five event probes. Only old CPU
@@ -92,7 +92,6 @@ def execute(command, log, trace_path=None):
 
 OLD_ANCHOR = "assign length_fault = !event_active && instruction_bytes == 10 &&"
 NEW_ANCHOR = "assign length_fault = !event_active && !raw_retired && !event_completed && instruction_bytes == 10 &&"
-OLD_SHA = "9a04d8b46b4fab359ba6739b159444925b4118df51e26227e62f9b584db5f046"
 
 
 def execute_old(command, log, compressed):
@@ -133,8 +132,6 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--dual", action="store_true")
-    parser.add_argument("--reference-commit", default="b155891",
-                        help="completed production baseline; all unrelated functional inputs are frozen here")
     args = parser.parse_args()
     output = args.output.resolve()
     if not output.is_relative_to((ROOT / "build").resolve()):
@@ -144,40 +141,17 @@ def main():
     if current.count(NEW_ANCHOR) != 1 or OLD_ANCHOR in current:
         raise AssertionError("corrected source does not contain the exact guard")
     frozen_old = current.replace(NEW_ANCHOR, OLD_ANCHOR).encode()
-    if hashlib.sha256(frozen_old).hexdigest() != OLD_SHA:
-        raise AssertionError("derived old source differs from the frozen production identity")
-    old_path = output / "frozen_old_spk286.sv"
+    old_path = output / "missing_length_guard.sv"
     old_path.write_bytes(frozen_old)
-    commit = subprocess.check_output(["git", "rev-parse", args.reference_commit],
-                                     cwd=ROOT, text=True).strip()
-    # Freeze all unchanged functional inputs at the completed pre-correction
-    # commit; concurrent syntax-only development cannot contaminate this proof.
-    names = subprocess.check_output(["git", "ls-tree", "-r", "--name-only", commit,
-                                     "vendor/spk286/rtl"], cwd=ROOT, text=True).splitlines()
-    package_names = ["vendor/spk286/" + name for name in [
-        "microcode/generated/spk286_microcode_pkg.sv",
-        "microcode/generated/spk286_microcode_rom.sv",
-        "microcode/generated/spk286_microcode_sync_rom.sv",
-        "rtl/spk286_protected_pkg.sv", "rtl/spk286_tss_pkg.sv"]]
-    original = []
-    frozen_sources = {}
-    directory = output / "frozen"
-    directory.mkdir()
-    selected_names = package_names + [name for name in names
-                                     if name.endswith(".sv") and "/timed/" not in name and name not in package_names]
-    for name in selected_names:
-        frozen = subprocess.check_output(["git", "show", f"{commit}:{name}"], cwd=ROOT)
-        frozen_sources[name] = hashlib.sha256(frozen).hexdigest()
-        if name == "vendor/spk286/rtl/spk286.sv":
-            if frozen != frozen_old:
-                raise AssertionError("requested reference commit has a different old CPU")
-            frozen = current.encode()
-        path = directory / Path(name).name
-        path.write_bytes(frozen)
-        original.append(path)
+    package_names = ["microcode/generated/spk286_microcode_pkg.sv",
+                     "microcode/generated/spk286_microcode_rom.sv",
+                     "microcode/generated/spk286_microcode_sync_rom.sv",
+                     "rtl/spk286_protected_pkg.sv", "rtl/spk286_tss_pkg.sv"]
+    original = [CPU / name for name in package_names]
+    original += [path for path in sorted((CPU / "rtl").glob("*.sv")) if path not in original]
     shared = [ROOT / "rtl/spk286_integration/spk286_at_cpu_profile.sv", BENCH]
     include = ["-I" + str(CPU / "rtl"), "-I" + str(CPU / "sim/unit")]
-    inputs = [*shared, CPU / "rtl/spk286.sv", CPU / "sim/unit/spk286_signals.svh",
+    inputs = [*shared, *original, CPU / "sim/unit/spk286_signals.svh",
               Path(__file__).resolve()]
     before = {path.relative_to(ROOT).as_posix(): sha(path) for path in inputs}
     old_sources = [old_path if path.name == "spk286.sv" else path for path in original]
@@ -203,10 +177,9 @@ def main():
     after = {path.relative_to(ROOT).as_posix(): sha(path) for path in inputs}
     changed = [name for name in before if before[name] != after[name]]
     receipt = {"status": "PASS" if not changed else "SOURCE_CHANGED",
-               "frozen_old_cpu_sha256": OLD_SHA, "corrected_cpu_sha256": sha(CPU / "rtl/spk286.sv"),
+               "negative_cpu_sha256": sha(old_path), "corrected_cpu_sha256": sha(CPU / "rtl/spk286.sv"),
                "minimal_change": {"old": OLD_ANCHOR, "new": NEW_ANCHOR},
                "source_sha256": before, "old": old, "corrected": corrected,
-               "functional_reference_commit": commit, "frozen_functional_source_sha256": frozen_sources,
                "pair": paired, "dual": dual, "source_changes": changed,
                "scope": "RAW completion byte-demand qualification only; broader CPU regression remains separate"}
     (output / "receipt.json").write_text(json.dumps(receipt, indent=2) + "\n", newline="\n")

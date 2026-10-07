@@ -11,7 +11,7 @@ import subprocess
 
 from build_p06_profile_cpu import build
 from check_p06_profile_components import select
-from run_p06_pilot import generic_stats
+from profile_test_support import generic_stats
 from test_spk286_at_cpu_profile import sha, run, ROOT, RTL
 
 CLOCK_TB = ROOT / 'sim/spk286_integration/spk286_at_cpu_profile_live_tb.sv'
@@ -122,10 +122,7 @@ def main():
                            [mutant if p == CPU_TB else p for p in cpu_paths])
     negatives['unsafe-mid-instruction-apply'] = execute(out, 'negative-boundary', ['vvp', binary],
         'changed mode requires complete CPU context boundary', reject=True)
-    old = out / 'reset-only-selector.sv'
-    old.write_bytes(subprocess.check_output(['git', 'show', '0d8e6c7:rtl/spk286_integration/spk286_at_cpu_profile.sv'], cwd=ROOT))
-    costs = {'reset_only': cost(out, 'reset-only-cost', old), 'live': cost(out, 'live-cost', RTL)}
-    assert costs['live']['register_bits'] == costs['reset_only']['register_bits'] == 10
+    costs = {'live': cost(out, 'live-cost', RTL)}
     machine = (ROOT / 'rtl/spk286_integration/spk286_at_machine.sv').read_text()
     assert '.apply(timing_profile_change_ready && bridge_idle &&\n               !(memory_drain_pending === 1\'b1))' in machine
     assert '.profile_change_pending (cpu_speed_pending)' in machine

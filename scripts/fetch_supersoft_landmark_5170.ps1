@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-    [string]$OutputPath = 'D:\GitHub\PCAT-286_MiSTer\SW\ROMs\test\Supersoft_Landmark_1.2.0_AT_5170_64K.BIN'
+    [string]$OutputPath = (Join-Path $PSScriptRoot '../SW/ROMs/test/Supersoft_Landmark_1.2.0_AT_5170_64K.BIN')
 )
 
 $ErrorActionPreference = 'Stop'

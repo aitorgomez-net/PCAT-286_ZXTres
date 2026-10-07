@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 root=$(cd "$(dirname "$0")/.." && pwd)
-build="$root/build/at-video-options"
+build="${PCAT_BUILD_DIR:-$root/build/at-video-options}"
 mkdir -p "$build"
 iverilog -g2012 -Wall -Wno-timescale -s at_video_options_cdc_tb -o "$build/options.vvp" \
   "$root/sys/at_cdc_snapshot.sv" \

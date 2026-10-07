@@ -42,3 +42,12 @@ c5_pin_model_dump.txt
 /analysis/
 __pycache__/
 *.pyc
+
+# Locally supplied diagnostic ROMs and generated regression results.
+/SW/ROMs/test/IBM_AT_5170*.BIN
+/SW/ROMs/test/Supersoft_Landmark*
+/reports/
+/tmp/
+*.vvp
+*.vcd
+*.fst

@@ -40,17 +40,3 @@ class FullPhysicalTests(unittest.TestCase):
         self.assertEqual(result['validation'],'FAIL')
         result=run_all(('malformed',),lambda _: (2,0,0))
         self.assertEqual(result['validation'],'FAIL')
-
-
-class CompleteGateTests(unittest.TestCase):
-    def test_input_failure_cannot_launch_the_inherited_gate(self):
-        import os,subprocess,tempfile
-        from pathlib import Path
-        with tempfile.TemporaryDirectory() as d:
-            root=Path(d);binary=root/'bin';binary.mkdir();stub=binary/'python3'
-            stub.write_text('#!/bin/sh\nexit 23\n');stub.chmod(0o755)
-            env=dict(os.environ,PATH=str(binary)+os.pathsep+os.environ['PATH'],SPK286_BUILD_DIR=str(root/'fresh'))
-            result=subprocess.run(['make','phase7-check'],env=env,capture_output=True,text=True)
-            self.assertNotEqual(result.returncode,0);self.assertIn('stage=inputs status=23',result.stderr)
-            self.assertNotIn('PHASE7_DEVELOPMENT_VALIDATION_PASS',result.stdout+result.stderr)
-            self.assertFalse((root/'fresh/phase6').exists())

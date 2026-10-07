@@ -8,8 +8,8 @@ import argparse
 import json
 from pathlib import Path
 from build_p06_profile_cpu import ROOT, build, sha
-from run_p06_core_register import sources, run
-from run_p06_pilot import generic_stats
+from profile_test_support import sources, run
+from profile_test_support import generic_stats
 
 
 def select(selected):

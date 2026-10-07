@@ -26,7 +26,7 @@ module spk286_length_fault_boundary_tb;
     logic held_bhe, held_write, held_lock;
 
     spk286_at_cpu_profile profile_clock (
-        .clk(clk), .reset(reset), .requested(selected_profile),
+        .clk(clk), .reset(reset), .apply(1'b0), .requested(selected_profile),
         .active(active_profile), .pending(profile_pending),
         .historical(historical_enable), .phase_enable(phase_enable),
         .phase_two(phase_two), .cpu_boundary(cpu_boundary)

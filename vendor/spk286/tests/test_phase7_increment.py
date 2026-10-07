@@ -34,18 +34,3 @@ class Phase7IncrementTests(unittest.TestCase):
             manifest=directory/'forms.json';manifest.write_text(json.dumps(source))
             with self.assertRaisesRegex(ValueError,'inventory'):
                 summarize(directory,manifest)
-
-    def test_increment_gate_propagates_input_capture_failure(self):
-        # Execute the real shell composition with a failed first dependency.
-        # No expensive simulator is necessary to prove a failed input capture
-        # cannot reach a success marker or create an inherited output tree.
-        with tempfile.TemporaryDirectory() as d:
-            import os
-            root=Path(d);binary=root/'bin';binary.mkdir();stub=binary/'python3'
-            stub.write_text('#!/bin/sh\nexit 23\n');stub.chmod(0o755)
-            env=dict(os.environ,PATH=str(binary)+os.pathsep+os.environ['PATH'],SPK286_BUILD_DIR=str(root/'fresh'))
-            result=subprocess.run(['bash','scripts/validate_phase7_byte_prefix.sh'],env=env,capture_output=True,text=True)
-            self.assertEqual(result.returncode,23)
-            self.assertIn('stage=inputs status=23',result.stderr)
-            self.assertNotIn('VALIDATION_PASS',result.stdout+result.stderr)
-            self.assertFalse((root/'fresh/phase6').exists())

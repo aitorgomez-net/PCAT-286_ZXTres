@@ -64,8 +64,6 @@ def build(output: Path, nasm: str, inject: int = 0):
                                            for p in [SOURCE/'pm286.asm', SOURCE/'boot.asm']},
                 'scope': 'Superdiag late PM/task diagnostic subset; not full PM certification'}
     (output / 'manifest.json').write_text(json.dumps(manifest, indent=2)+'\n', encoding='utf-8')
-    for name in ('README.md', 'VALIDATION.md', 'RESULT_TEMPLATE.md'):
-        shutil.copyfile(SOURCE / name, output / name)
     print(json.dumps(manifest, indent=2))
     return manifest
 

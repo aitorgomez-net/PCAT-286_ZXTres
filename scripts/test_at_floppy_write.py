@@ -2,8 +2,7 @@
 """Bounded composed RAM->DMA->FDC->host WRITE DATA and readback regression.
 
 Run inside WSL: python3 scripts/test_at_floppy_write.py --output build/DIR
-Both Icarus and Verilator are mandatory. A negative run uses the original
-unretained machine connection and must fail specifically on FIFO payload.
+Both Icarus and Verilator are mandatory. A negative control bypasses payload retention and must fail specifically on FIFO payload.
 The production machine payload region and endpoint connection are extracted
 literally; no alternative correction is reconstructed in the harness.
 """
@@ -20,7 +19,6 @@ import time
 
 ROOT = Path(__file__).resolve().parents[1]
 TOP = "spk286_at_floppy_write_tb"
-BASELINE_COMMIT = "7cb6e2efb942e8d49b0f1ed44613e1d186a450d7"
 SOURCES = [
     "rtl/spk286_integration/spk286_at_dma.sv",
     "rtl/spk286_integration/spk286_at_mister_memory_port.sv",
@@ -65,8 +63,6 @@ module spk286_at_dma_read_payload_adapter (
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output", required=True, type=Path)
-    parser.add_argument("--baseline-ref", default=BASELINE_COMMIT,
-                        help="Pre-fix commit supplying the original machine endpoint expression")
     args = parser.parse_args()
     output = args.output.resolve()
     if output.exists():
@@ -82,12 +78,9 @@ def main():
     connection = re.findall(r"\.dma_transfer_data_in\s*\((.*?)\),", machine, re.S)
     if connection != ["dma_endpoint_data"]:
         raise RuntimeError("Unexpected machine endpoint binding: " + repr(connection))
-    baseline = subprocess.check_output(
-        ["git", "show", args.baseline_ref+":rtl/spk286_integration/spk286_at_machine.sv"],
-        cwd=ROOT, text=True, timeout=15)
-    original = re.findall(r"\.dma_transfer_data_in\s*\((.*?)\),", baseline, re.S)
-    if len(original) != 1 or "dma_memory_data_in" not in original[0]:
-        raise RuntimeError("Baseline must supply the original unretained payload binding")
+    # Deliberately bypass the machine retention register. The directed bank
+    # must observe a payload mismatch once memory withdraws READY/data.
+    unretained = "dma_memory_data_in"
     output.mkdir(parents=True)
     frozen = output/"source"
     for relative in SOURCES:
@@ -95,14 +88,11 @@ def main():
         destination.parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(ROOT/relative, destination)
     (frozen/"machine-current.sv").write_text(machine)
-    (frozen/"machine-original.sv").write_text(baseline)
     shutil.copyfile(Path(__file__), frozen/"runner.py")
     report = {
         "status": "RUNNING", "source_sha256": {p: sha(frozen/p) for p in SOURCES},
         "machine_sha256": sha(machine_path), "runner_sha256": sha(Path(__file__)),
-        "baseline_ref": args.baseline_ref,
-        "baseline_machine_sha256": hashlib.sha256(baseline.encode()).hexdigest(),
-        "baseline_endpoint_connection": original[0],
+        "negative_control": "bypass DMA payload retention using dma_memory_data_in",
         "endpoint_connection": connection[0],
         "extracted_region_sha256": hashlib.sha256(match[1].encode()).hexdigest(),
         "adapter_transform": "Only wire [15:0] dma_endpoint_data = becomes assign dma_endpoint_data = because the generated module exposes the same net as an output port; all payload logic is copied literally.",
@@ -111,11 +101,11 @@ def main():
         "runs": []
     }
     (output/"receipt.json").write_text(json.dumps(report, indent=2)+"\n")
-    for variant in ("corrected", "original-negative"):
+    for variant in ("corrected", "unretained-negative"):
         variant_dir = output / variant
         variant_dir.mkdir()
         region = match[1] if variant == "corrected" else (
-            "wire [15:0] dma_endpoint_data = " + original[0] + ";\n")
+            "wire [15:0] dma_endpoint_data = " + unretained + ";\n")
         source = variant_dir / "machine_payload_adapter.sv"
         source.write_text(adapter(region))
         common = [str(frozen/p) for p in SOURCES] + [str(source)]
@@ -144,7 +134,7 @@ def main():
                 if log.count("FLOPPY_PAYLOAD_UNIT_PASS") != 1:
                     raise RuntimeError("Missing payload adapter compatibility checks")
             elif executed["exit_code"] == 0 or "FLOPPY_WRITE_PAYLOAD_MISMATCH case=0 byte=0" not in log:
-                raise RuntimeError("Negative control did not catch original bug: " + executed["log"])
+                raise RuntimeError("Negative control did not catch unretained payload: " + executed["log"])
             report["runs"].append({"variant": variant, "simulator": simulator,
                                    "adapter_sha256": sha(source), "build": built, "execution": executed,
                                    "expected_failure": bool(expected)})

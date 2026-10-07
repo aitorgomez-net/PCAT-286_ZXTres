@@ -1,6 +1,6 @@
 <#
-Create a development-only IBM PC/AT 5170 BIOS variant that skips the
-protected-mode POST phases which the current SPK286 does not yet implement.
+Create an IBM PC/AT 5170 BIOS variant for isolated peripheral POST testing
+by skipping the protected-mode POST phases.
 
 The original interleaved BIOS is never modified.  The patch keeps the normal
 AT POST flow, reports 640 KiB of conventional memory, skips the two protected
@@ -9,8 +9,8 @@ they had passed.
 #>
 [CmdletBinding()]
 param(
-    [string]$InputPath = 'D:\GitHub\PCAT-286_MiSTer\SW\ROMs\test\IBM_AT_5170_15NOV85_62X082x_64K.BIN',
-    [string]$OutputPath = 'D:\GitHub\PCAT-286_MiSTer\SW\ROMs\test\IBM_AT_5170_15NOV85_SKIP_PM_64K.BIN'
+    [string]$InputPath = (Join-Path $PSScriptRoot '../SW/ROMs/test/IBM_AT_5170_15NOV85_62X082x_64K.BIN'),
+    [string]$OutputPath = (Join-Path $PSScriptRoot '../SW/ROMs/test/IBM_AT_5170_15NOV85_SKIP_PM_64K.BIN')
 )
 
 $ErrorActionPreference = 'Stop'

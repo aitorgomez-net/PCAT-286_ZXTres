@@ -2,7 +2,7 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-BUILD_DIR="$ROOT_DIR/build/at-mister-sdram-owner"
+BUILD_DIR="${PCAT_BUILD_DIR:-$ROOT_DIR/build/at-mister-sdram-owner}"
 mkdir -p "$BUILD_DIR"
 
 iverilog -g2012 -Wall -Wno-timescale \

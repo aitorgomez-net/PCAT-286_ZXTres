@@ -60,14 +60,14 @@ def negatives(out):
         ("max-pending-leak", HANDOFF,
          "assign pending = historical_enable && pending_q;", "assign pending = pending_q;"),
         ("saturated-total-overflow", SCHEDULE,
-         "logic [11:0]", "logic [10:0]"),
+         "logic [11:0] total;", "logic [10:0] total;"),
     ]
     results = {}
     for label, source, before, after in checks:
         directory = out / f"negative-{label}"
         directory.mkdir()
         original = source.read_text()
-        expected = {"saturated-total-overflow": 3, "missing-source-length": 4}.get(label, 1)
+        expected = 1
         assert original.count(before) == expected, label
         mutated = directory / source.name
         mutated.write_text(original.replace(before, after), newline="\n")
@@ -119,18 +119,8 @@ def main():
         assert pass_lines[0] == pass_lines[1], "dual simulator check counts differ"
         results[top] = {"status": "PASS", "marker": pass_lines[0]}
 
-    # Generic before/after scheduler uses the immutable parent source. This
-    # records a logic delta without producing or copying a whole CPU image.
-    baseline = subprocess.run(["git", "show", "HEAD:rtl/spk286_timing/spk286_instruction_schedule.sv"],
-                              cwd=ROOT, check=True, stdout=subprocess.PIPE).stdout
-    baseline_path = out / "schedule-baseline.sv"
-    baseline_path.write_bytes(baseline)
-    baseline_out = out / "baseline-cost"
-    baseline_out.mkdir()
     cost = {"handoff": synthesize(out, HANDOFF.stem, [HANDOFF]),
-            "schedule": synthesize(out, SCHEDULE.stem, [SCHEDULE]),
-            "schedule_before": synthesize(baseline_out, SCHEDULE.stem, [baseline_path])}
-    cost["schedule_baseline_sha256"] = sha(baseline_path)
+            "schedule": synthesize(out, SCHEDULE.stem, [SCHEDULE])}
     assert before == {p.relative_to(ROOT).as_posix(): sha(p) for p in inputs}, "sources changed"
     receipt = {"status": "PASS", "scope": "source retained target-length controller/scheduler units",
                "checks": results, "source_sha256": before, "isolated_cost": cost,

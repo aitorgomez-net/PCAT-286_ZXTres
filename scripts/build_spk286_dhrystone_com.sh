@@ -2,10 +2,10 @@
 set -euo pipefail
 
 root=$(cd "$(dirname "$0")/.." && pwd)
-out_dir="$root/tests/dos"
+out_dir="${PCAT_BUILD_DIR:-$root/build/dos}"
 mkdir -p "$out_dir"
 nasm -O9 -f bin \
-  "$out_dir/spk286_dhrystone21_com.asm" \
+  "$root/tests/dos/spk286_dhrystone21_com.asm" \
   -o "$out_dir/SPK286D.COM"
 test "$(stat -c %s "$out_dir/SPK286D.COM")" -le 65535
 sha256sum "$out_dir/SPK286D.COM"

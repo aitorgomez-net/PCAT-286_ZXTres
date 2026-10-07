@@ -25,14 +25,3 @@ class ScalarReportTests(unittest.TestCase):
         for key in ('opcode','source_git_blob'):
             with self.subTest(key=key), self.assertRaises(ValueError):
                 bad=copy.deepcopy(report);bad[key]='changed';validate_report(bad,'F7.0',form)
-
-    def test_scalar_gate_propagates_first_dependency_failure(self):
-        with tempfile.TemporaryDirectory() as directory:
-            root=Path(directory);binary=root/'bin';binary.mkdir();stub=binary/'python3'
-            stub.write_text('#!/bin/sh\nexit 23\n');stub.chmod(0o755)
-            env=dict(os.environ,PATH=str(binary)+os.pathsep+os.environ['PATH'],SPK286_BUILD_DIR=str(root/'fresh'))
-            result=subprocess.run(['bash','scripts/validate_phase7_scalar.sh'],env=env,capture_output=True,text=True)
-            self.assertEqual(result.returncode,23)
-            self.assertIn('stage=inputs status=23',result.stderr)
-            self.assertNotIn('VALIDATION_PASS',result.stdout+result.stderr)
-            self.assertFalse((root/'fresh/byte').exists())

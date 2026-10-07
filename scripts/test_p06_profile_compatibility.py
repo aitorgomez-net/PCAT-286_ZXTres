@@ -183,12 +183,6 @@ def fixture(out, name):
             "address": "000197", "value": "CF", "insert_before": anchor_restart.strip(),
             "inserted_statement": early_patch.strip(), "original_later_patch": "preserved",
             "reason": "original patch occurs after a retained CODE fetch in a slower EU profile",
-            "evidence": {
-                "trace": "build/p06-profile-compat-focal2-20261004/protected_system/profile-1-iverilog.csv",
-                "code_capture_edge": 97209, "code_address": "000196", "code_payload": "F412",
-                "outer_iret_retirement_edge": 97401, "queue_bytes_at_retirement": 6,
-                "stale_hlt_retirement_edge": 97418,
-            },
             "architectural_expectations": "unchanged", "fixed_delays": "unchanged",
             "max_stimulus": "unchanged",
         })

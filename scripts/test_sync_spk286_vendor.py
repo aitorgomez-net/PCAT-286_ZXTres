@@ -38,6 +38,7 @@ def main():
     command(upstream, 'config', 'core.autocrlf', 'false')
     for name, data in {'rtl/cpu.sv': b'module cpu; endmodule\n',
                        'rtl/timed/profiled.sv': b'upstream old timed wrapper\n',
+                       'LICENSE': b'Fixture license notice\n',
                        'docs/contract.md': b'# Contract\n'}.items():
         path = upstream / name
         path.parent.mkdir(parents=True, exist_ok=True); path.write_bytes(data)
@@ -55,6 +56,8 @@ def main():
     historical.parent.mkdir(parents=True); historical.write_bytes(b'preserve original import\n')
     first = sync.synchronize(upstream, apply=True, root=downstream)
     assert first['imported_files'] == 2 and first['downstream_overlay_files'] == 1
+    assert (vendor / 'LICENSE').read_bytes() == b'Fixture license notice\n'
+    assert not (vendor / 'docs/contract.md').exists(), 'Upstream development documentation is not mirrored'
     assert first['retained_vendor_only_files'] == 1
     assert untouched.stat().st_mtime_ns == timestamp, 'Equal portable RTL must not be rewritten'
     assert overlay.read_bytes() == b'PCAT selected timed wrapper\n' and extra.read_bytes() == b'legacy vendor extra\n'
