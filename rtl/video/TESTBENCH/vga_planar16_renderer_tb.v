@@ -5,6 +5,9 @@ module vga_planar16_renderer_tb;
     reg reset = 1'b1;
     reg enable = 1'b0;
     reg native_70hz = 1'b1;
+    reg wide_640 = 1'b0;
+    reg [4:0] crtc_max_scan = 5'd0;
+    reg crtc_double_scan = 1'b0;
     reg [15:0] crtc_start_address = 16'h0000;
     reg [7:0] crtc_offset = 8'd22;
     reg [9:0] crtc_line_compare = 10'h3FF;
@@ -26,9 +29,10 @@ module vga_planar16_renderer_tb;
 
     vga_planar16_renderer dut (
         .clock(clock), .reset(reset), .enable(enable),
-        .native_70hz(native_70hz), .crt_h_offset(4'd0),
+        .native_70hz(native_70hz), .wide_640(wide_640), .crt_h_offset(4'd0),
         .crt_v_offset(3'd0), .crtc_start_address(crtc_start_address),
         .crtc_offset(crtc_offset), .crtc_line_compare(crtc_line_compare),
+        .crtc_max_scan(crtc_max_scan), .crtc_double_scan(crtc_double_scan),
         .attr_pixel_pan(attr_pixel_pan),
         .split_panning_suppress(split_panning_suppress),
         .vram_addr(vram_addr), .vram_read_en(vram_read_en),
@@ -144,6 +148,71 @@ module vga_planar16_renderer_tb;
             errors = errors + 1;
             $display("FAIL: valid planar fetch did not assert pixel_valid");
         end
+
+        // VGA mode 12h: 640 pixels, 80-byte rows, one Native clock per pixel
+        // and one Native line per physical scanline.
+        wide_640 = 1'b1;
+        crtc_offset = 8'd40;
+        crtc_line_compare = 10'h3FF;
+        dut.start_address_latched = 16'h0000;
+        force dut.timing.h_count = 11'd0;
+        force dut.timing.v_count = 10'd6;
+        #1;
+        check16("mode 12h row 6", vram_addr, 16'd480);
+        force dut.timing.h_count = 11'd639;
+        #1;
+        check16("mode 12h last byte of row 6", vram_addr, 16'd559);
+        force dut.timing.v_count = 10'd479;
+        #1;
+        check16("mode 12h last byte of the screen", vram_addr, 16'd38399);
+        // Pinball Fantasies' menu: R9 = C0h doubles every row (640x240).
+        crtc_double_scan = 1'b1;
+        force dut.timing.h_count = 11'd0;
+        force dut.timing.v_count = 10'd7;
+        #1;
+        check16("scan doubling repeats row 3", vram_addr, 16'd240);
+        crtc_max_scan = 5'd1;
+        #1;
+        check16("doubling composes with maximum scan line", vram_addr, 16'd80);
+        crtc_max_scan = 5'd0;
+        // Line Compare restarts at zero on the following physical scanline.
+        crtc_line_compare = 10'd413;
+        force dut.timing.v_count = 10'd413;
+        #1;
+        check16("last line above the split", vram_addr, 16'd16480);
+        force dut.timing.v_count = 10'd414;
+        #1;
+        check16("split starts at address zero", vram_addr, 16'd0);
+        force dut.timing.v_count = 10'd417;
+        #1;
+        check16("split advances in source rows", vram_addr, 16'd80);
+        crtc_line_compare = 10'h3FF;
+        crtc_double_scan = 1'b0;
+        // A wider virtual row: Offset 41 is 82 bytes.
+        crtc_offset = 8'd41;
+        force dut.timing.v_count = 10'd2;
+        #1;
+        check16("offset 41 gives 82-byte rows", vram_addr, 16'd164);
+        crtc_offset = 8'd40;
+        // The 15 kHz raster: two clocks per pixel, every second scanline.
+        native_70hz = 1'b0;
+        force dut.timing.h_count = 11'd16;
+        force dut.timing.v_count = 10'd3;
+        #1;
+        check16("TV mode 12h samples scanline 6", vram_addr, 16'd481);
+        native_70hz = 1'b1;
+
+        // One Native clock per pixel: the bit select must wait out the two
+        // clock plane latency, so x=1's data still shows x=0's bit 7 first.
+        plane0 = 8'h80; plane1 = 8'h00; plane2 = 8'h00; plane3 = 8'h00;
+        force dut.timing.h_count = 11'd0;
+        repeat (3) @(posedge clock);
+        force dut.timing.h_count = 11'd1;
+        @(posedge clock); #1;
+        check4("select lags x=1 by one clock", plane_index, 4'h1);
+        @(posedge clock); #1;
+        check4("select reaches x=1 after two clocks", plane_index, 4'h0);
+        wide_640 = 1'b0;
 
         release dut.timing.h_count;
         release dut.timing.v_count;

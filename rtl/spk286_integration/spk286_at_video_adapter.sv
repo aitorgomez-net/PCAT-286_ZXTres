@@ -613,6 +613,18 @@ module spk286_at_video_adapter (
     assign video_hblank = (video_scandouble_active || vga_mode13_active_video)
                           ? ega_hblank_raw : ~video_de;
 
+    // CE_PIXEL is rebuilt from this toggle in the HDMI pipeline. A private VGA
+    // raster has its own pixel clock - one dot per 28.636 MHz clock on Native,
+    // one per two on the 15 kHz raster - unrelated to the EGA dot clock that
+    // keeps running underneath. Passing the EGA toggle made the scaler sample
+    // VGA+ pictures at 14.318 or 16.257 MHz (363 or 727 "pixels" for a
+    // 640-dot line) with a phase that wandered from line to line and frame to
+    // frame: a shimmering picture on HDMI only, since analog RGB ignores CE.
+    wire ega_dot_toggle_video;
+    wire vga_pixel_toggle_video;
+    assign video_dot_toggle = vga_mode13_active_video ? vga_pixel_toggle_video
+                                                      : ega_dot_toggle_video;
+
     ega_top u_ega (
         .clk                        (clk_video),
         .reset                      (video_reset),
@@ -676,7 +688,7 @@ module spk286_at_video_adapter (
         .ega_green                  (video_green),
         .ega_blue                   (video_blue),
         .ega_display_sel_out        (),
-        .ega_dot_toggle_out         (video_dot_toggle),
+        .ega_dot_toggle_out         (ega_dot_toggle_video),
         .ega_dot_clock_sel_out      (),
         .ega_scandouble_active_out  (video_scandouble_active),
         .ega_mode350_out            (video_mode350),
@@ -697,7 +709,7 @@ module spk286_at_video_adapter (
         .vga_unchained256_active_out(),
         .vga_mode13_wide_clock_out  (),
         .vga_planar_memory_active_out(vga_planar_memory_active_video),
-        .vga_mode13_pixel_toggle_out(),
+        .vga_mode13_pixel_toggle_out(vga_pixel_toggle_video),
         .crt_h_offset               (video_geometry[3:0]),
         .crt_v_offset               (video_geometry[6:4]),
         .vsync_width_osd            (video_geometry[9:7]),

@@ -13,8 +13,9 @@ module vga_unchained256_ctrl_tb;
     reg [7:0] crtc_underline_loc = 8'h40;
     reg [7:0] crtc_mode_control = 8'hA3;
     wire packed_active;
+    wire planar640_active;
     wire unchained_active;
-    wire [1:0] unchained_profile;
+    wire [2:0] unchained_profile;
     integer errors = 0;
 
     vga_unchained256_ctrl dut (
@@ -25,14 +26,14 @@ module vga_unchained256_ctrl_tb;
         .crtc_v_displayed(crtc_v_displayed), .crtc_offset(crtc_offset),
         .crtc_underline_loc(crtc_underline_loc),
         .crtc_mode_control(crtc_mode_control),
-        .packed_active(packed_active),
+        .packed_active(packed_active), .planar640_active(planar640_active),
         .unchained_active(unchained_active), .unchained_profile(unchained_profile)
     );
 
     task check;
         input expected_packed;
         input expected_unchained;
-        input [1:0] expected_profile;
+        input [2:0] expected_profile;
         input [127:0] tag;
         begin
             #1;
@@ -59,6 +60,11 @@ module vga_unchained256_ctrl_tb;
         crtc_h_displayed = 8'd79; crtc_v_displayed = 10'd480;
         check(1'b0, 1'b1, 2'd2, "480 physical scanlines select 320x240");
         check(1'b0, 1'b1, 2'd2, "320x240 profile ignores maximum scanline changes");
+        crtc_v_displayed = 10'd350;
+        check(1'b0, 1'b1, 3'd4, "350 physical scanlines select 320x350");
+        crtc_h_displayed = 8'd89;
+        check(1'b0, 1'b1, 2'd0, "90-character 350-line CRTC is not a profile");
+        crtc_h_displayed = 8'd79;
         crtc_h_displayed = 8'd63; crtc_v_displayed = 10'd464;
         check(1'b0, 1'b1, 2'd3, "256x232 CRTC selects Dyna profile");
         crtc_v_displayed = 10'd400;
@@ -88,6 +94,35 @@ module vga_unchained256_ctrl_tb;
         check(1'b0, 1'b0, 2'd0, "non-byte addressing rejects mode 12h tweak");
         crtc_mode_control = 8'hE3; mode12_tweak_pending = 1'b0;
         check(1'b0, 1'b0, 2'd0, "leaving mode 12h restores EGA route");
+
+        // VGA mode 12h: the TSR's baseline, and Pinball Fantasies' route
+        // from mode 13h, select the 640x480 planar renderer.
+        mode12_tweak_pending = 1'b1; mode13_active = 1'b0;
+        chain4 = 1'b0; shift256 = 1'b0; graphics_mode = 1'b1; mem_map_sel = 2'b01;
+        crtc_h_displayed = 8'd79; crtc_v_displayed = 10'd480; crtc_offset = 8'd40;
+        #1 if (!planar640_active || unchained_active || packed_active) begin
+            errors = errors + 1; $display("FAIL: mode 12h baseline is not planar640");
+        end
+        mode12_tweak_pending = 1'b0; mode13_active = 1'b1;
+        #1 if (!planar640_active || packed_active) begin
+            errors = errors + 1; $display("FAIL: mode 13h without Shift256 is not planar640");
+        end
+        shift256 = 1'b1;
+        #1 if (planar640_active || !unchained_active) begin
+            errors = errors + 1; $display("FAIL: Shift256 must keep unchained 320x240");
+        end
+        shift256 = 1'b0; chain4 = 1'b1;
+        #1 if (planar640_active) begin
+            errors = errors + 1; $display("FAIL: Chain-4 is not mode 12h");
+        end
+        chain4 = 1'b0; crtc_v_displayed = 10'd400;
+        #1 if (planar640_active) begin
+            errors = errors + 1; $display("FAIL: 400 scanlines are not mode 12h");
+        end
+        crtc_v_displayed = 10'd480; mode13_active = 1'b0;
+        #1 if (planar640_active) begin
+            errors = errors + 1; $display("FAIL: EGA modes must not select planar640");
+        end
 
         if (errors == 0) $display("RESULT: PASS");
         else $display("RESULT: FAIL (%0d errors)", errors);

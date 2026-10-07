@@ -30,6 +30,7 @@ module vga_mode13_renderer(
     output reg         vsync,
     output reg         hblank,
     output reg         vblank,
+    output reg         status_blank,
     output wire        pixel_toggle
 );
 
@@ -38,6 +39,7 @@ module vga_mode13_renderer(
     wire timing_active;
     wire timing_hblank;
     wire timing_vblank;
+    wire timing_status_blank;
     wire timing_hsync;
     wire timing_vsync;
     wire address_render_en;
@@ -49,7 +51,7 @@ module vga_mode13_renderer(
         .reset          (reset),
         .enable         (enable),
         .native_70hz    (native_70hz),
-        .mode_x_profile (2'd0),
+        .mode_x_profile (3'd0),
         .crt_h_offset   (crt_h_offset),
         .crt_v_offset   (crt_v_offset),
         .pixel_x        (pixel_x),
@@ -59,6 +61,7 @@ module vga_mode13_renderer(
         .vblank         (timing_vblank),
         .hsync          (timing_hsync),
         .vsync          (timing_vsync),
+        .status_blank   (timing_status_blank),
         .line_start     (),
         .frame_start    (),
         .pixel_toggle   (pixel_toggle)
@@ -85,12 +88,14 @@ module vga_mode13_renderer(
             vsync <= 1'b0;
             hblank <= 1'b1;
             vblank <= 1'b1;
+            status_blank <= 1'b1;
         end else begin
             render_en_q <= framebuffer_read_en;
             hsync <= timing_hsync;
             vsync <= timing_vsync;
             hblank <= timing_hblank;
             vblank <= timing_vblank;
+            status_blank <= timing_status_blank;
         end
     end
 

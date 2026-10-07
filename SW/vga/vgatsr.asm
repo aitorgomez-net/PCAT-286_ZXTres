@@ -10,7 +10,8 @@ org 100h
 ; Installs an INT 10h hook. AX=0013h updates the BIOS Data Area and writes
 ; 13h to the private VGA control port 03CDh. AX=0012h stages Dyna Blaster's
 ; 256x232 direct-register tweak through the EGA BIOS mode 0Dh, then writes 12h
-; to the private port. AX=000Dh first lets the EGA BIOS
+; to the private port, then loads the IBM VGA mode 12h register set so that
+; plain 640x480x16 software is displayed too. AX=000Dh first lets the EGA BIOS
 ; establish the planar mode, then writes 0Dh so the core can emit it through
 ; its fixed VGA 320x200x16 raster. While mode 13h is active, the hook provides
 ; the minimal BIOS calls needed by bring-up software. Other mode sets clear
@@ -294,11 +295,12 @@ int10_hook_entry:
     iret
 
 .set_mode12:
-    ; Dyna Blaster starts with VGA BIOS mode 12h, then writes a complete CRTC
-    ; table and switches to unchained 256-colour memory. The underlying EGA
-    ; BIOS has no mode 12h, so establish its planar A000h register state with
-    ; mode 0Dh and leave a private 12h marker for the signature-gated renderer.
-    ; Actual 640x480x16 VGA mode 12h is outside this extension.
+    ; The underlying EGA BIOS has no mode 12h. Let it establish its planar
+    ; A000h state, BDA and adapter bookkeeping with mode 0Dh, then load the
+    ; IBM VGA mode 12h registers over it: 640x480x16, 80-byte rows. The core
+    ; displays that through its 640x480 planar profile. Dyna Blaster starts
+    ; from this mode too and then writes its own complete unchained 256x232
+    ; table, which the signature-gated Mode-X renderer recognises instead.
     cmp byte [cs:current_mode], 12h
     je .restore_before_12
     cmp byte [cs:current_mode], 13h
@@ -323,6 +325,22 @@ int10_hook_entry:
     xor ah, ah
     pushf
     call far [cs:old10_off]
+
+    call load_mode12_registers
+
+    ; A real VGA BIOS clears all 38400 bytes of each plane; mode 0Dh's own
+    ; clear stops at its 8000h-byte page. The caller's AL bit 7 asks for none.
+    mov bp, sp
+    test byte [bp+16], 80h          ; saved AL
+    jnz .mode12_cleared
+    mov ax, VGA_FB_SEG
+    mov es, ax
+    xor di, di
+    xor ax, ax
+    cld
+    mov cx, 38400 / 2
+    rep stosw
+.mode12_cleared:
 
     mov dx, VGA_CTRL_PORT
     mov al, 12h
@@ -473,6 +491,106 @@ int10_hook_entry:
 
 .chain:
     jmp far [cs:old10_off]
+
+; IBM VGA mode 12h register set, loaded over the EGA BIOS's mode 0Dh state.
+; Write mode 0, Set/Reset off, all planes enabled, so the clear in
+; .set_mode12 writes zero to every plane. The Attribute palette is the VGA one
+; (rgbRGB values into the DAC): with Misc bit 7 set the core decodes all six
+; bits, exactly like the 64 default DAC entries of a VGA in this mode.
+load_mode12_registers:
+    push ax
+    push bx
+    push cx
+    push dx
+    push si
+
+    mov dx, VGA_MISC_OUTPUT
+    mov al, 0E3h                  ; colour CRTC, page select, 480-line sync
+    out dx, al
+
+    mov dx, VGA_SEQ_INDEX
+    mov ax, 0101h                 ; 8-dot characters, full dot clock
+    out dx, ax
+    mov ax, 0F02h                 ; all planes
+    out dx, ax
+    mov ax, 0003h
+    out dx, ax
+    mov ax, 0604h                 ; extended memory, odd/even off, no Chain-4
+    out dx, ax
+
+    mov dx, VGA_GC_INDEX
+    mov ax, 0000h
+    out dx, ax
+    mov ax, 0001h
+    out dx, ax
+    mov ax, 0002h
+    out dx, ax
+    mov ax, 0003h
+    out dx, ax
+    mov ax, 0004h
+    out dx, ax
+    mov ax, 0005h                 ; write mode 0, read mode 0, no Shift256
+    out dx, ax
+    mov ax, 0506h                 ; graphics, A0000h-AFFFFh
+    out dx, ax
+    mov ax, 0F07h
+    out dx, ax
+    mov ax, 0FF08h
+    out dx, ax
+
+    mov dx, VGA_CRTC_INDEX
+    mov ax, 0E11h                 ; unlock CRTC 00h-07h
+    out dx, ax
+    mov si, mode12_crtc
+    xor bl, bl
+    mov cx, 25
+.crtc_loop:
+    cmp bl, 11h                   ; R11 last, it holds the lock
+    je .crtc_next
+    mov al, bl
+    mov ah, [cs:si]
+    out dx, ax
+.crtc_next:
+    inc si
+    inc bl
+    loop .crtc_loop
+    mov al, 11h
+    mov ah, [cs:mode12_crtc + 11h]
+    out dx, ax
+
+    mov dx, VGA_INPUT_STATUS
+    in al, dx                     ; Attribute flip-flop to index
+    mov dx, VGA_ATTR_INDEX
+    mov si, mode12_attr
+    xor bl, bl
+    mov cx, 21
+.attr_loop:
+    mov al, bl
+    out dx, al
+    mov al, [cs:si]
+    out dx, al
+    inc si
+    inc bl
+    loop .attr_loop
+    mov al, 20h                   ; palette address source: video on
+    out dx, al
+
+    pop si
+    pop dx
+    pop cx
+    pop bx
+    pop ax
+    ret
+
+mode12_crtc:
+    db 5Fh, 4Fh, 50h, 82h, 54h, 80h, 0Bh, 3Eh
+    db 00h, 40h, 00h, 00h, 00h, 00h, 00h, 00h
+    db 0EAh, 8Ch, 0DFh, 28h, 00h, 0E7h, 04h, 0E3h
+    db 0FFh
+mode12_attr:
+    db 00h, 01h, 02h, 03h, 04h, 05h, 14h, 07h
+    db 38h, 39h, 3Ah, 3Bh, 3Ch, 3Dh, 3Eh, 3Fh
+    db 01h, 00h, 0Fh, 00h, 00h
 
 ; Clears the mode 13h framebuffer to colour 0 (32000 words at A000h:0000h).
 ; Called from .set_mode13 only, right before AX is overwritten with the

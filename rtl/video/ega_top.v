@@ -306,12 +306,17 @@ module ega_top(
     wire vga_mode13_active;
     wire vga_mode12_tweak_pending;
     wire vga_mode12_tweaked_active;
-    wire vga_planar16_active;
-    wire vga_256color_active = vga_mode13_active | vga_mode12_tweaked_active;
+    // vga_planar16_active is the planar 16-colour route: the private mode 0Dh
+    // raster (vga_planar16_bios_active) or the 640x480 mode 12h profile.
+    wire vga_planar16_bios_active;
+    wire vga_planar640_active;
+    wire vga_planar16_active = vga_planar16_bios_active | vga_planar640_active;
+    wire vga_256color_active = (vga_mode13_active & ~vga_planar640_active) |
+                               vga_mode12_tweaked_active;
     wire vga_private_active = vga_256color_active | vga_planar16_active;
     wire vga_mode13_packed_active;
     wire vga_unchained256_active;
-    wire [1:0] vga_unchained_profile;
+    wire [2:0] vga_unchained_profile;
     reg ega_vblank_q = 1'b0;
     wire ega_splash_active = ega_enabled & splashscreen;
     // During a BIOS hold, keep the splash's power-on CRTC geometry active for
@@ -361,6 +366,7 @@ module ega_top(
     wire [7:0] ega_h_displayed;
     wire [9:0] ega_v_displayed;
     wire [4:0] ega_v_maxscan;
+    wire       ega_v_double_scan;
     wire [3:0] ega_hsync_width_crtc;
     wire [7:0] ega_seq_data_out;
     wire [7:0] ega_seq_map_mask_debug;
@@ -645,10 +651,10 @@ module ega_top(
         .vga_enabled(vga_enabled),
         .mode13_set(vga_planar16_bios_set),
         .mode13_clear(vga_planar16_exit),
-        .vga_mode13_active(vga_planar16_active)
+        .vga_mode13_active(vga_planar16_bios_active)
     );
 `else
-    assign vga_planar16_active = '0;
+    assign vga_planar16_bios_active = '0;
 `endif
 
 `ifndef PCAT_EGA_ONLY
@@ -665,11 +671,13 @@ module ega_top(
         .crtc_underline_loc(ega_crtc_r14_debug),
         .crtc_mode_control(ega_crtc_r17_debug),
         .packed_active    (vga_mode13_packed_active),
+        .planar640_active (vga_planar640_active),
         .unchained_active (vga_unchained256_active),
         .unchained_profile(vga_unchained_profile)
     );
 `else
     assign vga_mode13_packed_active = '0;
+    assign vga_planar640_active = '0;
     assign vga_unchained256_active = '0;
     assign vga_unchained_profile = '0;
 `endif
@@ -720,6 +728,7 @@ module ega_top(
         .H_DISP_REG(ega_h_displayed),
         .V_DISP_REG(ega_v_displayed),
         .V_MAXSCAN_REG(ega_v_maxscan),
+        .V_DOUBLE_SCAN_REG(ega_v_double_scan),
         .hsync_width(ega_hsync_width_crtc),
         .crt_h_offset(crt_h_offset),
         .crt_v_offset(crt_v_offset),
@@ -877,6 +886,7 @@ module ega_top(
     wire        vga_planar16_vsync;
     wire        vga_planar16_hblank;
     wire        vga_planar16_vblank;
+    wire        vga_planar16_status_blank;
     wire        vga_planar16_pixel_toggle;
 
     ega_attrib_ctrl ega_attr (
@@ -903,6 +913,7 @@ module ega_top(
         .pixel_pan_out(ega_attr_pixel_pan),
         .split_panning_suppress_out(ega_attr_split_panning_suppress),
         .palette_64_mode(ega_misc_output_reg[7]),
+        .vga_extensions(vga_enabled),
         .color_out(ega_color_raw),
         .display_enable_out(ega_display_enable_raw),
         .video_enable_out(ega_attr_video_enable)
@@ -961,6 +972,7 @@ module ega_top(
     wire vga_packed_vsync;
     wire vga_packed_hblank;
     wire vga_packed_vblank;
+    wire vga_packed_status_blank;
     wire vga_packed_pixel_toggle;
 
     wire [15:0] vga_unchained_vram_addr;
@@ -974,6 +986,7 @@ module ega_top(
     wire vga_unchained_vsync;
     wire vga_unchained_hblank;
     wire vga_unchained_vblank;
+    wire vga_unchained_status_blank;
     wire vga_unchained_pixel_toggle;
     wire vga_mode13_pixel_toggle = vga_planar16_active ?
                                    vga_planar16_pixel_toggle :
@@ -1005,6 +1018,7 @@ module ega_top(
         .vsync                  (vga_packed_vsync),
         .hblank                 (vga_packed_hblank),
         .vblank                 (vga_packed_vblank),
+        .status_blank           (vga_packed_status_blank),
         .pixel_toggle           (vga_packed_pixel_toggle)
     );
 `else
@@ -1019,6 +1033,7 @@ module ega_top(
     assign vga_packed_vsync = '0;
     assign vga_packed_hblank = '0;
     assign vga_packed_vblank = '0;
+    assign vga_packed_status_blank = '0;
     assign vga_packed_pixel_toggle = '0;
 `endif
 
@@ -1035,6 +1050,7 @@ module ega_top(
         .crtc_offset        (ega_crtc_r19_debug),
         .crtc_line_compare  (ega_crtc_line_compare_debug),
         .crtc_max_scan      (ega_v_maxscan),
+        .crtc_double_scan   (ega_v_double_scan),
         .attr_pixel_pan     (ega_attr_pixel_pan),
         .split_panning_suppress(ega_attr_split_panning_suppress),
         .vram_addr          (vga_unchained_vram_addr),
@@ -1056,6 +1072,7 @@ module ega_top(
         .vsync              (vga_unchained_vsync),
         .hblank             (vga_unchained_hblank),
         .vblank             (vga_unchained_vblank),
+        .status_blank       (vga_unchained_status_blank),
         .pixel_toggle       (vga_unchained_pixel_toggle)
     );
 `else
@@ -1070,6 +1087,7 @@ module ega_top(
     assign vga_unchained_vsync = '0;
     assign vga_unchained_hblank = '0;
     assign vga_unchained_vblank = '0;
+    assign vga_unchained_status_blank = '0;
     assign vga_unchained_pixel_toggle = '0;
 `endif
 
@@ -1079,11 +1097,14 @@ module ega_top(
         .reset              (reset),
         .enable             (vga_planar16_active),
         .native_70hz        (vga_mode13_native),
+        .wide_640           (vga_planar640_active),
         .crt_h_offset       (crt_h_offset),
         .crt_v_offset       (crt_v_offset),
         .crtc_start_address ({ega_crtc_r12_debug, ega_crtc_r13_debug}),
         .crtc_offset        (ega_crtc_r19_debug),
         .crtc_line_compare  (ega_crtc_line_compare_debug),
+        .crtc_max_scan      (ega_v_maxscan),
+        .crtc_double_scan   (ega_v_double_scan),
         .attr_pixel_pan     (ega_attr_pixel_pan),
         .split_panning_suppress(ega_attr_split_panning_suppress),
         .vram_addr          (vga_planar16_vram_addr),
@@ -1100,6 +1121,7 @@ module ega_top(
         .vsync              (vga_planar16_vsync),
         .hblank             (vga_planar16_hblank),
         .vblank             (vga_planar16_vblank),
+        .status_blank       (vga_planar16_status_blank),
         .pixel_toggle       (vga_planar16_pixel_toggle)
     );
 `else
@@ -1112,6 +1134,7 @@ module ega_top(
     assign vga_planar16_vsync = '0;
     assign vga_planar16_hblank = '0;
     assign vga_planar16_vblank = '0;
+    assign vga_planar16_status_blank = '0;
     assign vga_planar16_pixel_toggle = '0;
 `endif
 
@@ -1136,10 +1159,13 @@ module ega_top(
     wire video_status_vretrace_active = vga_planar16_active ? vga_planar16_vsync :
                                        vga_256color_active ? vga_vsync :
                                                            ega_status_vretrace_active;
-    wire video_blanking_active = vga_planar16_active ?
-                                 (vga_planar16_hblank | vga_planar16_vblank) :
-                                 vga_256color_active ? (vga_hblank | vga_vblank) :
-                                                     ega_blanking_active;
+    // Bit 0 follows the physical VGA scanline, not the output line: software
+    // that counts its transitions per frame (Pinball Fantasies' raster-timer
+    // calibration) must see 400/480/350 lines even on the 15 kHz raster.
+    wire video_blanking_active = vga_planar16_active ? vga_planar16_status_blank :
+                                 vga_unchained256_active ? vga_unchained_status_blank :
+                                 vga_256color_active ? vga_packed_status_blank :
+                                                       ega_blanking_active;
     wire [7:0] ega_status_reg = {2'b00, ega_status_toggle,
                                  video_status_vretrace_active, 2'b00,
                                  video_blanking_active};
@@ -1412,7 +1438,7 @@ module ega_top(
     // The 360-pixel profile needs 720 active output clocks, so its Native
     // raster retains the 28.636 MHz / 912-clock timing.
     assign vga_mode13_wide_clock_out = vga_unchained256_active &&
-                                       (vga_unchained_profile == 2'd1);
+                                       (vga_unchained_profile == 3'd1);
     assign vga_planar_memory_active_out = vga_unchained256_active |
                                           vga_planar16_active;
     assign vga_mode13_pixel_toggle_out = vga_mode13_pixel_toggle;

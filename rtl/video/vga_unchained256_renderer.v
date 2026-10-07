@@ -15,13 +15,14 @@ module vga_unchained256_renderer(
     input  wire        reset,
     input  wire        enable,
     input  wire        native_70hz,
-    input  wire [1:0]  mode_x_profile,
+    input  wire [2:0]  mode_x_profile,
     input  wire [3:0]  crt_h_offset,
     input  wire [2:0]  crt_v_offset,
     input  wire [15:0] crtc_start_address,
     input  wire [7:0]  crtc_offset,
     input  wire [9:0]  crtc_line_compare,
     input  wire [4:0]  crtc_max_scan,
+    input  wire        crtc_double_scan,
     input  wire [3:0]  attr_pixel_pan,
     input  wire        split_panning_suppress,
 
@@ -46,14 +47,17 @@ module vga_unchained256_renderer(
     output reg         vsync,
     output reg         hblank,
     output reg         vblank,
+    output reg         status_blank,
     output wire        pixel_toggle
 );
 
     wire [9:0] pixel_x;
     wire [9:0] pixel_y;
+    wire [9:0] scan_y;
     wire timing_active;
     wire timing_hblank;
     wire timing_vblank;
+    wire timing_status_blank;
     wire timing_hsync;
     wire timing_vsync;
     wire frame_start;
@@ -67,8 +71,8 @@ module vga_unchained256_renderer(
     // is measured in words in this byte-addressed VGA configuration. Dyna
     // Blaster uses 64 (128 bytes per plane row) for a 512-pixel virtual map
     // viewed through its 256-pixel window, and 32 for a direct-width page.
-    wire mode_x_360 = (mode_x_profile == 2'd1);
-    wire mode_x_256 = (mode_x_profile == 2'd3);
+    wire mode_x_360 = (mode_x_profile == 3'd1);
+    wire mode_x_256 = (mode_x_profile == 3'd3);
     wire [7:0] profile_stride = mode_x_256 ? 8'd128 :
                                 mode_x_360 ? 8'd90 : 8'd80;
     wire offset_in_range = (crtc_offset >= 8'd40) && (crtc_offset <= 8'd45);
@@ -77,29 +81,33 @@ module vga_unchained256_renderer(
                               offset_in_range ? {crtc_offset[6:0], 1'b0} :
                                                 profile_stride;
 
-    // The CRTC counts physical VGA scanlines. The fixed output profiles sample
-    // one line for every doubled pair, hence a split starts at ceil((R18+1)/2).
-    // The lower part of the screen starts at address zero, exactly like VGA.
+    // The CRTC counts physical VGA scanlines and the timing reports which one
+    // each output line shows: every second one on the 15 kHz profiles, each of
+    // them on the Native line-doubled ones. The line after the compare starts
+    // the lower part of the screen at address zero, exactly like VGA.
     // The VGA BIOS baseline deliberately leaves Line Compare at 3ffh, beyond
     // its 400 physical scanlines.  It means "no split".  Treat a compare at
     // or below the visible raster as a real split; without this guard a stale
     // Mode-X compare becomes a bogus lower screen while a program is changing
     // modes or returning to EGA.
     wire [9:0] profile_physical_lines = mode_x_256 ? 10'd464 :
-                                        (mode_x_profile == 2'd2) ? 10'd480 :
+                                        (mode_x_profile == 3'd2) ? 10'd480 :
+                                        (mode_x_profile == 3'd4) ? 10'd350 :
                                                                       10'd400;
     wire split_active = (crtc_line_compare < profile_physical_lines);
-    wire [10:0] line_compare_plus_two = {1'b0, crtc_line_compare} + 11'd2;
-    wire [9:0] split_start_y = line_compare_plus_two[10:1];
-    wire below_split = split_active && (pixel_y >= split_start_y);
-    wire [10:0] physical_y = {pixel_y, 1'b0};
+    wire below_split = split_active && (scan_y > crtc_line_compare);
+    wire [10:0] physical_y = {1'b0, scan_y};
     wire [10:0] split_physical_y = {1'b0, crtc_line_compare} + 11'd1;
     wire [10:0] source_physical_y = below_split ?
                                       (physical_y - split_physical_y) : physical_y;
+    // R9 bit 7 (Scan Doubling) scans every row twice before Maximum Scan Line
+    // repeats it. Pinball Fantasies' 320x240 mode uses R9 = 80h: 480 physical
+    // scanlines, 240 source rows, no maximum-scan-line repeat at all.
+    wire [10:0] scan_row_y = crtc_double_scan ? {1'b0, source_physical_y[10:1]}
+                                              : source_physical_y;
 
-    // Each output line represents two physical VGA scanlines. Retain the
-    // CRTC's 0..7 Maximum Scan Line repeat semantics inside that fixed output
-    // raster. Do not use Verilog division here: Quartus combines the four
+    // Retain the CRTC's 0..7 Maximum Scan Line repeat semantics inside the
+    // fixed output raster. Do not use Verilog division here: Quartus combines the four
     // constant divisors into one generic lpm_divide. The reciprocal networks
     // below are exact over the complete 11-bit input range and contain only
     // shifts and additions, so this bounded feature consumes no DSP/divider.
@@ -156,7 +164,7 @@ module vga_unchained256_renderer(
             endcase
         end
     endfunction
-    wire [9:0] source_y = source_line_from_physical(source_physical_y,
+    wire [9:0] source_y = source_line_from_physical(scan_row_y,
                                                      crtc_max_scan);
 
     // Mode-X 320-wide programs use values 0,2,4,6 in the pel-panning
@@ -201,11 +209,13 @@ module vga_unchained256_renderer(
         .crt_v_offset   (crt_v_offset),
         .pixel_x        (pixel_x),
         .pixel_y        (pixel_y),
+        .scan_y         (scan_y),
         .active         (timing_active),
         .hblank         (timing_hblank),
         .vblank         (timing_vblank),
         .hsync          (timing_hsync),
         .vsync          (timing_vsync),
+        .status_blank   (timing_status_blank),
         .line_start     (),
         .frame_start    (frame_start),
         .pixel_toggle   (pixel_toggle)
@@ -229,6 +239,7 @@ module vga_unchained256_renderer(
             vsync <= 1'b0;
             hblank <= 1'b1;
             vblank <= 1'b1;
+            status_blank <= 1'b1;
         end else begin
             // VGA latches the display start at vertical retrace. Programs such
             // as Cute Demo write it before polling 3DAh, then write pel
@@ -244,6 +255,7 @@ module vga_unchained256_renderer(
             vsync <= timing_vsync;
             hblank <= timing_hblank;
             vblank <= timing_vblank;
+            status_blank <= timing_status_blank;
         end
     end
 

@@ -82,6 +82,7 @@ module ega_mode0f_mono_tb;
         .text_mode(1'b0),
         .blink_state(1'b0),
         .palette_64_mode(1'b1),
+        .vga_extensions(1'b0),
         .blink_enable_out(),
         .mono_attributes_out(mono_attributes),
         .line_graphics_enable_out(),

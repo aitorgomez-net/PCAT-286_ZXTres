@@ -28,17 +28,24 @@ module vga_mode13_timing(
     input  wire        reset,
     input  wire        enable,
     input  wire        native_70hz,
-    // 00 320x200, 01 360x200, 10 320x240, 11 256x232.
-    input  wire [1:0]  mode_x_profile,
+    // 0 320x200, 1 360x200, 2 320x240, 3 256x232, 4 320x350, 5 640x480.
+    input  wire [2:0]  mode_x_profile,
     input  wire [3:0]  crt_h_offset,
     input  wire [2:0]  crt_v_offset,
     output wire [9:0]  pixel_x,
     output wire [9:0]  pixel_y,
+    // Physical VGA scanline represented by the current output line. The 15 kHz
+    // profiles sample every second one; Native line-doubled profiles show each.
+    output wire [9:0]  scan_y,
     output wire        active,
     output wire        hblank,
     output wire        vblank,
     output wire        hsync,
     output wire        vsync,
+    // Input Status #1 bit 0 as a VGA would raise it: once per physical
+    // scanline. Where an output line stands for two scanlines it carries two
+    // display-enable windows, one per half line.
+    output wire        status_blank,
     output wire        line_start,
     output wire        frame_start,
     output reg         pixel_toggle
@@ -62,15 +69,19 @@ module vga_mode13_timing(
     localparam [9:0] TV_V_BACK   = 10'd21;
     localparam [9:0] TV_V_TOTAL  = TV_V_ACTIVE + TV_V_FRONT + TV_V_SYNC + TV_V_BACK;
 
-    // Standard Native uses the conventional 800-clock VGA line on the
-    // dedicated 25.2 MHz PLL output. Each source pixel is two clocks wide.
+    // The PCAT video adapter clocks this raster from the 28.636 MHz video
+    // clock only; there is no 25.2 MHz VGA dot clock in its domain. The
+    // PCXT-derived 800-clock line therefore ran at 35.8 kHz here: 79.7 Hz
+    // for a 449-line frame and 68.2 Hz for a 525-line one, which a 60 Hz
+    // HDMI output can only follow by dropping or repeating frames - the
+    // judder seen on Pinball Fantasies' scrolling table. Every Native profile
+    // now uses a 912-clock line: 31.40 kHz, 69.9 Hz at 449 lines and 59.8 Hz
+    // at 525, the VGA rates. A 320-wide source pixel stays two clocks wide.
     localparam [10:0] NATIVE_H_ACTIVE = 11'd640;
-    localparam [10:0] NATIVE_H_FRONT  = 11'd16;
+    localparam [10:0] NATIVE_H_FRONT  = 11'd32;
     localparam [10:0] NATIVE_H_SYNC   = 11'd96;
-    localparam [10:0] NATIVE_H_BACK   = 11'd48;
-    localparam [10:0] NATIVE_H_TOTAL  = NATIVE_H_ACTIVE + NATIVE_H_FRONT + NATIVE_H_SYNC + NATIVE_H_BACK;
-    // 360x200 needs 720 active output clocks. It therefore keeps the legacy
-    // 28.636 MHz / 912-clock line while preserving the same 31.4 kHz class.
+    localparam [10:0] NATIVE_H_TOTAL  = 11'd912;
+    // 360x200 needs 720 active output clocks within the same line.
     localparam [10:0] NATIVE_WIDE_H_ACTIVE = 11'd720;
     localparam [10:0] NATIVE_WIDE_H_FRONT  = 11'd24;
     localparam [10:0] NATIVE_WIDE_H_TOTAL  = 11'd912;
@@ -84,20 +95,36 @@ module vga_mode13_timing(
     localparam [9:0]  NATIVE_V_BACK   = 10'd35;
     localparam [9:0]  NATIVE_V_TOTAL  = NATIVE_V_ACTIVE + NATIVE_V_FRONT + NATIVE_V_SYNC + NATIVE_V_BACK;
 
-    localparam [1:0] PROFILE_360X200 = 2'd1;
-    localparam [1:0] PROFILE_320X240 = 2'd2;
-    localparam [1:0] PROFILE_256X232 = 2'd3;
+    localparam [2:0] PROFILE_360X200 = 3'd1;
+    localparam [2:0] PROFILE_320X240 = 3'd2;
+    localparam [2:0] PROFILE_256X232 = 3'd3;
+    localparam [2:0] PROFILE_320X350 = 3'd4;
+    localparam [2:0] PROFILE_640X480 = 3'd5;
     wire mode_x_360 = (mode_x_profile == PROFILE_360X200);
     wire mode_x_240 = (mode_x_profile == PROFILE_320X240);
     wire mode_x_256 = (mode_x_profile == PROFILE_256X232);
-    // The 320x240 profile is already a direct 240-line mode. The two
-    // 200-line profiles (packed mode 13h and 360x200 Mode X) need VGA's
-    // double-scanned Native raster instead.
-    wire native_line_double = native_70hz && !mode_x_240;
+    wire mode_x_350 = (mode_x_profile == PROFILE_320X350);
+    // 640x480 (VGA mode 12h) is the only profile with one source pixel per
+    // output pixel: one clock on Native, two on the 15 kHz raster. Its 480
+    // physical scanlines use the 60 Hz 525-line VGA frame on Native and the
+    // 240-line TV raster of the 320x240 profile, one line per physical pair.
+    wire mode_x_640 = (mode_x_profile == PROFILE_640X480);
+    // Native scans every source row of every profile twice, like a VGA: the
+    // 200-line profiles in the 70 Hz 449-line frame, 320x240 in the 60 Hz
+    // 525-line frame that Mode X really uses. 320x240 used to be emitted as
+    // 240 lines of a 70 Hz frame, which a 60 Hz HDMI scaler can only follow
+    // by dropping one frame in seven - a visible judder on scrolling games.
+    wire native_line_double = native_70hz;
+
+    // 320x350 is VGA's 350-line 70 Hz frame: 350 + 37 + 2 + 60 = 449 lines,
+    // the same total as the 400-line profile, so Native shows every physical
+    // scanline. A 15 kHz TV cannot carry 350 lines in one field; it receives
+    // 175 lines, each the first of a physical pair, centred like 200-line
+    // output (12 more lines of back porch, 13 more of front porch).
 
     // 360-wide mode borrows blank time for its wider active area; 320x240
     // borrows vertical blank time. The 60 Hz path remains a 15.70 kHz / 59.9
-    // Hz TV raster, while standard Native now uses VGA's 800-clock line.
+    // Hz TV raster; Native uses a 912-clock, 31.4 kHz line.
     wire [10:0] h_active = mode_x_256 ? (native_70hz ? 11'd512 : 11'd1024) :
                            mode_x_360 ? (native_70hz ? NATIVE_WIDE_H_ACTIVE : 11'd1440)
                                        : (native_70hz ? NATIVE_H_ACTIVE : TV_H_ACTIVE);
@@ -105,10 +132,11 @@ module vga_mode13_timing(
                            mode_x_360 ? (native_70hz ? NATIVE_WIDE_H_FRONT : 11'd112)
                                        : (native_70hz ? NATIVE_H_FRONT : TV_H_FRONT);
     wire [10:0] h_sync   = native_70hz ? NATIVE_H_SYNC : TV_H_SYNC;
-    wire [10:0] h_total  = native_70hz ? (mode_x_360 ? NATIVE_WIDE_H_TOTAL : NATIVE_H_TOTAL)
-                                       : TV_H_TOTAL;
+    wire [10:0] h_total  = native_70hz ? NATIVE_H_TOTAL : TV_H_TOTAL;
     wire [9:0]  v_active = mode_x_256       ? (native_70hz ? 10'd464 : 10'd232)
-                          : mode_x_240      ? 10'd240
+                          : mode_x_640      ? (native_70hz ? 10'd480 : 10'd240)
+                          : mode_x_240      ? (native_70hz ? 10'd480 : 10'd240)
+                          : mode_x_350      ? (native_70hz ? 10'd350 : 10'd175)
                           : native_line_double ? NATIVE_V_ACTIVE
                                              : TV_V_ACTIVE;
     // 240 direct lines leave only 22 raster lines blank in the 262-line 60 Hz
@@ -118,13 +146,17 @@ module vga_mode13_timing(
     // field. On TV, leave 19 lines after sync before the next active picture,
     // close to the established 200-line profile's 21-line back porch.
     wire [9:0]  v_front  = mode_x_256 ? (native_70hz ? 10'd18 : 10'd8) :
-                           mode_x_240 ? (native_70hz ? 10'd12 : 10'd8)
+                           mode_x_240 ? (native_70hz ? 10'd10 : 10'd8) :
+                           mode_x_640 ? (native_70hz ? 10'd10 : 10'd8) :
+                           mode_x_350 ? (native_70hz ? 10'd37 : 10'd38)
                                        : (native_70hz ? NATIVE_V_FRONT : TV_V_FRONT);
     wire [9:0]  v_sync   = mode_x_256 ? (native_70hz ? 10'd2 : 10'd3) :
-                           mode_x_240 ? (native_70hz ? 10'd2 : 10'd3)
+                           mode_x_240 ? (native_70hz ? 10'd2 : 10'd3) :
+                           mode_x_640 ? (native_70hz ? 10'd2 : 10'd3)
                                        : (native_70hz ? NATIVE_V_SYNC : TV_V_SYNC);
     // 256x232 uses the 525-line VGA 60 Hz frame: 464 displayed scanlines.
-    wire [9:0]  v_total  = native_70hz ? (mode_x_256 ? 10'd525 : NATIVE_V_TOTAL)
+    wire [9:0]  v_total  = native_70hz ? ((mode_x_256 || mode_x_640 || mode_x_240) ? 10'd525
+                                                                    : NATIVE_V_TOTAL)
                                            : TV_V_TOTAL;
 
     // CRT H/V offset (PCXT-EGA.sv OSD), matching how the EGA CRTC applies the
@@ -174,8 +206,10 @@ module vga_mode13_timing(
     // preserve its 640-pixel active width on the 15 kHz raster. Native also
     // repeats every 200-line source row, yielding the real 640x400 mode 13h
     // image instead of a vertically compressed 640x200 one.
-    assign pixel_x = native_70hz ? {1'b0, h_count[10:1]} : {1'b0, h_count[10:2]};
+    assign pixel_x = mode_x_640  ? (native_70hz ? h_count[9:0] : h_count[10:1]) :
+                     native_70hz ? {1'b0, h_count[10:1]} : {1'b0, h_count[10:2]};
     assign pixel_y = native_line_double ? {1'b0, v_count[9:1]} : v_count;
+    assign scan_y  = native_line_double ? v_count : {v_count[8:0], 1'b0};
     assign active = enable && (h_count < h_active) && (v_count < v_active);
     assign hblank = !enable || (h_count >= h_active);
     assign vblank = !enable || (v_count >= v_active);
@@ -185,11 +219,18 @@ module vga_mode13_timing(
     assign vsync = enable &&
                    (v_count >= (v_active + eff_v_front)) &&
                    (v_count <  (v_active + eff_v_front + v_sync));
+    wire [10:0] half_h_total = {1'b0, h_total[10:1]};
+    wire [10:0] half_h_active = {1'b0, h_active[10:1]};
+    wire status_h_display = native_line_double ? (h_count < h_active) :
+                            ((h_count < half_h_active) ||
+                             ((h_count >= half_h_total) &&
+                              (h_count < half_h_total + half_h_active)));
+    assign status_blank = !enable || (v_count >= v_active) || !status_h_display;
     assign line_start = enable && (h_count == 11'd0);
     assign frame_start = line_start && (v_count == 10'd0);
 
     // pixel_toggle flips once per physical output pixel. Standard Native uses
-    // 25.2 MHz (360-wide Native retains 28.636 MHz); the 60 Hz profile emits
+    // the 28.636 MHz clock on every profile; the 60 Hz profile emits
     // one pixel every two clocks so its 1280 active clocks remain 640 pixels.
     wire [10:0] out_pixel_x = native_70hz ? h_count : {1'b0, h_count[10:1]};
 

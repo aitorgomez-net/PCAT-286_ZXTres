@@ -60,6 +60,8 @@ module UM6845R
 	// naming a BIOS mode or trusting the monitor switches.
 	output     [9:0] V_DISP_REG,
 	output     [4:0] V_MAXSCAN_REG,
+	// VGA R9 bit 7: every row scanned twice on top of Maximum Scan Line.
+	output           V_DOUBLE_SCAN_REG,
 	output    [3:0] hsync_width,
 	output           status_vretrace,
 	output           status_not_displaying,
@@ -118,6 +120,7 @@ assign VC = row[6:0];
 assign VSCAN = row;
 assign H_DISP_REG = R1_h_displayed;
 assign V_MAXSCAN_REG = R9_v_max_line[4:0];
+assign V_DOUBLE_SCAN_REG = R9_v_max_line[7];
 assign hsync_width = R3_h_sync_width;
 // Match 86Box more closely: Input Status #1 bit 3 tracks the retrace window
 // opened at VSYNC start and closed a few scanlines later, not the whole

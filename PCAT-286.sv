@@ -1622,7 +1622,11 @@ module emu_at
                           loader_protocol_error;
     assign LED_POWER    = 2'b00;
     assign LED_DISK     = {1'b0, main_rom_loaded};
-    assign BUTTONS      = hps_buttons;
+    // BUTTONS emulates the physical OSD/User buttons towards the HPS. Never
+    // echo hps_buttons here: sys_top ORs this into the buttons the HPS reads,
+    // so a host-sent BUTTON2 (keyboard reset combo) or BUTTON1 (OSD) would
+    // latch itself and hold the core in reset / the OSD button pressed.
+    assign BUTTONS      = 2'b00;
 
     // External MT32-pi bridge. It speaks the same USER I/O protocol as the
     // source profile: MIDI serial to the MPU-401, I²S audio back into the

@@ -19,8 +19,9 @@ module vga_unchained256_ctrl(
     input  wire [7:0] crtc_underline_loc,
     input  wire [7:0] crtc_mode_control,
     output wire       packed_active,
+    output wire       planar640_active,
     output wire       unchained_active,
-    output wire [1:0] unchained_profile
+    output wire [2:0] unchained_profile
 );
 
     // VGA permits the unchained planar layout through both A0000 apertures:
@@ -40,28 +41,42 @@ module vga_unchained256_ctrl(
     assign unchained_active = (mode13_active |
                                (mode12_tweak_pending & mode12_tweak_ready)) &
                               ~chain4 & shift256 & graphics_mode & a000_aperture;
-    assign packed_active = mode13_active & ~unchained_active;
+    // VGA mode 12h: 640x480x16 planar. The TSR loads its register baseline
+    // for INT 10h AX=0012h; Pinball Fantasies also reaches it from mode 13h by
+    // clearing GC 05h's 256-colour shift and keeping 80 characters and 480
+    // scanlines. Shift256 is what tells it apart from unchained 320x240.
+    assign planar640_active = (mode13_active | mode12_tweak_pending) &
+                              ~chain4 & ~shift256 & graphics_mode & a000_aperture &
+                              (crtc_h_displayed == 8'd79) &
+                              (crtc_v_displayed == 10'd480);
+    assign packed_active = mode13_active & ~unchained_active & ~planar640_active;
 
     // Standard Mode 13h uses 80 CRTC characters (R1 = 79). The common
     // 360x200 VGA variant uses 90 characters (CRTC R1 = 59h), while 320x240
-    // raises the physical display end to 480 scanlines. R9 is deliberately
-    // not part of profile selection: software may animate Maximum Scan Line
-    // while retaining the same Mode-X memory layout. The renderer remains
-    // profile-based rather than a generic VGA CRTC implementation.
-    localparam [1:0] PROFILE_320X200 = 2'd0;
-    localparam [1:0] PROFILE_360X200 = 2'd1;
-    localparam [1:0] PROFILE_320X240 = 2'd2;
-    localparam [1:0] PROFILE_256X232 = 2'd3;
+    // raises the physical display end to 480 scanlines. 320x350 is the
+    // 350-scanline variant used by Pinball Fantasies' high-resolution table
+    // view (R12 = 5Dh with R7 bit 1, R9 maximum scan line 0). R9 is
+    // deliberately not part of profile selection: software may animate
+    // Maximum Scan Line or Scan Doubling while retaining the same Mode-X
+    // memory layout. The renderer remains profile-based rather than a generic
+    // VGA CRTC implementation.
+    localparam [2:0] PROFILE_320X200 = 3'd0;
+    localparam [2:0] PROFILE_360X200 = 3'd1;
+    localparam [2:0] PROFILE_320X240 = 3'd2;
+    localparam [2:0] PROFILE_256X232 = 3'd3;
+    localparam [2:0] PROFILE_320X350 = 3'd4;
 
     wire crtc_80_columns = (crtc_h_displayed == 8'd79);
     wire mode_360x200 = (crtc_h_displayed == 8'd89) &
                         (crtc_v_displayed == 10'd400);
     wire mode_320x240 = crtc_80_columns & (crtc_v_displayed == 10'd480);
+    wire mode_320x350 = crtc_80_columns & (crtc_v_displayed == 10'd350);
 
     assign unchained_profile = !unchained_active ? PROFILE_320X200 :
                                mode_256x232      ? PROFILE_256X232 :
                                mode_360x200      ? PROFILE_360X200 :
                                mode_320x240      ? PROFILE_320X240 :
+                               mode_320x350      ? PROFILE_320X350 :
                                                   PROFILE_320X200;
 
 endmodule
