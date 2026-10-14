@@ -10,6 +10,19 @@
 // floppy-adapter/read routines (21/22).
 // Cases other than 0/3/15 set
 // a test-only entry/setup in the private ROM buffer, never in the user ROM.
+// Owner internals used only by diagnostics, for either RAM backend.
+`ifdef AT_TB_DDR3
+`define AT_TB_OWNER_ACTIVE  ddram_owner.active_q
+`define AT_TB_OWNER_STATE   ddram_owner.debug_state
+`define AT_TB_OWNER_ADDRESS p03_out_address[24:1]
+`define AT_TB_OWNER_IDLE    ddram_owner.physical_idle
+`else
+`define AT_TB_OWNER_ACTIVE  sdram_owner.active_q
+`define AT_TB_OWNER_STATE   sdram_owner.u_KFSDRAM.state
+`define AT_TB_OWNER_ADDRESS sdram_owner.kf_address
+`define AT_TB_OWNER_IDLE    sdram_owner.kf_idle
+`endif
+
 module spk286_at_bios_first_fetch_tb #(
     parameter bit CPU_DIV2_TEST = 1'b0
 );
@@ -284,6 +297,43 @@ module spk286_at_bios_first_fetch_tb #(
         if (reset) sdram_initialized <= 0;
         else if (physical_idle) sdram_initialized <= 1;
     end
+`ifdef AT_TB_DDR3
+    // AT RAM in the HPS DDR3: DDRAM-domain clock, the DDRAM arbiter with its
+    // framebuffer clients idle, and an Avalon model storing pins.mem[].
+    logic ddr_clk = 1'b0;
+    always #8.73 ddr_clk = ~ddr_clk;
+    wire        ddr_req, ddr_write, ddr_done;
+    wire [28:0] ddr_addr;
+    wire [7:0]  ddr_be;
+    wire [63:0] ddr_din, ddr_rdata;
+    wire        ddram_busy, ddram_we, ddram_rd, ddram_dout_ready;
+    wire [7:0]  ddram_burstcnt, ddram_be;
+    wire [28:0] ddram_addr;
+    wire [63:0] ddram_din, ddram_dout;
+    // The arbiter runs on the video pipeline reset, which MiSTer can hold for
+    // the whole BIOS download; model the worst case below.
+    wire ddr_arbiter_reset;
+    ega_ddr_arbiter ddram_arbiter (
+        .clk(ddr_clk), .reset(ddr_arbiter_reset),
+        .ddram_busy(ddram_busy), .ddram_burstcnt(ddram_burstcnt), .ddram_addr(ddram_addr),
+        .ddram_din(ddram_din), .ddram_be(ddram_be), .ddram_we(ddram_we), .ddram_rd(ddram_rd),
+        .ddram_dout(ddram_dout), .ddram_dout_ready(ddram_dout_ready),
+        .rd_req(1'b0), .rd_addr(29'd0), .rd_burstcnt(8'd0), .rd_grant(), .rd_data(),
+        .rd_data_valid(),
+        .wr_req(1'b0), .wr_addr(29'd0), .wr_burstcnt(8'd0), .wr_din(64'd0),
+        .wr_busy_out(), .wr_grant(),
+        .at_req(ddr_req), .at_write(ddr_write), .at_addr(ddr_addr), .at_be(ddr_be),
+        .at_din(ddr_din), .at_done(ddr_done), .at_rdata(ddr_rdata)
+    );
+    spk286_ddram_avalon_model #(.MEM_WORDS(1<<24)) pins (
+        .clk(ddr_clk), .busy(ddram_busy), .burstcnt(ddram_burstcnt), .addr(ddram_addr),
+        .din(ddram_din), .be(ddram_be), .we(ddram_we), .rd(ddram_rd),
+        .dout(ddram_dout), .dout_ready(ddram_dout_ready),
+        .read_count(pin_reads), .write_count(pin_writes)
+    );
+    assign sdram_dq_in = 16'h0000;
+    assign pin_dq_valid = 2'b00;
+`else
     spk286_sdram_pin_model #(.MEM_WORDS(1<<24)) pins (
         .clk(clk), .reset(reset), .address(sdram_address), .cke(sdram_cke),
         .cs_n(sdram_cs), .ras_n(sdram_ras), .cas_n(sdram_cas), .we_n(sdram_we),
@@ -292,7 +342,11 @@ module spk286_at_bios_first_fetch_tb #(
         .dq_to_controller(sdram_dq_in), .dq_valid(pin_dq_valid),
         .read_count(pin_reads), .write_count(pin_writes)
     );
+`endif
     logic ioctl_download=0, ioctl_wr=0;
+`ifdef AT_TB_DDR3
+    assign ddr_arbiter_reset = reset | ioctl_download;
+`endif
     logic [24:0] ioctl_addr=0;
     logic [15:0] ioctl_data=0;
     wire ioctl_wait, loader_valid, loader_write, loader_accept, loader_ready;
@@ -392,14 +446,16 @@ module spk286_at_bios_first_fetch_tb #(
     logic [23:0] captured_word_address;
     wire [23:0] cs_base;
     always @(posedge clk) begin
+`ifndef AT_TB_DDR3
         if(!reset && sdram_owner.u_KFSDRAM.read_flag_comb && pin_dq_valid!==2'b11)
-            $fatal(1,"KF samples invalid DQ addr=%h valid=%b",sdram_owner.kf_address,pin_dq_valid);
+            $fatal(1,"KF samples invalid DQ addr=%h valid=%b",`AT_TB_OWNER_ADDRESS,pin_dq_valid);
+`endif
         if(!reset && memory_port.cpu_cancelled_q && memory_ready)
             $fatal(1,"cancelled pre-reset response reached CPU memory ready");
         if(!cpu_boot_reset) begin
             if(dut.u_cpu.cpu.debug_protected_msw[0] && !phoenix_pm87)
                 $fatal(1,"PE set during first-fetch test");
-            if(backend_accept && backend_code_fetch) captured_word_address<=sdram_owner.kf_address;
+            if(backend_accept && backend_code_fetch) captured_word_address<=`AT_TB_OWNER_ADDRESS;
             if(backend_ready && backend_code_fetch && backend_owner==0 &&
                !cpu_reset_request && !memory_port.cpu_cancelled_q) begin
                 if(!backend_read_data_valid) $fatal(1,"fetch without VLD");
@@ -414,7 +470,7 @@ module spk286_at_bios_first_fetch_tb #(
                 if(fetch_returns<32) $display("FETCH[%0d] cpu=%06h word=%06h data=%04h be=%b dqm=%b req=%b valid=%b ready=%b csip=%04h:%04h base=%06h op=%02h rst=%b hlt=%b owner=%b kf=%0d",
                     fetch_returns,backend_address,captured_word_address,backend_read_data,backend_byte_enable,
                     {sdram_udqm,sdram_ldqm},backend_valid,backend_read_data_valid,backend_ready,
-                    debug_cs,debug_ip,cs_base,debug_opcode,cpu_boot_reset,cpu_halted,sdram_owner.active_q,sdram_owner.u_KFSDRAM.state);
+                    debug_cs,debug_ip,cs_base,debug_opcode,cpu_boot_reset,cpu_halted,`AT_TB_OWNER_ACTIVE,`AT_TB_OWNER_STATE);
                 fetch_returns<=fetch_returns+1;
             end
             if(debug_opcode==rom[16'hfff0]) saw_opcode<=1;
@@ -935,6 +991,83 @@ module spk286_at_bios_first_fetch_tb #(
     assign backend_read_data       = p03_in_read_data;
     assign backend_read_data_valid = p03_in_read_data_valid;
 
+`ifdef AT_TB_DDR3
+    // The production chain below P03: RAM data buffer, posted-write buffer,
+    // then the DDR3 owner, wired as in PCAT-286.sv.
+    wire        ram_out_valid, ram_out_command, ram_out_write, ram_out_refresh;
+    wire        ram_out_code, ram_out_burst, ram_out_accept, ram_out_ready;
+    wire        ram_out_read_valid;
+    wire [1:0]  ram_out_owner, ram_out_lanes;
+    wire [3:0]  ram_out_class;
+    wire [24:0] ram_out_address;
+    wire [15:0] ram_out_data, ram_out_read_data;
+    spk286_at_sdram_data_buffer #(.ENABLE(1'b1)) ram_read_buffer (
+        .clk(clk), .reset(reset), .cancel_cpu(memory_cpu_cancel), .enable(1'b1),
+        .in_valid(p03_out_valid), .in_command_valid(p03_out_command_valid),
+        .in_owner(p03_out_owner), .in_write(p03_out_write),
+        .in_refresh(p03_out_refresh), .in_code_fetch(p03_out_code_fetch),
+        .in_burst(p03_out_burst), .in_cycle_class(p03_out_cycle_class),
+        .in_address(p03_out_address), .in_byte_enable(p03_out_byte_enable),
+        .in_data_out(p03_out_data_out), .in_accept(p03_out_accept),
+        .in_ready(p03_out_ready), .in_read_data(p03_out_read_data),
+        .in_read_data_valid(p03_out_read_data_valid),
+        .out_valid(ram_out_valid), .out_command_valid(ram_out_command),
+        .out_owner(ram_out_owner), .out_write(ram_out_write),
+        .out_refresh(ram_out_refresh), .out_code_fetch(ram_out_code),
+        .out_burst(ram_out_burst), .out_cycle_class(ram_out_class),
+        .out_address(ram_out_address), .out_byte_enable(ram_out_lanes),
+        .out_data_out(ram_out_data), .out_accept(ram_out_accept),
+        .out_ready(ram_out_ready), .out_read_data(ram_out_read_data),
+        .out_read_data_valid(ram_out_read_valid),
+        .debug_hit_count(), .debug_miss_count(), .debug_fill_count(),
+        .debug_write_update_count(), .debug_state()
+    );
+    wire posted_out_valid, posted_out_command, posted_out_write, posted_out_refresh;
+    wire posted_out_code, posted_out_burst;
+    wire [1:0] posted_out_owner, posted_out_lanes;
+    wire [3:0] posted_out_class;
+    wire [24:0] posted_out_address;
+    wire [15:0] posted_out_data;
+    wire physical_accept, physical_ready, physical_read_data_valid;
+    wire [15:0] physical_read_data;
+    spk286_at_posted_write_buffer posted_write_buffer (
+        .clk(clk), .reset(reset), .cancel_cpu(memory_cpu_cancel), .cpu_lock(1'b0),
+        .in_valid(ram_out_valid), .in_command_valid(ram_out_command),
+        .in_owner(ram_out_owner), .in_write(ram_out_write), .in_refresh(ram_out_refresh),
+        .in_code_fetch(ram_out_code), .in_burst(ram_out_burst), .in_cycle_class(ram_out_class),
+        .in_address(ram_out_address), .in_byte_enable(ram_out_lanes), .in_data_out(ram_out_data),
+        .in_accept(ram_out_accept), .in_ready(ram_out_ready), .in_read_data(ram_out_read_data),
+        .in_read_data_valid(ram_out_read_valid),
+        .out_valid(posted_out_valid), .out_command_valid(posted_out_command),
+        .out_owner(posted_out_owner), .out_write(posted_out_write), .out_refresh(posted_out_refresh),
+        .out_code_fetch(posted_out_code), .out_burst(posted_out_burst), .out_cycle_class(posted_out_class),
+        .out_address(posted_out_address), .out_byte_enable(posted_out_lanes), .out_data_out(posted_out_data),
+        .out_accept(physical_accept), .out_ready(physical_ready), .out_read_data(physical_read_data),
+        .out_read_data_valid(physical_read_data_valid),
+        .pending_write(), .idle(), .protocol_error(),
+        .debug_post_count(), .debug_drain_count(), .debug_stall_count()
+    );
+    spk286_at_mister_ddram_owner ddram_owner (
+        .clk(clk), .reset(reset),
+        .request_valid(posted_out_valid),
+        .request_command_valid(posted_out_command),
+        .request_owner_refresh(posted_out_refresh),
+        .request_write(posted_out_write),
+        .request_code_fetch(posted_out_code),
+        .request_burst(posted_out_burst),
+        .request_cycle_class(posted_out_class),
+        .request_address(posted_out_address),
+        .request_byte_enable(posted_out_lanes),
+        .request_data_out(posted_out_data),
+        .request_accept(physical_accept), .request_ready(physical_ready),
+        .request_read_data(physical_read_data),
+        .request_read_data_valid(physical_read_data_valid),
+        .physical_idle(physical_idle), .debug_state(),
+        .protocol_error(sdram_owner_protocol_error),
+        .ddr_clk(ddr_clk), .ddr_req(ddr_req), .ddr_write(ddr_write), .ddr_addr(ddr_addr),
+        .ddr_be(ddr_be), .ddr_din(ddr_din), .ddr_done(ddr_done), .ddr_rdata(ddr_rdata)
+    );
+`else
     spk286_at_mister_sdram_owner #(
         .SDRAM_INIT_WAIT(16'd32)
     ) sdram_owner (
@@ -960,6 +1093,7 @@ module spk286_at_bios_first_fetch_tb #(
         .sdram_dq_out(sdram_dq_out), .sdram_dq_io(sdram_dq_io),
         .sdram_ldqm(sdram_ldqm), .sdram_udqm(sdram_udqm)
     );
+`endif
 
     spk286_at_machine #(
         .CPU_USES_SAMPLE_EDGE(CPU_DIV2_TEST)
@@ -1191,7 +1325,7 @@ module spk286_at_bios_first_fetch_tb #(
                          cycles, debug_cs, debug_ip, keyboard_translate_set1,
                          dut.u_bridge.state_q, memory_port.active_q,
                          memory_port.accepted_q, p03_buffer.state_q,
-                         p03_buffer.physical_inflight_q, sdram_owner.active_q);
+                         p03_buffer.physical_inflight_q, `AT_TB_OWNER_ACTIVE);
                 inject_ctrl_alt_delete();
             end
             // This fixture must keep executing its ROM loop and recurring
@@ -1231,7 +1365,7 @@ module spk286_at_bios_first_fetch_tb #(
                          memory_port.active_q, memory_port.accepted_q,
                          p03_buffer.state_q,
                          p03_buffer.physical_inflight_q,
-                         sdram_owner.active_q, cpu_ready, cpu_bus_status);
+                         `AT_TB_OWNER_ACTIVE, cpu_ready, cpu_bus_status);
                 force dut.u_devices.u_8042.reset_pulse_q = 1'b1;
                 #1;
                 if (!dut.cpu_core_reset || !cpu_reset_request)
@@ -1590,7 +1724,7 @@ module spk286_at_bios_first_fetch_tb #(
                  cpu_boot_reset, backend_valid, backend_command_valid,
                  p03_buffer.state_q, p03_buffer.physical_inflight_q,
                  p03_out_valid, p03_out_command_valid,
-                 sdram_owner.active_q, sdram_owner.kf_idle,
+                 `AT_TB_OWNER_ACTIVE, `AT_TB_OWNER_IDLE,
                  dut.refresh_request, dut.refresh_grant,
                  dut.u_refresh.pending_q, dut.u_refresh.active_q,
                  dut.cpu_grant, cpu_hold_request, cpu_hlda,

@@ -68,6 +68,7 @@ TESTS = [
     shell("bridge-cancel", "memory", "test_at_bridge_cancel_pipeline"),
     shell("memory-port", "memory", "test_at_mister_memory_port"),
     shell("sdram-owner", "memory", "test_at_mister_sdram_owner"),
+    shell("ddram-owner", "memory", "test_at_mister_ddram_owner"),
     shell("sdram-capture", "memory", "test_at_sdram_capture", tools=("iverilog", "vvp")),
     shell("sdram-phase", "memory", "test_at_sdram_phase", positional=True),
     shell("write-admission", "memory", "test_at_sdram_write_admission"),

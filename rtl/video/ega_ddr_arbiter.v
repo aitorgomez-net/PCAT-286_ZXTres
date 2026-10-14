@@ -1,7 +1,9 @@
 //============================================================================
 //
-//  Two clients on one DDRAM port: the raster that reads frames out, and the
-//  capture that writes them in.
+//  Up to three clients on one DDRAM port: the raster that reads frames out,
+//  the capture that writes them in, and optionally the AT machine RAM
+//  (spk286_at_mister_ddram_owner), which issues one single-beat read or
+//  write at a time.
 //
 //  The reader wins every tie. It is feeding a line buffer against a fixed
 //  deadline - the dot it is due at cannot be postponed - while the writer has
@@ -9,6 +11,10 @@
 //  near the bandwidth of the port: together they want about 120 MB/s of the
 //  several hundred it can do, so the loser of a tie waits for one burst, not
 //  for a queue.
+//
+//  The AT RAM comes second: the CPU waits on every access, while the writer
+//  only fills its FIFO. With the AT client idle (at_req tied low) the
+//  arbiter behaves exactly as the two-client version.
 //
 //  A burst, once started, is never interrupted. The memory has been told how
 //  many beats are coming and will not accept the interleaving.
@@ -47,14 +53,26 @@ module ega_ddr_arbiter (
     input  wire [7:0]  wr_burstcnt,
     input  wire [63:0] wr_din,
     output wire        wr_busy_out,
-    output reg         wr_grant
+    output reg         wr_grant,
+
+    // AT RAM client: one beat, held until at_done. at_done pulses with
+    // at_rdata valid for a read, or once the write beat has been accepted.
+    input  wire        at_req,
+    input  wire        at_write,
+    input  wire [28:0] at_addr,
+    input  wire [7:0]  at_be,
+    input  wire [63:0] at_din,
+    output reg         at_done,
+    output reg  [63:0] at_rdata
 );
 
-    localparam [1:0] ST_IDLE  = 2'd0;
-    localparam [1:0] ST_READ  = 2'd1;
-    localparam [1:0] ST_WRITE = 2'd2;
+    localparam [2:0] ST_IDLE     = 3'd0;
+    localparam [2:0] ST_READ     = 3'd1;
+    localparam [2:0] ST_WRITE    = 3'd2;
+    localparam [2:0] ST_AT_READ  = 3'd3;
+    localparam [2:0] ST_AT_WRITE = 3'd4;
 
-    reg [1:0] state = ST_IDLE;
+    reg [2:0] state = ST_IDLE;
     reg [8:0] beats_left = 9'd0;
 
     // A read that never finishes is not a slow read, it is a stopped design:
@@ -78,21 +96,28 @@ module ega_ddr_arbiter (
     // So a reset arriving mid-burst is remembered and taken at the end of it,
     // a few clocks later. The watchdog above is what guarantees there is an
     // end to wait for.
+    //
+    // The reset belongs to the framebuffer clients only. The AT RAM client is
+    // served while it is held: the video reset can stay asserted for as long
+    // as MiSTer loads the BIOS, and the loader writes through this port.
     reg reset_pending = 1'b0;
-    wire reset_take = (reset | reset_pending) && (state == ST_IDLE);
+    wire reset_hold = reset | reset_pending;
+    wire at_start   = at_req && !at_done;
+    wire reset_take = reset_hold && (state == ST_IDLE) && !at_start;
 
     // The write client sees the memory as busy whenever it is not the one
     // holding the port, so its own burst logic stalls instead of needing to
     // know an arbiter exists.
     assign wr_busy_out   = ddram_busy || (state != ST_WRITE);
-    assign ddram_din     = wr_din;
-    assign ddram_be      = 8'hFF;
+    assign ddram_din     = (state == ST_AT_WRITE) ? at_din : wr_din;
+    assign ddram_be      = (state == ST_AT_WRITE) ? at_be  : 8'hFF;
     assign rd_data       = ddram_dout;
     assign rd_data_valid = (state == ST_READ) && ddram_dout_ready;
 
     always @(posedge clk) begin
         rd_grant <= 1'b0;
         wr_grant <= 1'b0;
+        at_done  <= 1'b0;
 
         if (reset && (state != ST_IDLE))
             reset_pending <= 1'b1;
@@ -112,14 +137,21 @@ module ega_ddr_arbiter (
                     ddram_we <= 1'b0;
                     ddram_rd <= 1'b0;
                     wdog     <= 12'd0;
-                    if (rd_req) begin
+                    if (rd_req && !reset_hold) begin
                         ddram_addr     <= rd_addr;
                         ddram_burstcnt <= rd_burstcnt;
                         beats_left     <= {1'b0, rd_burstcnt};
                         ddram_rd       <= 1'b1;
                         rd_grant       <= 1'b1;
                         state          <= ST_READ;
-                    end else if (wr_req) begin
+                    end else if (at_start) begin
+                        ddram_addr     <= at_addr;
+                        ddram_burstcnt <= 8'd1;
+                        beats_left     <= 9'd1;
+                        ddram_we       <= at_write;
+                        ddram_rd       <= !at_write;
+                        state          <= at_write ? ST_AT_WRITE : ST_AT_READ;
+                    end else if (wr_req && !reset_hold) begin
                         ddram_addr     <= wr_addr;
                         ddram_burstcnt <= wr_burstcnt;
                         beats_left     <= {1'b0, wr_burstcnt};
@@ -153,6 +185,33 @@ module ega_ddr_arbiter (
                             ddram_we <= 1'b0;
                             state    <= ST_IDLE;
                         end
+                    end
+                end
+
+                // A read that never returns is answered with all ones rather
+                // than leaving the AT bus waiting forever.
+                ST_AT_READ: begin
+                    if (!ddram_busy) ddram_rd <= 1'b0;
+                    if (ddram_dout_ready) begin
+                        at_rdata <= ddram_dout;
+                        at_done  <= 1'b1;
+                        state    <= ST_IDLE;
+                    end else begin
+                        wdog <= wdog + 12'd1;
+                        if (&wdog) begin
+                            ddram_rd <= 1'b0;
+                            at_rdata <= {64{1'b1}};
+                            at_done  <= 1'b1;
+                            state    <= ST_IDLE;
+                        end
+                    end
+                end
+
+                ST_AT_WRITE: begin
+                    if (!ddram_busy) begin
+                        ddram_we <= 1'b0;
+                        at_done  <= 1'b1;
+                        state    <= ST_IDLE;
                     end
                 end
 

@@ -26,7 +26,9 @@ proc require_collection {label collection} {
 set cpu [require_collection cpu [get_registers -nowarn {*u_at_machine|u_cpu|*}]]
 set bridge [require_collection bridge [get_registers -nowarn {*u_at_machine|u_bridge|*}]]
 set port [require_collection memory_port [get_registers -nowarn {*u_at_memory_port|*}]]
-set owner [require_collection sdram_owner [get_registers -nowarn {*u_at_sdram_owner|*}]]
+# The AT RAM owner is the SDRAM controller or, with PCAT286_RAM_DDR3, the
+# DDR3 owner; exactly one of them is present.
+set owner [require_collection ram_owner [get_registers -nowarn {*u_at_sdram_owner|* *u_at_ddram_owner|*}]]
 set observers [get_registers -nowarn {
     *u_at_debug_overlay|*
 }]
@@ -73,7 +75,6 @@ foreach condition $conditions {
             clk50 [list -from_clock $clk50 -to_clock $clk50] \
             sdram_input [list -from $dq] \
             sdram_output [list -to $dramout]]
-    if {!$no_debug} { lappend path_groups debug [list -to $debug] }
     foreach kind {setup hold} {
         foreach {name selectors} $path_groups {
             set result [eval report_timing -$kind $selectors \

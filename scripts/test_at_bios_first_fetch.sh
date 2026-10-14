@@ -2,7 +2,12 @@
 set -euo pipefail
 
 root=$(cd "$(dirname "$0")/.." && pwd)
-build_dir="${PCAT_BUILD_DIR:-$root/build/at-bios-first-fetch}"
+# AT_RAM_DDR3=1 runs the same checks with the AT RAM behind the DDR3 owner
+# and the DDRAM arbiter instead of the SDRAM controller and pin model.
+ram_ddr3="${AT_RAM_DDR3:-0}"
+default_build="$root/build/at-bios-first-fetch"
+[[ "$ram_ddr3" == 1 ]] && default_build="$root/build/at-bios-first-fetch-ddr3"
+build_dir="${PCAT_BUILD_DIR:-$default_build}"
 rom_path="${AT_SYSTEM_ROM:-$root/tests/firmware/pcat286_event_diag.rom}"
 if [[ ! -f "$rom_path" ]]; then
   echo "Required AT_SYSTEM_ROM not found: $rom_path" >&2
@@ -67,13 +72,21 @@ for source in rtl/KFPC-XT/HDL/KF8259/HDL/*.sv; do
 done
 
 sources+=(rtl/spk286_integration/spk286_at_hps_rom_loader.sv
-  sim/spk286_integration/spk286_sdram_pin_model.sv
-  sim/spk286_integration/spk286_at_bios_first_fetch_tb.sv)
+  sim/spk286_integration/spk286_sdram_pin_model.sv)
+ram_flags=()
+if [[ "$ram_ddr3" == 1 ]]; then
+  sources+=(rtl/spk286_integration/spk286_at_sdram_data_buffer.sv
+    rtl/spk286_integration/spk286_at_posted_write_buffer.sv
+    rtl/spk286_integration/spk286_at_mister_ddram_owner.sv
+    sim/spk286_integration/spk286_ddram_avalon_model.sv)
+  ram_flags=(-DAT_TB_DDR3)
+fi
+sources+=(sim/spk286_integration/spk286_at_bios_first_fetch_tb.sv)
 cpu_div2_parameter=()
 if [[ "${AT_CPU_DIV2_TEST:-0}" == 1 ]]; then
   cpu_div2_parameter=(-GCPU_DIV2_TEST=1)
 fi
-printf '%s\n' "${performance_flags[@]}" -DSPK286_AT_SIM_MODEL \
+printf '%s\n' "${performance_flags[@]}" -DSPK286_AT_SIM_MODEL "${ram_flags[@]}" \
   "${cpu_div2_parameter[@]}" > "$build_dir/compiler-flags.txt"
 sha256sum "${sources[@]}" "${pic_sources[@]}" "$rom_path" \
   rtl/KFPC-XT/HDL/KF8253/HDL/KF8253_Definitions.svh \
@@ -84,7 +97,7 @@ sha256sum "${sources[@]}" "${pic_sources[@]}" "$rom_path" \
   scripts/at_performance_flags.sh tests/firmware/code_buffer_reset_stress.asm \
   "$build_dir/compiler-flags.txt" > "$build_dir/compiled-sources.sha256"
 verilator -Irtl/KFPC-XT/HDL/KF8253/HDL --binary --timing --trace-fst --trace-depth 3 \
-  "${performance_flags[@]}" -DSPK286_AT_SIM_MODEL \
+  "${performance_flags[@]}" -DSPK286_AT_SIM_MODEL "${ram_flags[@]}" \
   --top-module spk286_at_bios_first_fetch_tb -Wno-fatal -j 4 \
   "${cpu_div2_parameter[@]}" \
   -Irtl/KFPC-XT/HDL/KF8259/HDL --Mdir "$build_dir/verilator-obj" -o first_fetch_vlt \

@@ -836,6 +836,63 @@ module emu_at
     wire [15:0] physical_read_data;
     // Phase/frequency changes require both the queue and physical owner idle.
     assign physical_idle = physical_owner_idle && posted_buffer_idle;
+    // Declared here because the DDR3 RAM backend below uses it as its
+    // DDRAM-side clock; the video PLL further down drives it.
+    wire at_video_clk_57;
+    // AT RAM backend: the SDRAM module by default, or with PCAT286_RAM_DDR3
+    // the HPS DDR3 through the DDRAM port shared with the framebuffer.
+    wire        at_ddr_req, at_ddr_write, at_ddr_done;
+    wire [28:0] at_ddr_addr;
+    wire [7:0]  at_ddr_be;
+    wire [63:0] at_ddr_din, at_ddr_rdata;
+`ifdef PCAT286_RAM_DDR3
+    spk286_at_mister_ddram_owner u_at_ddram_owner (
+        .clk                    (CLK_50M),
+        .reset                  (RESET),
+        .request_valid          (posted_out_valid),
+        .request_command_valid  (posted_out_command),
+        .request_owner_refresh  (posted_out_refresh),
+        .request_write          (posted_out_write),
+        .request_code_fetch     (posted_out_code),
+        .request_burst          (posted_out_burst),
+        .request_cycle_class    (posted_out_class),
+        .request_address        (posted_out_address),
+        .request_byte_enable    (posted_out_lanes),
+        .request_data_out       (posted_out_data),
+        .request_accept         (physical_accept),
+        .request_ready          (physical_ready),
+        .request_read_data      (physical_read_data),
+        .request_read_data_valid(physical_read_data_valid),
+        .physical_idle          (physical_owner_idle),
+        .debug_state            (sdram_owner_debug_state),
+        .protocol_error         (sdram_owner_protocol_error),
+        .ddr_clk                (at_video_clk_57),
+        .ddr_req                (at_ddr_req),
+        .ddr_write              (at_ddr_write),
+        .ddr_addr               (at_ddr_addr),
+        .ddr_be                 (at_ddr_be),
+        .ddr_din                (at_ddr_din),
+        .ddr_done               (at_ddr_done),
+        .ddr_rdata              (at_ddr_rdata)
+    );
+    // The SDRAM module, if fitted, stays deselected with its bus released.
+    assign sdram_address = 13'd0;
+    assign sdram_cke     = 1'b0;
+    assign sdram_cs      = 1'b1;
+    assign sdram_ras     = 1'b1;
+    assign sdram_cas     = 1'b1;
+    assign sdram_we      = 1'b1;
+    assign sdram_ba      = 2'd0;
+    assign sdram_dq_out  = 16'h0000;
+    assign sdram_dq_io   = 1'b1;
+    assign sdram_ldqm    = 1'b1;
+    assign sdram_udqm    = 1'b1;
+`else
+    assign at_ddr_req   = 1'b0;
+    assign at_ddr_write = 1'b0;
+    assign at_ddr_addr  = 29'd0;
+    assign at_ddr_be    = 8'd0;
+    assign at_ddr_din   = 64'd0;
     spk286_at_mister_sdram_owner u_at_sdram_owner (
         .clk                    (CLK_50M),
         .reset                  (RESET),
@@ -869,6 +926,7 @@ module emu_at
         .sdram_ldqm              (sdram_ldqm),
         .sdram_udqm              (sdram_udqm)
     );
+`endif
 
     logic counter_clock;
     spk286_at_pit_clock u_pit_clock(.clk(CLK_50M), .reset(RESET), .counter_clock(counter_clock));
@@ -890,7 +948,6 @@ module emu_at
     // well as until the system BIOS has arrived.  The BIOS loader and SDRAM
     // remain in the 50 MHz domain, so this does not change download timing.
     wire at_video_clk_28;
-    wire at_video_clk_57;
     wire at_video_clk_57_ps;
     wire at_video_clk_native;
     wire at_video_pll_locked;
@@ -1484,7 +1541,14 @@ module emu_at
         .wr_burstcnt     (at_fb_cap_burstcnt),
         .wr_din          (at_fb_cap_din),
         .wr_busy_out     (at_fb_cap_busy),
-        .wr_grant        ()
+        .wr_grant        (),
+        .at_req          (at_ddr_req),
+        .at_write        (at_ddr_write),
+        .at_addr         (at_ddr_addr),
+        .at_be           (at_ddr_be),
+        .at_din          (at_ddr_din),
+        .at_done         (at_ddr_done),
+        .at_rdata        (at_ddr_rdata)
     );
 
     wire at_video_crt350_active;
