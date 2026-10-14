@@ -2,8 +2,8 @@
 //
 //  Up to three clients on one DDRAM port: the raster that reads frames out,
 //  the capture that writes them in, and optionally the AT machine RAM
-//  (spk286_at_mister_ddram_owner), which issues one single-beat read or
-//  write at a time.
+//  (spk286_at_mister_ddram_owner), which issues one single-beat write or
+//  one short read burst (a cache line) at a time.
 //
 //  The reader wins every tie. It is feeding a line buffer against a fixed
 //  deadline - the dot it is due at cannot be postponed - while the writer has
@@ -55,14 +55,18 @@ module ega_ddr_arbiter (
     output wire        wr_busy_out,
     output reg         wr_grant,
 
-    // AT RAM client: one beat, held until at_done. at_done pulses with
-    // at_rdata valid for a read, or once the write beat has been accepted.
+    // AT RAM client: one write beat, or a read burst of at_burstcnt beats,
+    // held until at_done. at_rvalid pulses with each read beat in at_rdata;
+    // at_done pulses with the last beat, or once the write beat has been
+    // accepted.
     input  wire        at_req,
     input  wire        at_write,
     input  wire [28:0] at_addr,
     input  wire [7:0]  at_be,
     input  wire [63:0] at_din,
+    input  wire [7:0]  at_burstcnt,
     output reg         at_done,
+    output reg         at_rvalid,
     output reg  [63:0] at_rdata
 );
 
@@ -116,8 +120,9 @@ module ega_ddr_arbiter (
 
     always @(posedge clk) begin
         rd_grant <= 1'b0;
-        wr_grant <= 1'b0;
-        at_done  <= 1'b0;
+        wr_grant  <= 1'b0;
+        at_done   <= 1'b0;
+        at_rvalid <= 1'b0;
 
         if (reset && (state != ST_IDLE))
             reset_pending <= 1'b1;
@@ -146,8 +151,8 @@ module ega_ddr_arbiter (
                         state          <= ST_READ;
                     end else if (at_start) begin
                         ddram_addr     <= at_addr;
-                        ddram_burstcnt <= 8'd1;
-                        beats_left     <= 9'd1;
+                        ddram_burstcnt <= at_write ? 8'd1 : at_burstcnt;
+                        beats_left     <= at_write ? 9'd1 : {1'b0, at_burstcnt};
                         ddram_we       <= at_write;
                         ddram_rd       <= !at_write;
                         state          <= at_write ? ST_AT_WRITE : ST_AT_READ;
@@ -188,19 +193,25 @@ module ega_ddr_arbiter (
                     end
                 end
 
-                // A read that never returns is answered with all ones rather
-                // than leaving the AT bus waiting forever.
+                // A burst that stops returning beats is ended with at_done
+                // and no further at_rvalid, rather than leaving the AT bus
+                // waiting forever; the owner answers the missing data as all
+                // ones and does not keep the line.
                 ST_AT_READ: begin
                     if (!ddram_busy) ddram_rd <= 1'b0;
                     if (ddram_dout_ready) begin
-                        at_rdata <= ddram_dout;
-                        at_done  <= 1'b1;
-                        state    <= ST_IDLE;
+                        wdog       <= 12'd0;
+                        at_rdata   <= ddram_dout;
+                        at_rvalid  <= 1'b1;
+                        beats_left <= beats_left - 9'd1;
+                        if (beats_left == 9'd1) begin
+                            at_done <= 1'b1;
+                            state   <= ST_IDLE;
+                        end
                     end else begin
                         wdog <= wdog + 12'd1;
                         if (&wdog) begin
                             ddram_rd <= 1'b0;
-                            at_rdata <= {64{1'b1}};
                             at_done  <= 1'b1;
                             state    <= ST_IDLE;
                         end

@@ -6,7 +6,7 @@ BUILD_DIR="${PCAT_BUILD_DIR:-$ROOT_DIR/build/at-mister-ddram-owner}"
 mkdir -p "$BUILD_DIR"
 
 SOURCES=(
-  "$ROOT_DIR/sys/at_cdc_snapshot.sv"
+  "$ROOT_DIR/sys/at_cdc_fifo.sv"
   "$ROOT_DIR/rtl/video/ega_ddr_arbiter.v"
   "$ROOT_DIR/rtl/spk286_integration/spk286_at_mister_ddram_owner.sv"
   "$ROOT_DIR/sim/spk286_integration/spk286_at_mister_ddram_owner_tb.sv"

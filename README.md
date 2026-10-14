@@ -3,7 +3,8 @@
 PCAT-286 is an Intel 80286-compatible PC/AT implementation for MiSTer, using
 [SPK286](https://github.com/spark2k06/SPK286) and an EGA video subsystem.
 The repository builds one machine profile, `PCAT-286`, for the DE10-Nano's
-Cyclone V `5CSEBA6U23I7` and MiSTer SDRAM expansion.
+Cyclone V `5CSEBA6U23I7`. The AT RAM is the MiSTer SDRAM expansion, or with
+`PCAT286_RAM_DDR3` the DE10-Nano's own HPS DDR3, which needs no SDRAM module.
 
 The machine includes real and protected mode execution, a six-byte prefetch
 queue, 24-bit physical addressing, AT interrupt and DMA controllers, PIT,
@@ -69,7 +70,7 @@ flowchart LR
     CPU[SPK286 and timing profile] --> Bus[AT bus bridge]
     Bus --> Machine[Address decode and bus arbitration]
     HPS[MiSTer HPS / ROM loader] --> Machine
-    Machine --> RAM[Read buffers / posted writes / SDRAM]
+    Machine --> RAM[Read buffers / posted writes / SDRAM or DDR3]
     Machine --> Chipset[PIC / DMA / PIT / 8042 / RTC]
     Machine --> Devices[Floppy / IDE / serial / audio]
     Machine --> Video[EGA / VGA extension]
@@ -105,6 +106,18 @@ retaining write ordering, snooping and reset/drain rules. Peripheral clocks,
 video clocks and the MiSTer video/HPS clock crossings remain independent.
 PIT channel 1 supplies the emulated AT refresh request; physical SDRAM
 refresh is also maintained by its controller.
+
+With `PCAT286_RAM_DDR3` (set in `config.tcl`), `spk286_at_mister_ddram_owner`
+replaces the SDRAM owner below the same buffers. It reaches the AT RAM window
+of the HPS DDR3 through the DDRAM port it shares with the framebuffer. HPS
+DDR3 answers much later than SDRAM, so the owner keeps a 32 KiB direct-mapped
+cache of 32-byte lines in block RAM. Reads that hit are answered without
+leaving the 50 MHz domain, and a miss fetches its whole line in one burst.
+Writes go through to DDR3 via an in-order queue and update a cached line;
+they complete once queued. Every CPU, DMA and loader access passes through
+this owner, so the cache needs no snooping. The directed CheckIt workloads
+(`AT_RAM_DDR3=1 scripts/test_checkit_directed.sh`) take as many cycles as with
+SDRAM.
 
 ## Memory map
 

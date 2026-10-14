@@ -4,7 +4,9 @@
 // byte-enabled writes) for the AT RAM window. Storage is kept as 16-bit AT
 // words, mem[byte_address >> 1], the same layout as spk286_sdram_pin_model,
 // so testbenches can inspect and preload RAM identically with either owner.
-// Waitrequest and read latency are pseudo-random but deterministic.
+// Waitrequest and read latency are pseudo-random but deterministic. The read
+// latency in DDRAM clocks is DDR_LATENCY plus a pseudo-random amount masked
+// by DDR_JITTER (plusargs; default 6 + 0..31, deliberately pessimistic).
 
 module spk286_ddram_avalon_model #(
     parameter logic [28:0] BASE = 29'h6200000,
@@ -39,6 +41,12 @@ module spk286_ddram_avalon_model #(
         word_index = (a - BASE) * 4 + lane;
     endfunction
 
+    integer latency = 6, jitter = 31;
+    initial begin
+        if ($value$plusargs("DDR_LATENCY=%d", latency)) begin end
+        if ($value$plusargs("DDR_JITTER=%d", jitter)) begin end
+    end
+
     always @(posedge clk) begin : model
         integer slot, lane, w;
         lfsr <= {lfsr[30:0], lfsr[31] ^ lfsr[21] ^ lfsr[1] ^ lfsr[0]};
@@ -51,7 +59,7 @@ module spk286_ddram_avalon_model #(
             slot = (rq_head + rq_count) % 16;
             rq_addr[slot]  = addr;
             rq_beats[slot] = burstcnt;
-            rq_delay[slot] = 6 + lfsr[7:3];
+            rq_delay[slot] = latency + (int'(lfsr[7:3]) & jitter);
             rq_count = rq_count + 1;
         end
         if (we && !busy) begin

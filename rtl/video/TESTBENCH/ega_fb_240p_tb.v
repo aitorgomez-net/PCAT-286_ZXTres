@@ -131,7 +131,10 @@ module ega_fb_240p_tb;
         .rd_req(rd_req), .rd_addr(rd_addr), .rd_burstcnt(rd_burstcnt),
         .rd_grant(rd_grant), .rd_data(rd_data), .rd_data_valid(rd_data_valid),
         .wr_req(cap_we), .wr_addr(cap_addr), .wr_burstcnt(cap_burstcnt),
-        .wr_din(cap_din), .wr_busy_out(cap_busy), .wr_grant()
+        .wr_din(cap_din), .wr_busy_out(cap_busy), .wr_grant(),
+        // No AT RAM client in this bench.
+        .at_req(1'b0), .at_write(1'b0), .at_addr(29'd0), .at_be(8'd0),
+        .at_din(64'd0), .at_burstcnt(8'd0), .at_done(), .at_rvalid(), .at_rdata()
     );
 
     //------------------------------------------------------------------------

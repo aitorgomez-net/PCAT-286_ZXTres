@@ -227,6 +227,54 @@ module spk286_checkit_workload_tb #(
         .debug_stall_count(posted_stalls)
     );
 
+`ifdef AT_TB_DDR3
+    // AT RAM in the HPS DDR3: the DDRAM arbiter with its framebuffer clients
+    // idle and an Avalon model whose mem[] has the SDRAM model's layout.
+    logic ddr_clk = 1'b0;
+    always #8.73 ddr_clk = ~ddr_clk; // 57.27 MHz
+    wire        ddr_req, ddr_write, ddr_done, ddr_rvalid;
+    wire [28:0] ddr_addr;
+    wire [7:0]  ddr_be, ddr_burstcnt;
+    wire [63:0] ddr_din, ddr_rdata;
+    wire        ddram_busy, ddram_we, ddram_rd, ddram_dout_ready;
+    wire [7:0]  ddram_burstcnt, ddram_be;
+    wire [28:0] ddram_addr;
+    wire [63:0] ddram_din, ddram_dout;
+    spk286_at_mister_ddram_owner owner (
+        .clk(clk), .reset(reset), .request_valid(posted_out_valid),
+        .request_command_valid(posted_out_command),
+        .request_owner_refresh(posted_out_refresh), .request_write(posted_out_write),
+        .request_code_fetch(posted_out_code), .request_burst(posted_out_burst),
+        .request_cycle_class(posted_out_class), .request_address(posted_out_address),
+        .request_byte_enable(posted_out_lanes), .request_data_out(posted_out_data),
+        .request_accept(physical_accept), .request_ready(physical_ready),
+        .request_read_data(physical_read_data),
+        .request_read_data_valid(physical_read_valid),
+        .physical_idle(physical_idle), .debug_state(), .protocol_error(owner_error),
+        .ddr_clk(ddr_clk), .ddr_req(ddr_req), .ddr_write(ddr_write), .ddr_addr(ddr_addr),
+        .ddr_be(ddr_be), .ddr_din(ddr_din), .ddr_burstcnt(ddr_burstcnt),
+        .ddr_rvalid(ddr_rvalid), .ddr_rdata(ddr_rdata), .ddr_done(ddr_done)
+    );
+    ega_ddr_arbiter ddram_arbiter (
+        .clk(ddr_clk), .reset(reset),
+        .ddram_busy(ddram_busy), .ddram_burstcnt(ddram_burstcnt), .ddram_addr(ddram_addr),
+        .ddram_din(ddram_din), .ddram_be(ddram_be), .ddram_we(ddram_we), .ddram_rd(ddram_rd),
+        .ddram_dout(ddram_dout), .ddram_dout_ready(ddram_dout_ready),
+        .rd_req(1'b0), .rd_addr(29'd0), .rd_burstcnt(8'd0), .rd_grant(), .rd_data(),
+        .rd_data_valid(),
+        .wr_req(1'b0), .wr_addr(29'd0), .wr_burstcnt(8'd0), .wr_din(64'd0),
+        .wr_busy_out(), .wr_grant(),
+        .at_req(ddr_req), .at_write(ddr_write), .at_addr(ddr_addr), .at_be(ddr_be),
+        .at_din(ddr_din), .at_burstcnt(ddr_burstcnt), .at_done(ddr_done),
+        .at_rvalid(ddr_rvalid), .at_rdata(ddr_rdata)
+    );
+    spk286_ddram_avalon_model #(.MEM_WORDS(1 << 20)) dram (
+        .clk(ddr_clk), .busy(ddram_busy), .burstcnt(ddram_burstcnt), .addr(ddram_addr),
+        .din(ddram_din), .be(ddram_be), .we(ddram_we), .rd(ddram_rd),
+        .dout(ddram_dout), .dout_ready(ddram_dout_ready),
+        .read_count(dram_reads), .write_count(dram_writes)
+    );
+`else
     spk286_at_mister_sdram_owner #(.SDRAM_INIT_WAIT(16'd8)) owner (
         .clk(clk), .reset(reset), .request_valid(posted_out_valid),
         .request_command_valid(posted_out_command),
@@ -253,6 +301,7 @@ module spk286_checkit_workload_tb #(
         .dq_to_controller(dram_in), .dq_valid(dq_valid),
         .read_count(dram_reads), .write_count(dram_writes)
     );
+`endif
 
     integer cycles = 0;
     integer instructions = 0;

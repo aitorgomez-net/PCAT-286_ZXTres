@@ -12,7 +12,7 @@
 // a test-only entry/setup in the private ROM buffer, never in the user ROM.
 // Owner internals used only by diagnostics, for either RAM backend.
 `ifdef AT_TB_DDR3
-`define AT_TB_OWNER_ACTIVE  ddram_owner.active_q
+`define AT_TB_OWNER_ACTIVE  (ddram_owner.state_q != 3'd0)
 `define AT_TB_OWNER_STATE   ddram_owner.debug_state
 `define AT_TB_OWNER_ADDRESS p03_out_address[24:1]
 `define AT_TB_OWNER_IDLE    ddram_owner.physical_idle
@@ -302,9 +302,9 @@ module spk286_at_bios_first_fetch_tb #(
     // framebuffer clients idle, and an Avalon model storing pins.mem[].
     logic ddr_clk = 1'b0;
     always #8.73 ddr_clk = ~ddr_clk;
-    wire        ddr_req, ddr_write, ddr_done;
+    wire        ddr_req, ddr_write, ddr_done, ddr_rvalid;
     wire [28:0] ddr_addr;
-    wire [7:0]  ddr_be;
+    wire [7:0]  ddr_be, ddr_burstcnt;
     wire [63:0] ddr_din, ddr_rdata;
     wire        ddram_busy, ddram_we, ddram_rd, ddram_dout_ready;
     wire [7:0]  ddram_burstcnt, ddram_be;
@@ -323,7 +323,8 @@ module spk286_at_bios_first_fetch_tb #(
         .wr_req(1'b0), .wr_addr(29'd0), .wr_burstcnt(8'd0), .wr_din(64'd0),
         .wr_busy_out(), .wr_grant(),
         .at_req(ddr_req), .at_write(ddr_write), .at_addr(ddr_addr), .at_be(ddr_be),
-        .at_din(ddr_din), .at_done(ddr_done), .at_rdata(ddr_rdata)
+        .at_din(ddr_din), .at_burstcnt(ddr_burstcnt), .at_done(ddr_done),
+        .at_rvalid(ddr_rvalid), .at_rdata(ddr_rdata)
     );
     spk286_ddram_avalon_model #(.MEM_WORDS(1<<24)) pins (
         .clk(ddr_clk), .busy(ddram_busy), .burstcnt(ddram_burstcnt), .addr(ddram_addr),
@@ -1065,7 +1066,8 @@ module spk286_at_bios_first_fetch_tb #(
         .physical_idle(physical_idle), .debug_state(),
         .protocol_error(sdram_owner_protocol_error),
         .ddr_clk(ddr_clk), .ddr_req(ddr_req), .ddr_write(ddr_write), .ddr_addr(ddr_addr),
-        .ddr_be(ddr_be), .ddr_din(ddr_din), .ddr_done(ddr_done), .ddr_rdata(ddr_rdata)
+        .ddr_be(ddr_be), .ddr_din(ddr_din), .ddr_burstcnt(ddr_burstcnt),
+        .ddr_rvalid(ddr_rvalid), .ddr_rdata(ddr_rdata), .ddr_done(ddr_done)
     );
 `else
     spk286_at_mister_sdram_owner #(

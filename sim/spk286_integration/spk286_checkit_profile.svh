@@ -104,7 +104,10 @@ task automatic profile_tick;
             profile_redirects++;
             profile_flushed_bytes += int'(prefetch_count);
         end
+`ifndef AT_TB_DDR3
+        // DDR3 has no refresh visible to the AT owner.
         if (owner.kf_refresh_mode) profile_owner_refresh_cycles++;
+`endif
 
         // These five bins partition bus_valid && !ready, not CPU stalls.
         if (bus_valid && !ready) begin

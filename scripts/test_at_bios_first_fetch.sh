@@ -77,6 +77,7 @@ ram_flags=()
 if [[ "$ram_ddr3" == 1 ]]; then
   sources+=(rtl/spk286_integration/spk286_at_sdram_data_buffer.sv
     rtl/spk286_integration/spk286_at_posted_write_buffer.sv
+    sys/at_cdc_fifo.sv
     rtl/spk286_integration/spk286_at_mister_ddram_owner.sv
     sim/spk286_integration/spk286_ddram_avalon_model.sv)
   ram_flags=(-DAT_TB_DDR3)

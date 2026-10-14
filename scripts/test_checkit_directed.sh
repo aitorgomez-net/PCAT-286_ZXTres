@@ -2,7 +2,14 @@
 set -euo pipefail
 
 root="${PCAT_SOURCE_ROOT:-$(cd "$(dirname "$0")/.." && pwd)}"
-build_dir="${PCAT_BUILD_DIR:-$root/build/checkit-directed}"
+# AT_RAM_DDR3=1 measures the same workloads with the AT RAM behind the DDR3
+# owner, the DDRAM arbiter and an Avalon model instead of SDRAM. Extra
+# simulation plusargs (for example +DDR_LATENCY=7 +DDR_JITTER=3) go in
+# PCAT_CHECKIT_ARGS.
+ram_ddr3="${AT_RAM_DDR3:-0}"
+default_build="$root/build/checkit-directed"
+[[ "$ram_ddr3" == 1 ]] && default_build="$root/build/checkit-directed-ddr3"
+build_dir="${PCAT_BUILD_DIR:-$default_build}"
 mkdir -p "$build_dir"
 cd "$root"
 
@@ -23,11 +30,24 @@ sources+=(
   rtl/spk286_integration/spk286_at_sdram_read_buffer.sv
   rtl/spk286_integration/spk286_at_sdram_data_buffer.sv
   rtl/spk286_integration/spk286_at_posted_write_buffer.sv
-  rtl/spk286_integration/spk286_at_mister_sdram_owner.sv
-  rtl/KFPC-XT/HDL/KFSDRAM/HDL/KFSDRAM.sv
-  sim/spk286_integration/spk286_sdram_pin_model.sv
-  sim/spk286_integration/spk286_checkit_workload_tb.sv
 )
+ram_flags=()
+if [[ "$ram_ddr3" == 1 ]]; then
+  sources+=(
+    sys/at_cdc_fifo.sv
+    rtl/video/ega_ddr_arbiter.v
+    rtl/spk286_integration/spk286_at_mister_ddram_owner.sv
+    sim/spk286_integration/spk286_ddram_avalon_model.sv
+  )
+  ram_flags=(-DAT_TB_DDR3)
+else
+  sources+=(
+    rtl/spk286_integration/spk286_at_mister_sdram_owner.sv
+    rtl/KFPC-XT/HDL/KFSDRAM/HDL/KFSDRAM.sv
+    sim/spk286_integration/spk286_sdram_pin_model.sv
+  )
+fi
+sources+=(sim/spk286_integration/spk286_checkit_workload_tb.sv)
 
 # Read implementation-performance switches from the same project configuration
 # that Quartus consumes. Previously P01/P02 were hard-coded here even when the
@@ -43,7 +63,7 @@ sha256sum "${sources[@]}" config.tcl \
   scripts/test_checkit_directed.sh scripts/at_performance_flags.sh \
   tests/firmware/checkit_*.asm > "$build_dir/compiled-sources.sha256"
 verilator --binary --timing --assert -j 4 -Wno-fatal \
-  "${performance_flags[@]}" "${buffer_parameters[@]}" \
+  "${performance_flags[@]}" "${buffer_parameters[@]}" "${ram_flags[@]}" \
   --top-module spk286_checkit_workload_tb \
   --Mdir "$build_dir/obj" -o checkit_workload "${sources[@]}" \
   >"$build_dir/build.log" 2>&1
@@ -53,7 +73,7 @@ for workload in dhrystone whetstone working_set dhrystone21; do
     "$build_dir/obj/checkit_workload" \
       "+ROM=$build_dir/checkit-$workload.rom" \
       "+NAME=$workload" "+NATIVE=1" "+P03=$p03" \
-      "+PROFILE=${PCAT_PROFILE:-0}" \
+      "+PROFILE=${PCAT_PROFILE:-0}" ${PCAT_CHECKIT_ARGS:-} \
       | tee "$build_dir/$workload-p03-$p03.log"
   done
 done

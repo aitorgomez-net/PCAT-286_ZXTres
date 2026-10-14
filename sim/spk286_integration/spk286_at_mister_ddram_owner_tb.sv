@@ -5,7 +5,9 @@
 // read latency, competing framebuffer read bursts, and machine resets that
 // land while a request is in flight. Every AT read is checked against a
 // byte-level reference; four-word line fills must return their beats in
-// order with ready on the last one.
+// order with ready on the last one. Runs of back-to-back writes fill the
+// request queue, and at the end DDR3 itself must hold every write, not just
+// the owner's cache.
 //
 // AT addresses are drawn from two 1 MiB windows, the bottom and the top of
 // the 32 MiB AT space, so the reference and the DDRAM model stay small.
@@ -35,9 +37,9 @@ module spk286_at_mister_ddram_owner_tb;
     wire         physical_idle, protocol_error;
     wire [7:0]   debug_state;
 
-    wire        at_req, at_write, at_done;
+    wire        at_req, at_write, at_done, at_rvalid;
     wire [28:0] at_addr;
-    wire [7:0]  at_be;
+    wire [7:0]  at_be, at_burstcnt;
     wire [63:0] at_din, at_rdata;
 
     spk286_at_mister_ddram_owner #(.DDRAM_BASE(BASE)) dut (
@@ -53,7 +55,8 @@ module spk286_at_mister_ddram_owner_tb;
         .physical_idle(physical_idle), .debug_state(debug_state),
         .protocol_error(protocol_error),
         .ddr_clk(ddr_clk), .ddr_req(at_req), .ddr_write(at_write), .ddr_addr(at_addr),
-        .ddr_be(at_be), .ddr_din(at_din), .ddr_done(at_done), .ddr_rdata(at_rdata)
+        .ddr_be(at_be), .ddr_din(at_din), .ddr_burstcnt(at_burstcnt),
+        .ddr_rvalid(at_rvalid), .ddr_rdata(at_rdata), .ddr_done(at_done)
     );
 
     // Framebuffer read client: random bursts outside the AT window.
@@ -80,7 +83,8 @@ module spk286_at_mister_ddram_owner_tb;
         .wr_req(1'b0), .wr_addr(29'd0), .wr_burstcnt(8'd0), .wr_din(64'd0),
         .wr_busy_out(), .wr_grant(),
         .at_req(at_req), .at_write(at_write), .at_addr(at_addr), .at_be(at_be),
-        .at_din(at_din), .at_done(at_done), .at_rdata(at_rdata)
+        .at_din(at_din), .at_burstcnt(at_burstcnt), .at_done(at_done),
+        .at_rvalid(at_rvalid), .at_rdata(at_rdata)
     );
 
     // ------------------------------------------------------------------
@@ -122,12 +126,17 @@ module spk286_at_mister_ddram_owner_tb;
     assign ddram_dout = dout_q;
     integer write_beat = 0;
     integer fb_reads = 0, fb_beats_expected = 0, fb_beats_seen = 0;
+    // Occasional long waitrequest, as when other HPS masters or DDR3 refresh
+    // hold the port: stores keep arriving and queue up behind it.
+    integer busy_hold = 0;
 
     always @(posedge ddr_clk) begin : ddram_model
         integer slot, i, b;
         logic [28:0] a;
         logic [63:0] word;
-        busy_q <= ($urandom % 4) == 0;
+        if (busy_hold == 0 && ($urandom % 400) == 0) busy_hold = 30 + ($urandom % 300);
+        if (busy_hold != 0) busy_hold = busy_hold - 1;
+        busy_q <= (busy_hold != 0) || (($urandom % 4) == 0);
         dout_ready_q <= 1'b0;
         if (ddram_rd && !ddram_busy) begin
             if (rq_count == 16) $fatal(1, "DDRAM model read queue overflow");
@@ -235,7 +244,10 @@ module spk286_at_mister_ddram_owner_tb;
         request_valid = 1'b1; request_command_valid = 1'b1;
         request_owner_refresh = refresh; request_write = write; request_burst = burst;
         request_address = address; request_byte_enable = lanes; request_data_out = data;
-        while (!request_accept) @(negedge clk);
+        // Let request_accept settle before sampling it; it is taken on the
+        // next rising edge, and the request is withdrawn after that edge.
+        #1;
+        while (!request_accept) begin @(negedge clk); #1; end
         @(negedge clk);
         request_valid = 1'b0; request_command_valid = 1'b0;
         if (do_reset) begin
@@ -298,20 +310,28 @@ module spk286_at_mister_ddram_owner_tb;
         end
     endtask
 
-    integer n, kind, k;
+    integer n, kind, k, storm, ddr_checked;
     logic [24:0] a;
+    logic [63:0] w;
     initial begin
         for (k = 0; k < 262144; k = k + 1) ddr_valid[k] = 1'b0;
         for (k = 0; k < 2097152; k = k + 1) begin ref_valid[k] = 1'b0; unknown[k] = 1'b0; end
         repeat (5) @(posedge clk);
         reset = 1'b0;
         ddr_reset = 1'b0;
+        storm = 0;
         for (n = 0; n < OPS; n = n + 1) begin
-            // Mostly a 16 KiB hot spot so reads meet earlier partial writes.
+            // Mostly a 16 KiB hot spot so reads meet earlier partial writes;
+            // the bottom and top windows share cache sets, so they evict
+            // each other.
             a = {5'd0, 6'd0, 14'($urandom)};
             if (($urandom % 8) == 0) a = {5'd0, 20'($urandom)};
             if (($urandom % 8) == 0) a = {5'h1F, 20'($urandom)};
-            kind = $urandom % 16;
+            // Occasionally a run of stores, as from REP STOSW, that outruns
+            // DDR3 and fills the request queue.
+            if (storm == 0 && ($urandom % 200) == 0) storm = 20 + ($urandom % 40);
+            kind = (storm != 0) ? 0 : $urandom % 16;
+            if (storm != 0) storm = storm - 1;
             if (kind < 6)
                 issue(1'b1, 1'b0, 1'b0, {a[24:1], 1'b0},
                       (($urandom % 3) == 0) ? 2'b11 : 2'(1 + ($urandom % 3)), 16'($urandom), 1'b1);
@@ -322,7 +342,7 @@ module spk286_at_mister_ddram_owner_tb;
             else
                 issue(1'b0, 1'b0, 1'b1, a, 2'b11, 16'h0, 1'b0);
         end
-        // Any request cut by a reset must still have drained.
+        // Any request cut by a reset, and every queued write, must drain.
         repeat (2000) @(posedge clk);
         if (!physical_idle) begin $display("FAIL owner not idle at the end"); errors = errors + 1; end
         if (protocol_error) begin $display("FAIL protocol_error"); errors = errors + 1; end
@@ -330,10 +350,35 @@ module spk286_at_mister_ddram_owner_tb;
             $display("FAIL framebuffer beats %0d/%0d", fb_beats_seen, fb_beats_expected);
             errors = errors + 1;
         end
+        // Reads may have been answered from the cache: DDR3 itself must hold
+        // every write whose outcome is known.
+        ddr_checked = 0;
+        for (k = 0; k < 2097152; k = k + 1)
+            if (ref_valid[k] && !unknown[k]) begin
+                a = {(k >= 1048576) ? 5'h1F : 5'h00, 20'(k)};
+                w = ddr_word(BASE + {7'd0, a[24:3]});
+                if (w[8*a[2:0] +: 8] !== ref_mem[k]) begin
+                    if (errors < 20)
+                        $display("FAIL DDR3 byte %h holds %h, expected %h", a,
+                                 w[8*a[2:0] +: 8], ref_mem[k]);
+                    errors = errors + 1;
+                end
+                ddr_checked = ddr_checked + 1;
+            end
+        if (dut.debug_hits == 0 || dut.debug_misses == 0 || dut.debug_write_hits == 0 ||
+            dut.debug_queue_stalls == 0 || dut.debug_discarded_beats == 0) begin
+            $display("FAIL cache paths not exercised: hits=%0d misses=%0d write_hits=%0d queue_stalls=%0d discarded_beats=%0d",
+                     dut.debug_hits, dut.debug_misses, dut.debug_write_hits,
+                     dut.debug_queue_stalls, dut.debug_discarded_beats);
+            errors = errors + 1;
+        end
         if (errors != 0) $fatal(1, "AT_MISTER_DDRAM_OWNER_TEST_FAIL errors=%0d", errors);
         $display("AT_MISTER_DDRAM_OWNER_TB_PASS reads=%0d lines=%0d writes=%0d refresh=%0d resets=%0d video_resets=%0d fb_bursts=%0d avg_wait=%0d",
                  reads, bursts, writes, refreshes, resets, video_resets, fb_reads,
                  busy_cycles / (reads + bursts + writes + refreshes));
+        $display("AT_MISTER_DDRAM_OWNER_CACHE read_hits=%0d read_misses=%0d writes=%0d write_hits=%0d queue_stalls=%0d discarded_beats=%0d ddr3_bytes_checked=%0d",
+                 dut.debug_hits, dut.debug_misses, dut.debug_writes, dut.debug_write_hits,
+                 dut.debug_queue_stalls, dut.debug_discarded_beats, ddr_checked);
         $finish;
     end
 endmodule

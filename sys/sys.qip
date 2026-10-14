@@ -34,6 +34,7 @@ set_global_assignment -name SYSTEMVERILOG_FILE [file join $::quartus(qip_path) s
 set_global_assignment -name SYSTEMVERILOG_FILE [file join $::quartus(qip_path) sd_card.sv ]
 set_global_assignment -name SYSTEMVERILOG_FILE [file join $::quartus(qip_path) hps_io.sv ]
 set_global_assignment -name SYSTEMVERILOG_FILE [file join $::quartus(qip_path) at_cdc_snapshot.sv ]
+set_global_assignment -name SYSTEMVERILOG_FILE [file join $::quartus(qip_path) at_cdc_fifo.sv ]
 set_global_assignment -name SYSTEMVERILOG_FILE [file join $::quartus(qip_path) at_frame_counter.sv ]
 set_global_assignment -name SYSTEMVERILOG_FILE [file join $::quartus(qip_path) at_hdmi_vsync.sv ]
 set_global_assignment -name SYSTEMVERILOG_FILE [file join $::quartus(qip_path) at_video_output_config.sv ]

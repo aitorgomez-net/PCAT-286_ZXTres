@@ -240,6 +240,20 @@ if {$at_cdc_enabled && $at_require_new} {
         set_max_delay -from $src -to $dst $budget
         set_false_path -hold -from $src -to $dst
     }
+    # at_cdc_fifo: only the Gray-coded pointers cross, each into a two-stage
+    # synchronizer. The bound keeps the skew between pointer bits below one
+    # destination period, so a capture sees the old or the new pointer. The
+    # entries themselves stay in a dual-clock block RAM.
+    proc at_fifo {instance {budget 10.0}} {
+        set wr_gray [at_regs "${instance}_wr_gray" "*${instance}|wr_gray\[*\]"]
+        set rd_gray [at_regs "${instance}_rd_gray" "*${instance}|rd_gray\[*\]"]
+        set wr_meta [at_regs "${instance}_wr_meta" "*${instance}|wr_gray_meta\[*\]"]
+        set rd_meta [at_regs "${instance}_rd_meta" "*${instance}|rd_gray_meta\[*\]"]
+        set_max_delay -from $wr_gray -to $wr_meta $budget
+        set_false_path -hold -from $wr_gray -to $wr_meta
+        set_max_delay -from $rd_gray -to $rd_meta $budget
+        set_false_path -hold -from $rd_gray -to $rd_meta
+    }
     foreach instance {
         video_stats time_stats
         vga_osd*config_mailbox hdmi_osd*config_mailbox
@@ -270,12 +284,12 @@ if {$at_cdc_enabled && $at_require_new} {
     # Phase increment, colour burst and output controls are held together;
     # the complete UIO command is applied in the native video domain at VS.
     at_snapshot u_at_video_output_config*config_mailbox 10.0
-    # AT RAM on DDR3: the request (write, address, lanes, data) and the 64-bit
-    # result cross between the 50 MHz AT domain and the 57.272 MHz DDRAM port,
-    # each held until acknowledged; 10 ns is below both destination periods.
+    # AT RAM on DDR3: queued requests and returning cache-line beats cross
+    # between the 50 MHz AT domain and the 57.272 MHz DDRAM port; 10 ns is
+    # below both destination periods.
     if {$at_ram_ddr3_enabled} {
-        at_snapshot u_at_ddram_owner|request_cdc 10.0
-        at_snapshot u_at_ddram_owner|response_cdc 10.0
+        at_fifo u_at_ddram_owner|request_fifo 10.0
+        at_fifo u_at_ddram_owner|response_fifo 10.0
     }
     # Source-registered VS level; only the second stage drives edge detection.
     at_sync frame_counter_vs $AT_VIDEO_OUT {*u_at_frame_counter|vs_meta}

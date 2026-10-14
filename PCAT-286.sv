@@ -841,9 +841,9 @@ module emu_at
     wire at_video_clk_57;
     // AT RAM backend: the SDRAM module by default, or with PCAT286_RAM_DDR3
     // the HPS DDR3 through the DDRAM port shared with the framebuffer.
-    wire        at_ddr_req, at_ddr_write, at_ddr_done;
+    wire        at_ddr_req, at_ddr_write, at_ddr_done, at_ddr_rvalid;
     wire [28:0] at_ddr_addr;
-    wire [7:0]  at_ddr_be;
+    wire [7:0]  at_ddr_be, at_ddr_burstcnt;
     wire [63:0] at_ddr_din, at_ddr_rdata;
 `ifdef PCAT286_RAM_DDR3
     spk286_at_mister_ddram_owner u_at_ddram_owner (
@@ -872,8 +872,10 @@ module emu_at
         .ddr_addr               (at_ddr_addr),
         .ddr_be                 (at_ddr_be),
         .ddr_din                (at_ddr_din),
-        .ddr_done               (at_ddr_done),
-        .ddr_rdata              (at_ddr_rdata)
+        .ddr_burstcnt           (at_ddr_burstcnt),
+        .ddr_rvalid             (at_ddr_rvalid),
+        .ddr_rdata              (at_ddr_rdata),
+        .ddr_done               (at_ddr_done)
     );
     // The SDRAM module, if fitted, stays deselected with its bus released.
     assign sdram_address = 13'd0;
@@ -893,6 +895,7 @@ module emu_at
     assign at_ddr_addr  = 29'd0;
     assign at_ddr_be    = 8'd0;
     assign at_ddr_din   = 64'd0;
+    assign at_ddr_burstcnt = 8'd0;
     spk286_at_mister_sdram_owner u_at_sdram_owner (
         .clk                    (CLK_50M),
         .reset                  (RESET),
@@ -1547,7 +1550,9 @@ module emu_at
         .at_addr         (at_ddr_addr),
         .at_be           (at_ddr_be),
         .at_din          (at_ddr_din),
+        .at_burstcnt     (at_ddr_burstcnt),
         .at_done         (at_ddr_done),
+        .at_rvalid       (at_ddr_rvalid),
         .at_rdata        (at_ddr_rdata)
     );
 
