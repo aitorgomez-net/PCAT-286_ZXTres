@@ -1,6 +1,7 @@
 [submodule "DeMiSTify"]
 	path = DeMiSTify
 	url = https://github.com/robinsonb5/DeMiSTify.git
+	ignore = untracked
 [submodule "mist-modules"]
 	path = mist-modules
 	url = https://github.com/mist-devel/mist-modules.git
