@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 // Standalone CPU: decoder -> generated microcode -> functional datapath service.
 // Architectural state, prefetch storage and physical fetch retain separate owners.
 `timescale 1ns/1ps
@@ -382,8 +383,8 @@ module spk286 (
     // EXT identifies an event external to the program, not every exception.
     // Intel 286 PRM B-1 includes INTR/NMI, single step and NPX #NM/#9;
     // software INT and instruction-generated protection faults keep EXT=0.
-    // The event controller retains the original provenance across H11
-    // replacement exceptions, whose current kind/vector can be #GP/#DF.
+    // The event controller retains the original provenance across exception
+    // replacement, whose current kind/vector can be #GP/#DF.
     assign task_fault_external = event_active && event_external;
     assign stream_restart = restart || internal_redirect || event_cancel || loadall_commit_valid;
     assign stream_ip = restart ? ip_write_data :
@@ -515,7 +516,7 @@ module spk286 (
         protected_range_exceeded(stack_offset, protected_call_stack_limit, protected_call_stack_expand_down, operand_byte) :
         address_override ? protected_range_exceeded(address_offset, protected_call_stack_limit, protected_call_stack_expand_down, operand_byte) :
         protected_range_exceeded(operand_offset, protected_call_stack_limit, protected_call_stack_expand_down, operand_byte);
-    // P05: compare the starting offset in parallel with the late width bit.
+    // Compare the starting offset in parallel with the late width bit.
     // offset + !byte > limit iff offset > limit || (!byte && offset == limit).
     assign protected_access_fault = operand_request && operand_select_rm && !operand_register_direct &&
                                    !protected_descriptor_access && !protected_tss_access && !protected_event_access &&
@@ -536,7 +537,7 @@ module spk286 (
     // delivery validates it. Only demand a fetch exception at dispatch.
     assign protected_fetch_fault = protected_fetch_invalid && execution_allowed && !event_active && !micro_active;
 
-    // The Phase 1 state ports remain the setup/debug path. Once execution is
+    // The external state ports remain the setup/debug path. Once execution is
     // enabled, the microcode path owns GPR/IP writeback, while an explicit redirect
     // still has priority for the architectural IP and CS cache transaction.
     assign effective_gpr_write_en = execute_enable ? internal_gpr_write_en : gpr_write_en;
@@ -831,11 +832,16 @@ module spk286 (
     );
 
     logic [spk286_microcode_pkg::MC_ADDR_WIDTH-1:0] next_micro_pc;
+    // The ROM returns each word with its flags (MC_FLAG_*), decoded by the
+    // microcode compiler. END and the task-skip exemptions gate every
+    // micro-operation through operation_valid and allowed, so they are read
+    // from the ROM rather than compared from the word.
+    logic [spk286_microcode_pkg::MC_FLAG_WIDTH-1:0] micro_flags;
     spk286_microcode_sync_rom microcode_rom (
-        .clk(clk), .address(next_micro_pc), .word(micro_word), .valid(micro_valid)
+        .clk(clk), .address(next_micro_pc), .word(micro_word), .flags(micro_flags), .valid(micro_valid)
     );
 
-    assign micro_end = micro_word == spk286_microcode_pkg::MC_END;
+    assign micro_end = micro_flags[spk286_microcode_pkg::MC_FLAG_END];
     assign loadall_start = operation_valid && micro_word == spk286_microcode_pkg::MC_LOADALL;
     assign operation_done = micro_end || executor_done || loadall_complete;
     assign opcode_start = decode_ready && !event_active && !event_request && !event_completed && !raw_retired &&
@@ -844,6 +850,14 @@ module spk286 (
                            !unsupported_q && queue_consume_valid && is_prefix && !length_fault;
     assign length_fault = !event_active && !raw_retired && !event_completed && instruction_bytes == 10 &&
                           (micro_active ? executor_byte_ready : decode_ready);
+    // The next queue byte as the executor and the operand decoder see it.
+    // Both take a byte only while they request one (executor_byte_ready,
+    // which includes the decoder's request), and then this equals
+    // "queue_consume_valid && !length_fault". Leaving the request out keeps
+    // the byte's validity from depending on its consumer's ready.
+    logic consumer_byte_valid;
+    assign consumer_byte_valid = queue_consume_valid &&
+                                 !(!event_active && !raw_retired && !event_completed && instruction_bytes == 10);
     spk286_instruction_context instruction_context (
         .clk(clk), .reset(reset), .cancel(semantic_cancel), .complete(raw_retired || event_completed),
         .consume(queue_consume_valid && queue_consume_ready && !event_active), .prefix_accept(prefix_accept),
@@ -893,7 +907,7 @@ module spk286 (
         .clk(clk), .reset(reset), .cancel(semantic_cancel), .start(service_start),
         .operation_valid(operation_valid), .operation(micro_word), .operation_done(executor_done), .operation_retire(operation_retire), .dispatch_request(dispatch_request),
         .segment_pop_opcode(opcode_q == 8'h07 || opcode_q == 8'h17 || opcode_q == 8'h1F),
-        .byte_valid(queue_consume_valid && !length_fault), .byte_data(queue_consume_data), .byte_ready(executor_byte_ready),
+        .byte_valid(consumer_byte_valid), .byte_data(queue_consume_data), .byte_ready(executor_byte_ready),
         .decode_operand(operand_decode_enable), .decode_done(operand_decode_done), .decode_modrm_valid(operand_context_valid),
         .decode_byte_ready(operand_byte_ready), .operand_request(operand_request),
         .operand_write(operand_write), .operand_byte(operand_byte), .operand_select_rm(operand_select_rm), .operand_check(operand_check),
@@ -903,6 +917,8 @@ module spk286 (
         .redirect_request(internal_redirect), .redirect_target(internal_target), .redirect_ready(1'b1),
         .operand_write_data(operand_write_data), .operand_done(executor_operand_done),
         .operand_gpr_write_byte(operand_gpr_write_byte), .operand_read_data(executor_operand_read_data), .operand_gpr_write_en(operand_gpr_write_en),
+        .memory_read_data(memory_read_data),
+        .operation_flags(micro_flags),
         .operand_gpr_write_index(operand_gpr_write_index), .operand_gpr_write_data(operand_gpr_write_data),
         .gpr_write_byte(internal_gpr_write_byte), .destination(destination_q), .gpr_write_en(internal_gpr_write_en),
         .gpr_write_index(internal_gpr_write_index), .gpr_write_data(internal_gpr_write_data),
@@ -1027,7 +1043,7 @@ module spk286 (
     spk286_operand_decode operand_decode (
         .clk(clk), .reset(reset), .cancel(semantic_cancel), .start(service_start), .enable(operand_decode_enable && !invalid_form),
         .rearm(dispatch_request && dispatch_valid && execution_allowed),
-        .byte_valid(queue_consume_valid && !length_fault), .byte_data(queue_consume_data),
+        .byte_valid(consumer_byte_valid), .byte_data(queue_consume_data),
         .byte_ready(operand_byte_ready), .done(operand_decode_done), .modrm_valid(operand_context_valid),
         .bx(register_state[48 +: 16]), .bp(register_state[80 +: 16]),
         .si(register_state[96 +: 16]), .di(register_state[112 +: 16]),
@@ -1056,7 +1072,7 @@ module spk286 (
         .USE_PARALLEL_RANGE(1'b1)
     ) operand (
         .parallel_within_limit(parallel_operand_within_limit),
-        .clk(clk), .reset(reset), .cancel(semantic_cancel), .request_valid(operand_request && !protected_access_fault),
+        .clk(clk), .reset(reset), .cancel(semantic_cancel), .request_valid(operand_request), .request_fault(protected_access_fault),
         .request_byte(operand_byte), .request_write(operand_write), .request_check(operand_check), .select_rm(operand_select_rm), .write_data(operand_write_data),
         .done(operand_done), .unlimited_memory_done(unlimited_memory_done), .read_data(operand_read_data), .register_state(register_state),
         .reg_index(operand_reg), .rm_index(operand_rm), .register_direct(operand_register_direct && !protected_descriptor_access && !protected_tss_access && !protected_call_stack_access && !protected_event_access && !address_override && !stack_request && !vector_request && !io_transfer),
@@ -1153,7 +1169,7 @@ module spk286 (
     assign fault_vector = (invalid_form || invalid_opcode_fault) ? 8'd6 : loadall_fault ? loadall_fault_vector : system_fault ? system_fault_vector :
                           (protected_access_ss_fault || ((system_limit_fault || range_fault) && protected_msw[0] && service_segment == 2'd2)) ? 8'd12 : protected_access_fault ? 8'd13 :
                           protected_fetch_fault ? 8'd13 : bounds_fault ? 8'd5 : arithmetic_fault ? 8'd0 : 8'd13;
-    // PM3c frame contract: protected selector faults in the #TS/#NP/#SS/#GP
+    // Error words: protected selector faults in the #TS/#NP/#SS/#GP
     // family carry one 16-bit error word.  Non-selector protected faults use
     // the architecturally defined zero word until their individual source
     // classification is extended.

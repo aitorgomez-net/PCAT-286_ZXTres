@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 // 80286 segment state. This port performs ordinary real-mode segment reloads;
 // the protected-state owner supplies LOADALL cache commits.
 `timescale 1ns/1ps
@@ -30,7 +31,7 @@ module spk286_segments (
     logic [95:0] base_q;
     logic [63:0] limit_q;
     logic [31:0] access_q;
-    // Normalized valid, DPL 0, writable accessed data segment; see D-008.
+    // Normalized valid, DPL 0, writable accessed data segment.
     localparam logic [7:0] REAL_MODE_ACCESS = 8'h93;
 
     assign selector = selector_q[read_index * 16 +: 16];

@@ -1,4 +1,5 @@
-// 80286 Protected-Mode types shared by the PM0 foundation services.
+// SPDX-License-Identifier: MIT
+// 80286 protected-mode types shared by the protected-mode services.
 // No 80386 descriptor classes or operand-size fields are represented here.
 `timescale 1ns/1ps
 package spk286_protected_pkg;

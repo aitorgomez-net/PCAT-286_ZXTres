@@ -47,7 +47,7 @@ def main():
     # match production, including every state update and subservice enable.
     recovered = clone.replace('module spk286_profiled_micro_executor #(', 'module spk286_micro_executor #(', 1)
     recovered = recovered.replace('\n    input  logic implementation_operation_valid,', '', 1)
-    alias = '\n    logic implementation_allowed;\n    assign implementation_allowed = implementation_operation_valid && !reset && !cancel && !start &&\n                     !task_switch_skip && !task_return_skip && !task_event_switch_skip;'
+    alias = '\n    logic implementation_allowed;\n    assign implementation_allowed = implementation_operation_valid && !reset && !cancel &&\n                     !task_switch_skip && !task_return_skip && !task_event_switch_skip;'
     assert recovered.count(alias) == 1
     recovered = recovered.replace(alias, '', 1)
     for change in contract['changes']:
