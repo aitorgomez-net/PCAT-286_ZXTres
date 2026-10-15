@@ -182,7 +182,17 @@ MIST_IO = r'''
     // ------------------------------------------------------------------
     // MiST interface on the 50 MHz clock.
     /* verilator lint_off PINCONNECTEMPTY */
-    user_io #(.STRLEN($size(CONF_STR) >> 3), .PS2DIV(2000)) u_user_io (
+    // Block device 2 is the CMOS file (zxtres_cmos_store below); 0 and 1
+    // are kept for the floppy drives.
+    wire [31:0] cmos_sd_lba = 32'd0;
+    wire        cmos_sd_rd, cmos_sd_wr;
+    wire [2:0]  sd_ack_x;
+    wire [7:0]  sd_dout, cmos_sd_din;
+    wire        sd_dout_strobe;
+    wire [8:0]  sd_buff_addr;
+    wire [2:0]  img_mounted;
+    wire [63:0] img_size;
+    user_io #(.STRLEN($size(CONF_STR) >> 3), .PS2DIV(2000), .SD_IMAGES(3)) u_user_io (
         .conf_str(CONF_STR), .conf_addr(), .conf_chr(8'h00),
         .clk_sys(CLK_50M), .clk_sd(CLK_50M),
         .SPI_CLK(SPI_SCK), .SPI_SS_IO(CONF_DATA0), .SPI_MISO(SPI_DO), .SPI_MOSI(SPI_DI),
@@ -190,9 +200,11 @@ MIST_IO = r'''
         .joystick_4(), .joystick_analog_0(), .joystick_analog_1(),
         .buttons(), .switches(), .scandoubler_disable(), .ypbpr(), .no_csync(),
         .status(status), .core_mod(), .rtc(),
-        .sd_lba(32'd0), .sd_cnt(8'd0), .sd_rd(2'b00), .sd_wr(2'b00), .sd_ack(), .sd_ack_conf(),
-        .sd_ack_x(), .sd_conf(1'b0), .sd_sdhc(1'b1), .sd_dout(), .sd_dout_strobe(),
-        .sd_din(8'h00), .sd_din_strobe(), .sd_buff_addr(), .img_mounted(), .img_size(),
+        .sd_lba(cmos_sd_lba), .sd_rd({cmos_sd_rd, 2'b00}), .sd_wr({cmos_sd_wr, 2'b00}),
+        .sd_ack(), .sd_ack_conf(), .sd_ack_x(sd_ack_x), .sd_conf(1'b0), .sd_sdhc(1'b1),
+        .sd_dout(sd_dout), .sd_dout_strobe(sd_dout_strobe), .sd_din(cmos_sd_din),
+        .sd_din_strobe(), .sd_buff_addr(sd_buff_addr),
+        .img_mounted(img_mounted), .img_size(img_size),
         .ps2_kbd_clk(), .ps2_kbd_data(), .ps2_kbd_clk_i(1'b1), .ps2_kbd_data_i(1'b1),
         .ps2_mouse_clk(), .ps2_mouse_data(), .ps2_mouse_clk_i(1'b1), .ps2_mouse_data_i(1'b1),
         .key_pressed(), .key_extended(), .key_code(), .key_strobe(),
@@ -239,11 +251,30 @@ MIST_IO = r'''
 
     // Disks are not ported yet: the MiSTer management bus stays idle, so the
     // BIOS finds no floppy or hard disk.
+    // The management bus belongs to the CMOS store: it restores and saves
+    // the RTC/CMOS through F400-F47F. Floppy and IDE management, served by
+    // MiSTer's Main, are not used on this board.
     wire [15:0] at_mgmt_din;
-    wire [15:0] at_mgmt_dout = 16'h0000;
-    wire [15:0] at_mgmt_address = 16'h0000;
+    wire [15:0] at_mgmt_dout;
+    wire [15:0] at_mgmt_address;
     wire        at_mgmt_read = 1'b0;
-    wire        at_mgmt_write = 1'b0;
+    wire        at_mgmt_write;
+    wire        cmos_busy;
+`ifndef ZXTRES_CMOS_QUIET_CYCLES
+`define ZXTRES_CMOS_QUIET_CYCLES 50_000_000
+`endif
+    /* verilator lint_off PINCONNECTEMPTY */
+    zxtres_cmos_store #(.QUIET_CYCLES(`ZXTRES_CMOS_QUIET_CYCLES)) u_cmos_store (
+        .clk(CLK_50M), .reset(RESET),
+        .img_mounted(img_mounted[2]), .img_size(img_size),
+        .sd_rd(cmos_sd_rd), .sd_wr(cmos_sd_wr), .sd_ack(sd_ack_x[2]),
+        .sd_buff_addr(sd_buff_addr), .sd_dout(sd_dout), .sd_dout_strobe(sd_dout_strobe),
+        .sd_din(cmos_sd_din),
+        .mgmt_address(at_mgmt_address), .mgmt_writedata(at_mgmt_dout),
+        .mgmt_write(at_mgmt_write), .mgmt_readdata(at_mgmt_din),
+        .busy(cmos_busy), .restored(), .save_count()
+    );
+    /* verilator lint_on PINCONNECTEMPTY */
     wire [1:0]  at_floppy_present;
     wire [1:0]  at_floppy_request;
     wire [2:0]  at_ide_request;
@@ -319,7 +350,7 @@ HOLDS = r'''
     // No boot splash and no HPS info notices on this board.
     wire at_splashscreen = 1'b0;
     wire at_splash_boot_hold = 1'b0;
-    wire at_bios_hold = 1'b0;
+    wire at_bios_hold = cmos_busy;     // CMOS being restored from the card
 
     always_ff @(posedge CLK_50M)
         at_machine_reset <= at_boot_reset | at_splash_boot_hold |

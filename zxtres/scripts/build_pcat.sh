@@ -91,7 +91,7 @@ if [[ $target == pcat ]]; then
   mapfile -t include_dirs < <(python3 zxtres/scripts/pcat_sources.py includes | tr -d '\r')
   vhdl+=("${machine_vhdl[@]}")
   sv+=(sys/at_cdc_fifo.sv "${machine_sv[@]}"
-       zxtres/rtl/zxtres_dpram.sv zxtres/rtl/zxtres_ps2_key.sv
+       zxtres/rtl/zxtres_dpram.sv zxtres/rtl/zxtres_ps2_key.sv zxtres/rtl/zxtres_cmos_store.sv
        zxtres/rtl/pcat286_zxtres_guest.sv zxtres/rtl/zxtres_pcat_top.sv)
   # Every SystemVerilog file the sources may `include, by directory.
   for directory in "${include_dirs[@]}"; do

@@ -15,8 +15,12 @@
 
 #undef CONFIG_CD
 
-/* Floppy images: not yet (see zxtres/PORT.md). */
-#undef CONFIG_DISKIMG
+/* Block devices for the core (user_io sd_*): unit 2 is the CMOS file,
+   PCAT286.CMS; units 0 and 1 are kept for the floppy images (not yet, see
+   zxtres/PORT.md). With CONFIG_IDE as well, overrides.c provides
+   loadimage(). */
+#define CONFIG_DISKIMG
+#define CONFIG_DISKIMG_UNITS 3
 
 /* Hard disks: MiST IDE emulation from VHD files, two units (0-0, 0-1). */
 #define CONFIG_IDE

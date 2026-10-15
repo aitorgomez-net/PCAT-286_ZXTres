@@ -335,7 +335,184 @@ module zxtres_pcat_bios_tb;
         dump_screen("setup");
         set_osd(1);
         shot("setup_osd");
+        if ($test$plusargs("CMOS_TEST")) cmos_test();
         $display("ZXTRES_PCAT_BIOS_SIM_END");
         $finish;
     end
+
+    // ------------------------------------------------------------------
+    // +TRACE_CMOS: the CMOS store's state changes, block-device handshake
+    // and, every 50 ms, its quiet counter. +STOP_MS=<ms> ends the run.
+    logic [2:0] cmos_state_q = '1;
+    logic       cmos_rd_q = 0, cmos_wr_q = 0, cmos_ack_q = 0;
+    bit         trace_cmos = 0;
+    initial trace_cmos = $test$plusargs("TRACE_CMOS");
+    always @(posedge clock_50) if (trace_cmos) begin
+        cmos_state_q <= dut.guest.u_cmos_store.state_q;
+        cmos_rd_q <= dut.guest.cmos_sd_rd;
+        cmos_wr_q <= dut.guest.cmos_sd_wr;
+        cmos_ack_q <= dut.guest.sd_ack_x[2];
+        if (dut.guest.img_mounted != 3'b000)
+            $display("[%0t] cmos: img_mounted %b size %0d", $time, dut.guest.img_mounted, dut.guest.img_size);
+        if (cmos_state_q != dut.guest.u_cmos_store.state_q)
+            $display("[%0t] cmos: state %0d -> %0d (signature %0d, restored %0d, saves %0d)", $time,
+                     cmos_state_q, dut.guest.u_cmos_store.state_q, dut.guest.u_cmos_store.signature_ok_q,
+                     dut.guest.u_cmos_store.restored, dut.guest.u_cmos_store.save_count);
+        if (cmos_rd_q != dut.guest.cmos_sd_rd || cmos_wr_q != dut.guest.cmos_sd_wr ||
+            cmos_ack_q != dut.guest.sd_ack_x[2])
+            $display("[%0t] cmos: sd_rd %b sd_wr %b ack %b", $time, dut.guest.cmos_sd_rd,
+                     dut.guest.cmos_sd_wr, dut.guest.sd_ack_x[2]);
+    end
+    initial begin
+        longint stop_ms;
+        if ($value$plusargs("STOP_MS=%d", stop_ms)) begin
+            #(stop_ms * 1000000);
+            $display("[%0t] STOP_MS reached", $time);
+            $finish;
+        end
+    end
+    initial if ($test$plusargs("TRACE_CMOS")) forever begin
+        #50ms;
+        $display("[%0t] cmos: state %0d quiet %0d hash %h/%h saves %0d", $time,
+                 dut.guest.u_cmos_store.state_q, dut.guest.u_cmos_store.quiet_q,
+                 dut.guest.u_cmos_store.scan_hash_q, dut.guest.u_cmos_store.last_hash_q,
+                 dut.guest.u_cmos_store.save_count);
+        $fflush();
+    end
+
+    // +CMOS_TEST: after the setup frames, record the setup (F10, and Y if
+    // the BIOS asks), wait for the CMOS store to write PCAT286.CMS, then
+    // emulate a power cycle: the RTC's CMOS goes back to its state when the
+    // machine first started, the file is mounted again, and the BIOS must
+    // boot without reporting a corrupt CMOS.
+    logic [7:0]  rtc_power_on [16:128];
+    logic [15:0] rtc_power_on_sum;
+    initial begin
+        int index;
+        wait (dut.guest.main_rom_loaded === 1'b1);
+        wait (dut.guest.at_machine_reset === 1'b0);
+        index = 16;
+        while (index < 128) begin
+            rtc_power_on[index] = dut.guest.u_at_machine.u_devices.u_rtc.cmos_q[index];
+            index = index + 1;
+        end
+        rtc_power_on_sum = dut.guest.u_at_machine.u_devices.u_rtc.checksum_q;
+    end
+
+    task automatic cmos_test;
+        int saves, index, waited;
+        int unsigned sector;
+        bit signed_ok, corrupt, booted, in_sync;
+        string signature = "PCATCMOS";
+
+        saves = int'(dut.guest.u_cmos_store.save_count);
+        set_osd(0);
+        key(16'h0009);                                   // F10: record and exit
+        #300ms;
+        dump_screen("after F10");
+        if (screen_has("Y/N")) begin
+            key(16'h0035);                               // Y
+            #300ms;
+            dump_screen("after Y");
+        end
+        // The file must end up signed and equal to the RTC's 10h-7Fh. MR
+        // BIOS already writes its defaults during the POST that reports the
+        // corrupt CMOS, so F10 without changes need not cause another save.
+        waited = 0;
+        in_sync = 0;
+        while (waited < 3000 && !in_sync) begin
+            #1ms;
+            waited = waited + 1;
+            if (dut.guest.u_cmos_store.save_count != 16'd0 && dut.guest.u_cmos_store.state_q == 3'd4) begin
+                sector = u_sd.write_address;
+                in_sync = cmos_file_matches(sector);
+            end
+        end
+        if (!in_sync) begin
+            $display("CMOS_TEST_FAIL: PCAT286.CMS does not match the CMOS (saves %0d)",
+                     dut.guest.u_cmos_store.save_count);
+            return;
+        end
+        $display("[%0t] PCAT286.CMS matches the CMOS (saves %0d, %0d after F10) at card byte %0h",
+                 $time, dut.guest.u_cmos_store.save_count,
+                 int'(dut.guest.u_cmos_store.save_count) - saves, sector);
+        signed_ok = 1;
+        index = 0;
+        while (index < 8) begin
+            if (u_sd.read_byte(sector + 128 + index) != signature[index]) signed_ok = 0;
+            index = index + 1;
+        end
+        $display("  signature %s, CMOS 10h-1Fh:%s", signed_ok ? "ok" : "MISSING", cmos_file_row(sector, 16));
+        if (!signed_ok) begin
+            $display("CMOS_TEST_FAIL: PCAT286.CMS is not signed");
+            return;
+        end
+        #500ms;
+        $display("[%0t] saves so far: %0d", $time, dut.guest.u_cmos_store.save_count);
+
+        // Power cycle: the RTC as at power-on, then the card mounted again.
+        index = 16;
+        while (index < 128) begin
+            dut.guest.u_at_machine.u_devices.u_rtc.cmos_q[index] = rtc_power_on[index];
+            index = index + 1;
+        end
+        dut.guest.u_at_machine.u_devices.u_rtc.checksum_q = rtc_power_on_sum;
+        index = 0;
+        while (index < 32768) begin
+            text_shadow[index] = 8'h00;
+            index = index + 1;
+        end
+        force dut.guest.img_mounted = 3'b100;
+        @(posedge clock_50);
+        @(posedge clock_50);
+        release dut.guest.img_mounted;
+        wait (dut.guest.at_machine_reset === 1'b1);
+        wait (dut.guest.at_machine_reset === 1'b0);
+        $display("[%0t] machine restarted, CMOS restored: %0d", $time, dut.guest.u_cmos_store.restored);
+        $fflush();
+
+        corrupt = 0;
+        booted = 0;
+        waited = 0;
+        while (waited < 8000 && !corrupt && !booted) begin
+            #1ms;
+            waited = waited + 1;
+            corrupt = screen_has("Corrupt");
+            booted = screen_has("Boot") || screen_has("Diskette") || screen_has("INT18");
+        end
+        shot("after_restore");
+        dump_screen("after restore");
+        if (dut.guest.u_cmos_store.restored && booted && !corrupt)
+            $display("CMOS_TEST_PASS");
+        else
+            $display("CMOS_TEST_FAIL: restored=%0d booted=%0d corrupt=%0d",
+                     dut.guest.u_cmos_store.restored, booted, corrupt);
+    endtask
+
+    // 10h-7Fh of the file against the RTC (2Eh/2Fh are its checksum register).
+    function automatic bit cmos_file_matches(int unsigned sector);
+        int index;
+        logic [7:0] rtc_byte;
+        index = 16;
+        while (index < 128) begin
+            if (index == 'h2E) rtc_byte = dut.guest.u_at_machine.u_devices.u_rtc.checksum_q[15:8];
+            else if (index == 'h2F) rtc_byte = dut.guest.u_at_machine.u_devices.u_rtc.checksum_q[7:0];
+            else rtc_byte = dut.guest.u_at_machine.u_devices.u_rtc.cmos_q[index];
+            if (u_sd.read_byte(sector + index) != rtc_byte) return 0;
+            index = index + 1;
+        end
+        return 1;
+    endfunction
+
+    function automatic string cmos_file_row(int unsigned sector, int first);
+        string row;
+        int index;
+        row = "";
+        index = first;
+        while (index < first + 16) begin
+            row = {row, $sformatf(" %02h", u_sd.read_byte(sector + index))};
+            index = index + 1;
+        end
+        return row;
+    endfunction
 endmodule
