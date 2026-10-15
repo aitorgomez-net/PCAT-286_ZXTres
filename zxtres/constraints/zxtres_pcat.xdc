@@ -191,7 +191,10 @@ create_generated_clock -name spiclk -source [get_ports CLOCK_50] -divide_by 4   
 
 # The MiST modules, at_cdc_snapshot and the dual-clock text memory carry
 # every crossing between these clocks.
-set_clock_groups -asynchronous     -group [get_clocks clk50]     -group [get_clocks spiclk]     -group [get_clocks -of_objects [get_pins guest/u_mmcm/CLKOUT0]]     -group [get_clocks -of_objects [get_pins guest/u_mmcm/CLKOUT1]]
+# The two video clocks come from one MMCM (u_mmcm in the skeleton guest,
+# u_video_mmcm in the PC/AT guest) and stay synchronous to each other.
+set video_clocks [get_clocks -of_objects [get_pins -hierarchical -filter {NAME =~ guest/u_*mmcm/CLKOUT*}]]
+set_clock_groups -asynchronous -group [get_clocks clk50] -group [get_clocks spiclk] -group $video_clocks
 
 set_false_path -to [get_ports {VGA_* LED SD_CS SD_SCK SD_MOSI PS2_* JOY_CLK JOY_LOAD JOY_SEL AUDIO_* I2S_*}]
 set_false_path -from [get_ports {SD_MISO PS2_* JOY_DATA}]

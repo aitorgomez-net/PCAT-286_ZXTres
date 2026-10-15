@@ -584,6 +584,44 @@ module ega_vram (
         plane3_ram.width_byteena_a = 1,
         plane3_ram.width_byteena_b = 1,
         plane3_ram.wrcontrol_wraddress_reg_b = "CLOCK1";
+`elsif PCAT_EGA_VRAM_TWO_PORT
+    // The altsyncram port arrangement above in portable form, for other
+    // vendors' tools: one CPU read/write port and the CRT read port below,
+    // so each plane maps to a single true dual-port block RAM instead of a
+    // copy per read port. A write owns the CPU port; a read requested in the
+    // same cycle keeps the previous data, as rden_a does above.
+    wire [EGA_PLANE_ADDR_WIDTH-1:0] plane0_port_addr = write_plane0_commit ? cpu_plane_addr_qw : cpu_plane_addr;
+    wire [EGA_PLANE_ADDR_WIDTH-1:0] plane1_port_addr = write_plane1_commit ? cpu_plane_addr_qw : cpu_plane_addr;
+    wire [EGA_PLANE_ADDR_WIDTH-1:0] plane2_port_addr = write_plane2_commit ? cpu_plane_addr_qw : cpu_plane_addr;
+    wire [EGA_PLANE_ADDR_WIDTH-1:0] plane3_port_addr = write_plane3_commit ? cpu_plane_addr_qw : cpu_plane_addr;
+
+    always @(posedge clk) begin
+        if (write_plane0_commit)
+            plane0[plane0_port_addr] <= cpu_plane0_new;
+        else if (cpu_access)
+            cpu_plane0_q <= plane0[plane0_port_addr];
+    end
+
+    always @(posedge clk) begin
+        if (write_plane1_commit)
+            plane1[plane1_port_addr] <= cpu_plane1_new;
+        else if (cpu_access)
+            cpu_plane1_q <= plane1[plane1_port_addr];
+    end
+
+    always @(posedge clk) begin
+        if (write_plane2_commit)
+            plane2[plane2_port_addr] <= cpu_plane2_new;
+        else if (cpu_access)
+            cpu_plane2_q <= plane2[plane2_port_addr];
+    end
+
+    always @(posedge clk) begin
+        if (write_plane3_commit)
+            plane3[plane3_port_addr] <= cpu_plane3_new;
+        else if (cpu_access)
+            cpu_plane3_q <= plane3[plane3_port_addr];
+    end
 `else
     always @(posedge clk) begin
         if (cpu_access)
