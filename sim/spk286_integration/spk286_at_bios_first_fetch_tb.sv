@@ -119,6 +119,12 @@ module spk286_at_bios_first_fetch_tb #(
 
     logic execute_enable = 1'b1;
     logic cpu_boot_reset = 1;
+    // +SPLASH shows the boot splash while the CPU is held, as the top does,
+    // and checks that the machine and video hand over cleanly when it ends.
+    logic splash_tb = 1'b0;
+    logic splash_released = 1'b0;
+    integer splash_release_cycles = 0;
+    logic splash_handoff_done = 1'b0;
     logic machine_boot_reset = 1;
     wire counter_clock;
     wire normal_counter_clock;
@@ -443,6 +449,29 @@ module spk286_at_bios_first_fetch_tb #(
     always @(posedge cpu_reset_request)
         cpu_reset_pulses = cpu_reset_pulses + 1;
     integer fetch_returns=0, cpu_fetch_returns=0;
+`define AT_TB_VIDEO dut.u_devices.u_storage_video.u_video
+    // After the splash the EGA raster must take the connector back, the A000
+    // aperture must return to planar VRAM, and the boot must not touch the
+    // packed framebuffer that holds the picture.
+    always @(posedge clk) begin
+        if (splash_released) begin
+            splash_release_cycles <= splash_release_cycles + 1;
+            if (`AT_TB_VIDEO.vga_framebuffer_cpu_written)
+                $fatal(1,"SPLASH framebuffer written during the boot");
+            if (splash_release_cycles == 4000) begin
+                if (`AT_TB_VIDEO.vga_mode13_active_video)
+                    $fatal(1,"SPLASH raster still owns the connector after the hold");
+                if (`AT_TB_VIDEO.vga_packed_memory_active)
+                    $fatal(1,"SPLASH left A000 routed to the packed framebuffer");
+                if (`AT_TB_VIDEO.u_ega.vga_splash_active)
+                    $fatal(1,"SPLASH still active after the hold");
+                $display("AT_SPLASH_HANDOFF_PASS cycles=%0d cpu_fetches=%0d",
+                         splash_release_cycles, cpu_fetch_returns);
+                splash_handoff_done <= 1'b1;
+            end
+        end
+    end
+
     logic saw_opcode=0;
     logic [23:0] captured_word_address;
     wire [23:0] cs_base;
@@ -1103,7 +1132,7 @@ module spk286_at_bios_first_fetch_tb #(
         .clk(clk), .clk_cpu(clk_cpu), .uart1_rx(1'b1),
         .cpu_sample_edge(CPU_DIV2_TEST ? ~clk_cpu_div : 1'b1),
         .reset(reset | machine_boot_reset), .video_reset(reset | machine_boot_reset),
-        .cpu_reset(reset | cpu_boot_reset), .clk_video(clk_video), .splashscreen(1'b0),
+        .cpu_reset(reset | cpu_boot_reset), .clk_video(clk_video), .splashscreen(splash_tb),
         .ega_monitor_profile(2'b00),
         .installed_ram_size_osd(installed_ram_size_osd),
         .execute_enable(execute_enable),
@@ -1241,11 +1270,29 @@ module spk286_at_bios_first_fetch_tb #(
             join_none
         end
         // Match the top: devices run while the splash still holds the CPU.
+        if ($test$plusargs("SPLASH")) begin
+            splash_tb = 1'b1;
+            // Let the splash own the connector for a complete frame of the
+            // mode 13h raster before the hold ends.
+            wait (`AT_TB_VIDEO.u_ega.vga_splash_active);
+            @(posedge `AT_TB_VIDEO.u_ega.vga_renderer.vblank);
+            @(posedge `AT_TB_VIDEO.u_ega.vga_renderer.vblank);
+            if (!`AT_TB_VIDEO.vga_mode13_active_video)
+                $fatal(1,"SPLASH raster does not own the connector");
+            if (`AT_TB_VIDEO.vga_framebuffer_cpu_written)
+                $fatal(1,"SPLASH picture overwritten before the CPU ran");
+            $display("AT_SPLASH_VISIBLE_PASS image_valid=%b",
+                     `AT_TB_VIDEO.splash_image_video_sync2_q);
+        end
         repeat (1024) begin
             @(negedge clk);
             if (cpu_fault || protocol_error)
                 $fatal(1,"fault during CPU splash hold bridge=%b pic=%b pit=%b dma=%b devices=%b",dut.bridge_protocol_error,dut.pic_protocol_error,dut.pit_protocol_error,dut.dma_protocol_error,dut.devices_protocol_error);
         end
+        // The splash and the CPU hold end on the same edge, as boot_hold
+        // follows splash_active in spk286_at_splash_control.
+        if (splash_tb) splash_released = 1'b1;
+        splash_tb = 1'b0;
         cpu_boot_reset=0;
         for(cycles=0;cycles<max_cpu_cycles;cycles=cycles+1) begin
             @(negedge clk);
@@ -1716,7 +1763,7 @@ module spk286_at_bios_first_fetch_tb #(
             if(landmark_case==0 && !warm_reset_test &&
                !$test$plusargs("FULL_BOOT") &&
                fetch_returns>=32 && cpu_fetch_returns>=16 && saw_opcode &&
-               saw_low_rom_fetch) begin
+               saw_low_rom_fetch && (!splash_released || splash_handoff_done)) begin
                 $display("AT_BIOS_FIRST_FETCH_PASS fetches=%0d cpu_responses=%0d opcode=%02h cycles=%0d",fetch_returns,cpu_fetch_returns,rom[16'hfff0],cycles);
                 $finish;
             end

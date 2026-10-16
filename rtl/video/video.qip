@@ -6,7 +6,7 @@ set_global_assignment -name VERILOG_FILE [file join $::quartus(qip_path) ega_seq
 set_global_assignment -name VERILOG_FILE [file join $::quartus(qip_path) ega_attrib_ctrl.v ]
 set_global_assignment -name VERILOG_FILE [file join $::quartus(qip_path) ega_pixel.v ]
 set_global_assignment -name VERILOG_FILE [file join $::quartus(qip_path) ega_text.v ]
-set_global_assignment -name VERILOG_FILE [file join $::quartus(qip_path) ega_splash_renderer.v ]
+set_global_assignment -name VERILOG_FILE [file join $::quartus(qip_path) vga_splash_palette.v ]
 set_global_assignment -name VERILOG_FILE [file join $::quartus(qip_path) ega_monitor_profile_latch.v ]
 set_global_assignment -name VERILOG_FILE [file join $::quartus(qip_path) ega_switch_sense.v ]
 set_global_assignment -name VERILOG_FILE [file join $::quartus(qip_path) ega_vgaport.v ]

@@ -29,9 +29,18 @@ The result is `output_files/PCAT-286.rbf`. The source manifests are
 only this checkout, including the vendored CPU and generated microcode.
 
 [config.tcl](config.tcl) enables Sound Blaster, OPL2, C/MS, Tandy audio and
-MIDI. The optional graphical splash is controlled by `SPK286_AT_BOOT_SPLASH`,
-which is commented out in the supplied configuration. Required-ROM detection
-and the preboot video raster remain active without that artwork.
+MIDI. The graphical boot splash is controlled by `SPK286_AT_BOOT_SPLASH`,
+which the supplied configuration enables; comment it out to omit the splash
+and its OSD option. Required-ROM detection and the preboot video raster remain
+active without that artwork.
+
+The splash is a 320x200, 256-colour picture drawn by the VGA mode 13h raster,
+at the Native or 15 kHz rate the OSD selects for mode 13h. Its pixels are
+preloaded into the mode 13h framebuffer and its colours sit in a small palette
+table, so it needs no ROM of its own. Edit
+[SW/splash_vga_320x200.png](SW/splash_vga_320x200.png) (an indexed PNG) and
+run `SW/make_vga_splash_rom.py` (or its `.ps1` equivalent) to regenerate
+`rtl/video/splash_vga_320x200.hex` and `rtl/video/splash_vga_palette.hex`.
 
 1. Copy the built RBF to the MiSTer SD card and load it.
 2. Open the OSD with **Win + F12**. Select both ROMs under **System & BIOS**:
@@ -544,7 +553,7 @@ framework contributions, UM6845R video support, Jotego audio cores and ao486
 Sound Blaster DSP work by Aleksander Osman and Alexey Melnikov. EGA and the
 bounded VGA extension were developed using 86Box video behaviour as a
 reference. Earlier PCXT video work included TubeTimeUS/schlae's Graphics
-Gremlin. Splash artwork is by [@mills32](https://github.com/mills32).
+Gremlin.
 
 The inherited root [LICENSE](LICENSE) is GNU GPL version 3. Component-specific
 licenses, copyright headers and redistribution notices remain authoritative

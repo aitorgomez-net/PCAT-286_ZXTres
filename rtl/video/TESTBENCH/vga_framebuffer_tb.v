@@ -54,11 +54,13 @@ module vga_framebuffer_tb;
         .cpu_addr(cpu_addr), .cpu_din(cpu_din),
         .cpu_read(cpu_read), .cpu_write(cpu_write),
         .cpu_dout(cpu_dout), .cpu_ready(cpu_ready),
+        .cpu_written(cpu_written),
         .clk_video(clk_video), .video_addr(video_addr),
         .video_read_en(video_read_en),
         .video_pixel(video_pixel), .video_data_valid(video_data_valid)
     );
 
+    wire        cpu_written;
     integer errors = 0;
 
     initial begin
@@ -142,8 +144,20 @@ module vga_framebuffer_tb;
             errors = errors + 1;
         end
 
+        // The splash relies on this flag: low from configuration through any
+        // reset and CPU reads, high from the first CPU write onwards.
+        cpu_load(16'h0000, got);
+        if (cpu_written !== 1'b0) begin
+            $display("FAIL cpu_written is %b before any CPU write", cpu_written);
+            errors = errors + 1;
+        end
+
         // Written by the CPU, read back by the CPU.
         for (i = 0; i < 6; i = i + 1) cpu_store(probe[i], value[i]);
+        if (cpu_written !== 1'b1) begin
+            $display("FAIL cpu_written is %b after CPU writes", cpu_written);
+            errors = errors + 1;
+        end
         for (i = 0; i < 6; i = i + 1) begin
             cpu_load(probe[i], got);
             check_byte("cpu read back", probe[i], got, value[i]);

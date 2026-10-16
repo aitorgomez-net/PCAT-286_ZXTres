@@ -74,6 +74,17 @@ module spk286_at_video_adapter (
         end
     end
 
+    // The splash picture lives in the packed VGA framebuffer, preloaded at
+    // configuration. Once software writes there it is gone until the FPGA is
+    // configured again, so a later splash interval (a BIOS reloaded from the
+    // OSD) stays black instead of showing whatever the program left.
+`ifdef SPK286_AT_BOOT_SPLASH
+    localparam VGA_FRAMEBUFFER_INIT = "splash_vga_320x200.hex";
+`else
+    localparam VGA_FRAMEBUFFER_INIT = "";
+`endif
+    wire vga_framebuffer_cpu_written;
+
     // P05: the splash lifetime is generated at 50 MHz, but selects raster
     // state in the video domain. Only a synchronized level may reach EGA.
     (* altera_attribute = "-name SYNCHRONIZER_IDENTIFICATION FORCED_IF_ASYNCHRONOUS" *)
@@ -85,6 +96,10 @@ module spk286_at_video_adapter (
     (* altera_attribute = "-name SYNCHRONIZER_IDENTIFICATION FORCED_IF_ASYNCHRONOUS" *)
     logic prebios_video_sync2_q;
     (* altera_attribute = "-name SYNCHRONIZER_IDENTIFICATION FORCED_IF_ASYNCHRONOUS" *)
+    logic splash_image_video_sync1_q;
+    (* altera_attribute = "-name SYNCHRONIZER_IDENTIFICATION FORCED_IF_ASYNCHRONOUS" *)
+    logic splash_image_video_sync2_q;
+    (* altera_attribute = "-name SYNCHRONIZER_IDENTIFICATION FORCED_IF_ASYNCHRONOUS" *)
     logic vga_mode13_native_video_sync1_q;
     (* altera_attribute = "-name SYNCHRONIZER_IDENTIFICATION FORCED_IF_ASYNCHRONOUS" *)
     logic vga_mode13_native_video_sync2_q;
@@ -94,6 +109,8 @@ module spk286_at_video_adapter (
             splash_video_sync2_q <= 1'b0;
             prebios_video_sync1_q <= 1'b0;
             prebios_video_sync2_q <= 1'b0;
+            splash_image_video_sync1_q <= 1'b0;
+            splash_image_video_sync2_q <= 1'b0;
             vga_mode13_native_video_sync1_q <= 1'b1;
             vga_mode13_native_video_sync2_q <= 1'b1;
         end else begin
@@ -101,6 +118,8 @@ module spk286_at_video_adapter (
             splash_video_sync2_q <= splash_video_sync1_q;
             prebios_video_sync1_q <= prebios_video;
             prebios_video_sync2_q <= prebios_video_sync1_q;
+            splash_image_video_sync1_q <= !vga_framebuffer_cpu_written;
+            splash_image_video_sync2_q <= splash_image_video_sync1_q;
             vga_mode13_native_video_sync1_q <= vga_mode13_native;
             vga_mode13_native_video_sync2_q <= vga_mode13_native_video_sync1_q;
         end
@@ -403,7 +422,8 @@ module spk286_at_video_adapter (
             vga_packed_memory_video_q <= 1'b0;
         else
             vga_packed_memory_video_q <= vga_mode13_active_video &&
-                                         !vga_planar_memory_active_video;
+                                         !vga_planar_memory_active_video &&
+                                         !splash_video_sync2_q;
     end
 
     always_ff @(posedge clk or posedge reset) begin
@@ -486,7 +506,9 @@ module spk286_at_video_adapter (
     );
 
 `ifndef PCAT_EGA_ONLY
-    vga_framebuffer u_vga_framebuffer (
+    // The boot splash picture is preloaded into the packed framebuffer and
+    // shown from there by the mode 13h raster while the CPU is held.
+    vga_framebuffer #(.INIT_FILE(VGA_FRAMEBUFFER_INIT)) u_vga_framebuffer (
         .clk_cpu            (clk),
         .reset_cpu          (reset),
         .cpu_addr           (memory_address_q),
@@ -497,6 +519,7 @@ module spk286_at_video_adapter (
                              vga_packed_memory_request),
         .cpu_dout           (vga_framebuffer_cpu_dout),
         .cpu_ready          (vga_framebuffer_cpu_ready),
+        .cpu_written        (vga_framebuffer_cpu_written),
         .clk_video          (clk_video),
         .video_addr         (vga_framebuffer_addr),
         .video_read_en      (vga_framebuffer_read_en),
@@ -506,6 +529,7 @@ module spk286_at_video_adapter (
 `else
     assign vga_framebuffer_cpu_dout = 8'h00;
     assign vga_framebuffer_cpu_ready = 1'b0;
+    assign vga_framebuffer_cpu_written = 1'b1;
     assign vga_framebuffer_pixel = 8'h00;
     assign vga_framebuffer_data_valid = 1'b0;
 `endif
@@ -696,6 +720,7 @@ module spk286_at_video_adapter (
         .ega_active_lines_out       (video_active_lines),
         .ega_vmode_toggle_out       (video_vmode_toggle),
         .splashscreen               (splash_video_sync2_q),
+        .splash_image_valid         (splash_image_video_sync2_q),
         .prebios_video              (prebios_video_sync2_q),
         .thin_font                  (1'b0),
         .scandouble_en              (1'b0),

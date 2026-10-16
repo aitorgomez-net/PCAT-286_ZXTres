@@ -160,6 +160,9 @@ if {[get_collection_size $debug_snapshot_source] &&
 # labelled reanalysis may lack this newly added stage.
 set at_require_new [expr {![info exists ::env(P05_REFERENCE_FIT)] || $::env(P05_REFERENCE_FIT) ne "1"}]
 at_sync splash $AT_CPU {*u_video|splash_video_sync1_q} [expr {$at_boot_splash_enabled && $at_require_new}]
+# Whether the splash picture preloaded into the mode 13h framebuffer is still
+# intact: a sticky CPU-domain level, sampled by a two-stage synchronizer.
+at_sync splash_image $AT_CPU {*u_video|splash_image_video_sync1_q} [expr {$at_boot_splash_enabled && $at_require_new}]
 
 # These registers asynchronously assert reset, then release on their local
 # clock. Cut only the async control pin, not their synchronous D paths.

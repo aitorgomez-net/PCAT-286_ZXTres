@@ -5,7 +5,7 @@
 # bridge and SDRAM service use the common 50 MHz clock, without an observer.
 # Keep this assignment to build the boot splash and expose its OSD toggle.
 # Remove or comment it out to omit the splash and its OSD option entirely.
-# set_global_assignment -name VERILOG_MACRO "SPK286_AT_BOOT_SPLASH"
+set_global_assignment -name VERILOG_MACRO "SPK286_AT_BOOT_SPLASH"
 # AT RAM lives in the HPS DDR3, reached through the DDRAM port it shares
 # with the framebuffer, so no SDRAM module is required. Comment this out to
 # keep the AT RAM on the MiSTer SDRAM module instead.

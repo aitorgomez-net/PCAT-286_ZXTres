@@ -5,7 +5,7 @@
 //============================================================================
 
 // PCAT_EGA_ONLY builds the EGA device for external simulation, excluding
-// the optional VGA renderers/DAC and the MiSTer splash ROM. Keep vga_enabled
+// the optional VGA renderers/DAC and the mode 13h boot splash. Keep vga_enabled
 // and splashscreen low when using this build. The normal FPGA build is unchanged.
 `default_nettype wire
 
@@ -86,6 +86,9 @@ module ega_top(
     // vertical blank.  MiSTer uses this to re-evaluate its video_mode mapping.
     output reg ega_vmode_toggle_out,
     input splashscreen,
+    // The splash picture is still intact in the mode 13h framebuffer. Low once
+    // software has written there; the splash interval then stays black.
+    input splash_image_valid,
     input prebios_video,
     input thin_font,
     input scandouble_en,
@@ -303,6 +306,11 @@ module ega_top(
     reg ega_video_active = 1'b0;
     reg ega_video_pending = 1'b0;
     reg ega_write_seen_since_vblank = 1'b0;
+    // The boot splash is shown through the packed mode 13h raster, reading a
+    // picture preloaded into its framebuffer. It owns the connector outright:
+    // no other private VGA route may claim the raster while it is visible.
+    wire vga_splash_active;
+    reg  vga_splash_active_q = 1'b0;
     wire vga_mode13_active;
     wire vga_mode12_tweak_pending;
     wire vga_mode12_tweaked_active;
@@ -310,22 +318,30 @@ module ega_top(
     // raster (vga_planar16_bios_active) or the 640x480 mode 12h profile.
     wire vga_planar16_bios_active;
     wire vga_planar640_active;
-    wire vga_planar16_active = vga_planar16_bios_active | vga_planar640_active;
+    wire vga_planar16_active = (vga_planar16_bios_active | vga_planar640_active) &
+                               ~vga_splash_active;
     wire vga_256color_active = (vga_mode13_active & ~vga_planar640_active) |
-                               vga_mode12_tweaked_active;
+                               vga_mode12_tweaked_active | vga_splash_active;
     wire vga_private_active = vga_256color_active | vga_planar16_active;
     wire vga_mode13_packed_active;
-    wire vga_unchained256_active;
+    wire vga_unchained256_route;
     wire [2:0] vga_unchained_profile;
+    wire vga_unchained256_active = vga_unchained256_route & ~vga_splash_active;
     reg ega_vblank_q = 1'b0;
     wire ega_splash_active = ega_enabled & splashscreen;
+`ifndef PCAT_EGA_ONLY
+    assign vga_splash_active = ega_splash_active & splash_image_valid;
+`else
+    assign vga_splash_active = 1'b0;
+`endif
     // During a BIOS hold, keep the splash's power-on CRTC geometry active for
     // video detection, but output black when no splash image is selected.
+    // A splash whose picture has been overwritten is black for the same time.
     wire ega_prebios_active = ega_enabled & prebios_video;
-    wire ega_prebios_black = ega_prebios_active & !ega_splash_active;
-    // The boot artwork is authored for the normal EGA connector palette.
+    wire ega_prebios_black = (ega_prebios_active & !ega_splash_active) |
+                             (ega_splash_active & !vga_splash_active);
     // Monitor switches are not applied until the BIOS starts, so keep the
-    // splash on the 5154/ECD profile even when CGA or MDA is pending.
+    // splash interval on the 5154/ECD profile even when CGA or MDA is pending.
     wire [1:0] ega_monitor_profile_effective = ega_splash_active
                                               ? 2'b00 : ega_monitor_profile;
     wire ega_display_sel = ega_enabled &
@@ -421,14 +437,12 @@ module ega_top(
     wire ega_graphics_pixel_valid;
     wire [3:0] ega_text_plane_index;
     wire ega_text_pixel_valid;
-    wire [3:0] ega_splash_pixel_index;
-    wire ega_splash_pixel_valid;
     wire ega_graphics_mode_active = ega_splash_active ? 1'b0 : ega_graphics_mode;
     wire ega_dot_clock_div2_active = ega_splash_active ? 1'b0 : ega_dot_clock_div2;
     wire ega_char_9dot_active = ega_splash_active ? 1'b0 : ega_char_9dot;
-    wire [3:0] ega_plane_index = ega_splash_active ? ega_splash_pixel_index :
+    wire [3:0] ega_plane_index = ega_splash_active ? 4'h0 :
                                  ega_graphics_mode_active ? ega_graphics_plane_index : ega_text_plane_index;
-    wire ega_pixel_valid = ega_splash_active ? ega_splash_pixel_valid :
+    wire ega_pixel_valid = ega_splash_active ? 1'b0 :
                            ega_graphics_mode_active ? ega_graphics_pixel_valid : ega_text_pixel_valid;
     wire [1:0] ega_render_mode_debug_unused;
     wire ega_hres_mode_int = ~ega_dot_clock_div2_active;
@@ -672,13 +686,13 @@ module ega_top(
         .crtc_mode_control(ega_crtc_r17_debug),
         .packed_active    (vga_mode13_packed_active),
         .planar640_active (vga_planar640_active),
-        .unchained_active (vga_unchained256_active),
+        .unchained_active (vga_unchained256_route),
         .unchained_profile(vga_unchained_profile)
     );
 `else
     assign vga_mode13_packed_active = '0;
     assign vga_planar640_active = '0;
-    assign vga_unchained256_active = '0;
+    assign vga_unchained256_route = '0;
     assign vga_unchained_profile = '0;
 `endif
     assign vga_mode12_tweaked_active = vga_mode12_tweak_pending &
@@ -861,21 +875,9 @@ module ega_top(
         .pixel_valid(ega_text_pixel_valid)
     );
 
-`ifndef PCAT_EGA_ONLY
-    ega_splash_renderer ega_splash_renderer_inst (
-        .clk            (clk),
-        .reset          (reset),
-        .ce_pix         (ce_pix),
-        .enable         (ega_splash_active),
-        .display_enable (ega_display_enable_visible),
-        .scanline       (ega_scanline_addr),
-        .pixel_index    (ega_splash_pixel_index),
-        .pixel_valid    (ega_splash_pixel_valid)
-    );
-`else
-    assign ega_splash_pixel_index = '0;
-    assign ega_splash_pixel_valid = '0;
-`endif
+    // The splash does not draw through this pipeline: the mode 13h raster
+    // owns the connector while it is visible (vga_splash_active). The EGA CRTC
+    // keeps its power-on geometry underneath with nothing fetched or rendered.
 
     wire [15:0] vga_planar16_vram_addr;
     wire        vga_planar16_vram_read_en;
@@ -994,11 +996,30 @@ module ega_top(
                                    vga_unchained_pixel_toggle :
                                    vga_packed_pixel_toggle;
 
+    // The splash colours come from their own table, so the emulated DAC keeps
+    // the state the machine expects at power-on.
+    wire [5:0] vga_splash_red;
+    wire [5:0] vga_splash_green;
+    wire [5:0] vga_splash_blue;
+
+`ifndef PCAT_EGA_ONLY
+    vga_splash_palette vga_splash_palette_inst (
+        .index (vga_packed_dac_index),
+        .red   (vga_splash_red),
+        .green (vga_splash_green),
+        .blue  (vga_splash_blue)
+    );
+`else
+    assign vga_splash_red = '0;
+    assign vga_splash_green = '0;
+    assign vga_splash_blue = '0;
+`endif
+
 `ifndef PCAT_EGA_ONLY
     vga_mode13_renderer vga_renderer (
         .clock                  (clk),
         .reset                  (reset),
-        .enable                 (vga_mode13_packed_active),
+        .enable                 (vga_mode13_packed_active | vga_splash_active),
         .native_70hz            (vga_mode13_native),
         .crt_h_offset           (crt_h_offset),
         .crt_v_offset           (crt_v_offset),
@@ -1007,9 +1028,9 @@ module ega_top(
         .framebuffer_pixel      (vga_framebuffer_pixel),
         .framebuffer_data_valid (vga_framebuffer_data_valid),
         .dac_index              (vga_packed_dac_index),
-        .dac_red                (vga_dac_sample_red),
-        .dac_green              (vga_dac_sample_green),
-        .dac_blue               (vga_dac_sample_blue),
+        .dac_red                (vga_splash_active ? vga_splash_red   : vga_dac_sample_red),
+        .dac_green              (vga_splash_active ? vga_splash_green : vga_dac_sample_green),
+        .dac_blue               (vga_splash_active ? vga_splash_blue  : vga_dac_sample_blue),
         .red                    (vga_packed_red),
         .green                  (vga_packed_green),
         .blue                   (vga_packed_blue),
@@ -1280,6 +1301,7 @@ module ega_top(
             ega_cfg_toggle <= 1'b0;
             ega_vmode_toggle_out <= 1'b0;
             ega_vmode_pending <= 1'b0;
+            vga_splash_active_q <= 1'b0;
             ega_status_read_q <= 1'b0;
             ega_status_toggle <= 2'b00;
             ega_vblank_crtc_q <= 1'b0;
@@ -1348,6 +1370,11 @@ module ega_top(
                 endcase
             end
             if (vga_mode13_enter || vga_mode13_exit)
+                ega_vmode_pending <= 1'b1;
+            // Entering and leaving the splash changes the raster just as a
+            // mode set does, so let MiSTer re-evaluate its video mode.
+            vga_splash_active_q <= vga_splash_active;
+            if (vga_splash_active != vga_splash_active_q)
                 ega_vmode_pending <= 1'b1;
             if (ega_cfg_we)
                 ega_cfg_toggle <= ~ega_cfg_toggle;

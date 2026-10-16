@@ -87,18 +87,18 @@ cpu_div2_parameter=()
 if [[ "${AT_CPU_DIV2_TEST:-0}" == 1 ]]; then
   cpu_div2_parameter=(-GCPU_DIV2_TEST=1)
 fi
-printf '%s\n' "${performance_flags[@]}" -DSPK286_AT_SIM_MODEL "${ram_flags[@]}" \
+printf '%s\n' "${performance_flags[@]}" -DSPK286_AT_SIM_MODEL -DSPK286_AT_BOOT_SPLASH "${ram_flags[@]}" \
   "${cpu_div2_parameter[@]}" > "$build_dir/compiler-flags.txt"
 sha256sum "${sources[@]}" "${pic_sources[@]}" "$rom_path" \
   rtl/KFPC-XT/HDL/KF8253/HDL/KF8253_Definitions.svh \
   rtl/KFPC-XT/HDL/KF8259/HDL/KF8259_Common_Package.svh \
-  rtl/video/splash_ega_320x200.hex \
+  rtl/video/splash_vga_320x200.hex rtl/video/splash_vga_palette.hex \
   "$performance_config" rtl/spk286_integration/spk286_integration.qip \
   scripts/test_at_bios_first_fetch.sh scripts/test_at_code_buffer_warm_reset.sh \
   scripts/at_performance_flags.sh tests/firmware/code_buffer_reset_stress.asm \
   "$build_dir/compiler-flags.txt" > "$build_dir/compiled-sources.sha256"
 verilator -Irtl/KFPC-XT/HDL/KF8253/HDL --binary --timing --trace-fst --trace-depth 3 \
-  "${performance_flags[@]}" -DSPK286_AT_SIM_MODEL "${ram_flags[@]}" \
+  "${performance_flags[@]}" -DSPK286_AT_SIM_MODEL -DSPK286_AT_BOOT_SPLASH "${ram_flags[@]}" \
   --top-module spk286_at_bios_first_fetch_tb -Wno-fatal -j 4 \
   "${cpu_div2_parameter[@]}" \
   -Irtl/KFPC-XT/HDL/KF8259/HDL --Mdir "$build_dir/verilator-obj" -o first_fetch_vlt \
@@ -126,6 +126,18 @@ timeout 120s "$build_dir/verilator-obj/first_fetch_vlt" "+ROM=$rom_path" \
   +RAM16 | tee "$build_dir/ram16-profile.log"
 grep -q AT_RAM16_PROFILE_PASS "$build_dir/ram16-profile.log"
 grep -q AT_RAM16_BACKEND_ISOLATION_PASS "$build_dir/ram16-profile.log"
+
+# Boot through the splash as the top does: the mode 13h splash owns the
+# connector for a full frame while the CPU is held, then the CPU must fetch
+# the BIOS reset vector while the EGA raster and A000 aperture are restored.
+for rom in "$rom_path" "$root/SW/ROMs/xtsergey_mod_at.rom"; do
+  [[ -f "$rom" ]] || continue
+  log="$build_dir/splash-$(basename "$rom").log"
+  timeout 600s "$build_dir/verilator-obj/first_fetch_vlt" "+ROM=$rom" +SPLASH | tee "$log"
+  grep -q AT_SPLASH_VISIBLE_PASS "$log"
+  grep -q AT_SPLASH_HANDOFF_PASS "$log"
+  grep -q AT_BIOS_FIRST_FETCH_PASS "$log"
+done
 cd "$root"
 sha256sum --check "$build_dir/compiled-sources.sha256" > "$build_dir/sources-verified.log"
 echo AT_BIOS_FIRST_FETCH_TEST_PASS

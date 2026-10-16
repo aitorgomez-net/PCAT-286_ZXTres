@@ -4,7 +4,12 @@
 //
 //============================================================================
 
-module vga_framebuffer(
+module vga_framebuffer #(
+    // Configuration-time contents, one hex byte per line. The boot splash
+    // ships its picture here: it is displayed straight from this memory by
+    // the mode 13h raster before the CPU starts, so it costs no ROM of its own.
+    parameter INIT_FILE = ""
+) (
     input  wire        clk_cpu,
     input  wire        reset_cpu,
     input  wire [15:0] cpu_addr,
@@ -13,6 +18,10 @@ module vga_framebuffer(
     input  wire        cpu_write,
     output reg  [7:0]  cpu_dout = 8'h00,
     output reg         cpu_ready = 1'b0,
+    // Set by the first CPU write and cleared only by reconfiguring the FPGA,
+    // so it says whether the INIT_FILE contents are still intact. Deliberately
+    // not reset: a machine reset does not restore the picture either.
+    (* preserve *) output reg cpu_written = 1'b0,
 
     input  wire        clk_video,
     input  wire [15:0] video_addr,
@@ -37,6 +46,18 @@ module vga_framebuffer(
     // write a byte the raster is reading, and across two unrelated clocks
     // there is no defined answer to give it anyway.
     (* ramstyle = "M10K, no_rw_check" *) reg [7:0] mem [0:65535];
+
+    initial begin
+        if (INIT_FILE != "")
+            $readmemh(INIT_FILE, mem);
+    end
+
+    // Written as a feedback OR, not "if (cpu_write) cpu_written <= 1": with a
+    // constant D Quartus drops the power-up value and ties the flag to 1,
+    // which would declare the splash picture overwritten from the start.
+    always @(posedge clk_cpu) begin
+        cpu_written <= cpu_written | cpu_write;
+    end
 
     always @(posedge clk_cpu) begin
         if (cpu_write) begin
