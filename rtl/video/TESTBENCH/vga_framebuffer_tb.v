@@ -18,7 +18,7 @@
 //    * a byte the CPU writes is visible to the raster afterwards.
 //
 //  Read-during-write on one address is deliberately not tested: the ISA bus
-//  never asserts MEMR# and MEMW# together, so vga_a000_cpu_frontend cannot
+//  never asserts MEMR# and MEMW# together, so the AT video adapter cannot
 //  produce it, and the whole point is that the answer is now don't-care.
 //
 //============================================================================

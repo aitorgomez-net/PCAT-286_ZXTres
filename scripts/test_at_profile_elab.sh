@@ -116,7 +116,6 @@ SOURCE_FILES=(
   "$ROOT_DIR/rtl/common/jtframe_credits.v"
   "$ROOT_DIR/rtl/KFPC-XT/HDL/splash_f12_pause.sv"
   "$ROOT_DIR/rtl/common/tandy_pcjr_joy.sv"
-  "$ROOT_DIR/rtl/common/spk286_debug_min_overlay.sv"
   "$ROOT_DIR/sys/mt32pi.sv"
   "$ROOT_DIR/sys/at_cdc_snapshot.sv"
   "$ROOT_DIR/sim/spk286_integration/video_mixer_elab_stub.sv"

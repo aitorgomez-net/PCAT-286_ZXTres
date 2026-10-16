@@ -560,41 +560,6 @@ module emu_at
     wire        at_cpu_ready;
     wire        at_cpu_halted;
     wire        at_cpu_shutdown;
-    wire        at_debug_bridge_error;
-    wire        at_debug_control_error;
-    wire        at_debug_unsupported_opcode;
-    wire        at_debug_microcode_fault;
-    wire        at_debug_operand_blocked;
-    wire [7:0]  at_debug_opcode;
-    wire [15:0] at_debug_cs;
-    wire [15:0] at_debug_ip;
-    wire [15:0] at_debug_flags;
-    wire [127:0] at_debug_gpr;
-    wire        at_debug_instruction_retired;
-    wire        at_debug_fetch_blocked;
-    wire [11:0] at_debug_micro_pc;
-    wire [3:0]  at_debug_bus_state;
-    wire [7:0]  at_debug_biu_detail;
-    wire [7:0]  at_debug_last_post;
-    wire [31:0] at_debug_trace0;
-    wire [19:0] at_debug_address;
-    wire [7:0]  at_debug_data_out;
-    wire [7:0]  at_debug_data_in;
-    wire [2:0]  at_debug_status;
-    wire        at_debug_valid;
-    wire        at_debug_write;
-    wire        at_debug_io;
-    wire        at_debug_ready;
-    wire        at_debug_hold_request;
-    wire        at_debug_bridge_idle;
-    wire [3:0]  at_debug_bridge_state;
-    wire        at_debug_read_data_valid;
-    wire        at_debug_dma_bus_request;
-    wire        at_debug_refresh_request;
-    wire        at_debug_dma_grant;
-    wire        at_debug_refresh_grant;
-    wire        at_debug_intr;
-    wire [15:0] at_debug_irq_request;
     wire        at_speaker_active;
     wire        at_speaker_level;
     wire signed [15:0] at_opl2_sound;
@@ -1346,9 +1311,7 @@ module emu_at
     logic [7:0] at_video_g_out_q;
     logic [7:0] at_video_b_out_q;
     logic       at_video_hs_out_q;
-    logic       at_video_hb_out_q;
     logic       at_video_vs_out_q;
-    logic       at_video_vb_out_q;
     logic       at_video_de_out_q;
     logic       at_video_ce_out_q;
 
@@ -1722,9 +1685,7 @@ module emu_at
             at_video_g_out_q <= 8'h00;
             at_video_b_out_q <= 8'h00;
             at_video_hs_out_q <= 1'b0;
-            at_video_hb_out_q <= 1'b1;
             at_video_vs_out_q <= 1'b0;
-            at_video_vb_out_q <= 1'b1;
             at_video_de_out_q <= 1'b0;
             at_video_ce_out_q <= 1'b0;
         end else begin
@@ -1732,46 +1693,22 @@ module emu_at
             at_video_g_out_q <= at_video_mixer_g;
             at_video_b_out_q <= at_video_mixer_b;
             at_video_hs_out_q <= at_video_mixer_hs;
-            at_video_hb_out_q <= at_video_mix_hb;
             at_video_vs_out_q <= at_video_mixer_vs;
-            at_video_vb_out_q <= at_video_mix_vb;
             at_video_de_out_q <= at_video_mixer_de;
             at_video_ce_out_q <= at_video_mixer_ce;
         end
     end
 
-    wire        at_debug_hb_out;
-    wire        at_debug_vb_out;
-    wire [23:0] at_debug_rgb_out;
-
-
-    logic at_use_debug_q;
-    assign at_use_debug_q = 1'b0;
-    assign at_debug_hb_out = 1'b0;
-    assign at_debug_vb_out = 1'b0;
-    assign at_debug_rgb_out = 24'h000000;
-
-    wire at_video_fault = cpu_fault | machine_protocol_error | keyboard_event_overflow |
-                          memory_port_protocol_error |
-                          posted_buffer_error |
-                          sdram_owner_protocol_error |
-                          loader_protocol_error;
-
     assign CLK_VIDEO    = at_video_clk_57_ps;
     assign CE_PIXEL     = at_video_ce_out_q;
     assign VIDEO_ARX    = at_video_arx_q;
     assign VIDEO_ARY    = at_video_ary_q;
-    assign VGA_R        = at_use_debug_q ? at_debug_rgb_out[23:16] :
-                          at_video_r_out_q;
-    assign VGA_G        = at_use_debug_q ? at_debug_rgb_out[15:8] :
-                          at_video_g_out_q;
-    assign VGA_B        = at_use_debug_q ? at_debug_rgb_out[7:0] :
-                          at_video_b_out_q;
+    assign VGA_R        = at_video_r_out_q;
+    assign VGA_G        = at_video_g_out_q;
+    assign VGA_B        = at_video_b_out_q;
     assign VGA_HS       = at_video_hs_out_q;
     assign VGA_VS       = at_video_vs_out_q;
-    assign VGA_DE       = at_use_debug_q ?
-                          (~at_debug_hb_out & ~at_debug_vb_out) :
-                          at_video_de_out_q;
+    assign VGA_DE       = at_video_de_out_q;
     assign VGA_F1       = at_video_vga_f1_ps2;
     assign VGA_SL       = {at_video_scale_q == 2'd3,
                            at_video_scale_q == 2'd2};

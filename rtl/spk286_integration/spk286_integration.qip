@@ -51,7 +51,6 @@ set_global_assignment -name SYSTEMVERILOG_FILE "rtl/spk286_integration/spk286_at
 set_global_assignment -name SYSTEMVERILOG_FILE "rtl/spk286_integration/spk286_at_memory_decode.sv"
 set_global_assignment -name SYSTEMVERILOG_FILE "rtl/spk286_integration/spk286_at_arbiter.sv"
 set_global_assignment -name SYSTEMVERILOG_FILE "rtl/spk286_integration/spk286_at_pic.sv"
-set_global_assignment -name SYSTEMVERILOG_FILE "rtl/spk286_integration/spk286_at_nmi_gate.sv"
 set_global_assignment -name SYSTEMVERILOG_FILE "rtl/spk286_integration/spk286_at_dma.sv"
 set_global_assignment -name SYSTEMVERILOG_FILE "rtl/spk286_integration/spk286_at_refresh.sv"
 set_global_assignment -name SYSTEMVERILOG_FILE "rtl/spk286_integration/spk286_at_pit.sv"

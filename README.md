@@ -1,10 +1,14 @@
 # PCAT-286 for MiSTer FPGA
 
+![PCAT-286 boot splash](splash.jpg)
+
 PCAT-286 is an Intel 80286-compatible PC/AT implementation for MiSTer, using
 [SPK286](https://github.com/spark2k06/SPK286) and an EGA video subsystem.
 The repository builds one machine profile, `PCAT-286`, for the DE10-Nano's
-Cyclone V `5CSEBA6U23I7`. The AT RAM is the MiSTer SDRAM expansion, or with
-`PCAT286_RAM_DDR3` the DE10-Nano's own HPS DDR3, which needs no SDRAM module.
+Cyclone V `5CSEBA6U23I7`. The supplied configuration (`PCAT286_RAM_DDR3` in
+[config.tcl](config.tcl)) keeps the AT RAM in the DE10-Nano's own HPS DDR3, so
+no SDRAM module is needed; without that macro the AT RAM uses the MiSTer SDRAM
+expansion.
 
 The machine includes real and protected mode execution, a six-byte prefetch
 queue, 24-bit physical addressing, AT interrupt and DMA controllers, PIT,
@@ -63,14 +67,15 @@ A system ROM is loaded at `F0000h`; supply a 64 KiB image containing the reset
 entry at offset `FFF0h`. For BIOSes distributed as separate even/odd chips,
 prepare the interleaved CPU-visible image first. The EGA ROM starts at `C0000h`
 and must fit within 32 KiB. The loader rejects an oversized EGA image instead
-of allowing it to overwrite UMB RAM. XT BIOS/XTIDE image builders retained
-under `SW/ROMs/` are not instructions for preparing an AT BIOS.
+of allowing it to overwrite UMB RAM. System BIOS images are not supplied:
+use an AT BIOS such as MR BIOS.
 
 The CPU stays in reset while either required ROM is absent or being replaced.
 A visible notice identifies the missing ROM so the OSD remains usable; loading
 both releases the machine. The system BIOS invokes the EGA option ROM to
-initialize the video registers during POST. There is no separate XTIDE option
-ROM slot: the selected AT BIOS must support the IDE interface.
+initialize the video registers during POST. There is no separate disk option
+ROM slot: the selected AT BIOS must support the standard AT IDE interface at
+`1F0h`/`3F6h`.
 
 The original IBM EGA BIOS is not supplied. The existing helper
 [make_ega_bios_rom.py](SW/ROMs/EGA/make_ega_bios_rom.py) requires Python 3 and
@@ -385,10 +390,11 @@ of `1234h` to `0040:0072`; run the TSR again afterward.
 | `rtl/spk286_timing/` | Instruction scheduling and target handoff |
 | `vendor/spk286/` | Pinned CPU RTL, authoritative microcode, generators and CPU tests |
 | `rtl/video/` | EGA, bounded VGA extension and video testbenches |
-| `rtl/KFPC-XT/` | Retained reusable chipset and SDRAM components |
+| `rtl/KFPC-XT/` | Retained KF8259, KF8254 (KF8253) and KFSDRAM components |
 | `rtl/sound/`, `rtl/uart/`, `rtl/common/`, `sys/` | Audio, serial and MiSTer support |
 | `sim/`, `tests/`, `scripts/` | Directed simulations, firmware and verification entrypoints |
-| `SW/`, `hdd/` | DOS utilities, ROM preparation and boot examples |
+| `SW/`, `hdd/` | DOS utilities, EGA ROM preparation, splash artwork and boot examples |
+| `credits/` | Credits text (`msg`) and its `msg2hex` converter |
 
 Use Python 3.10+, Bash, Icarus Verilog, Verilator, make and a C++ build
 toolchain on Linux or WSL for the portable regression entrypoint. Machine

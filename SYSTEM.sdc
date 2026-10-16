@@ -116,45 +116,6 @@ at_mailbox ega_config_payload $AT_VIDEO {
     *u_video|u_vram|rotate_count_sync1[*]
 } 10.0
 
-# Optional diagnostic overlay.  Its source snapshot is frozen until the
-# request/acknowledge toggle has crossed both clock domains, so the payload is
-# a mailbox rather than a synchronous multi-cycle bus.  Constraining only the
-# two first synchronizer stages and the held payload avoids artificial hold
-# delay insertion across the wide observer without hiding any machine path.
-set debug_snapshot_source [at_regs debug_snapshot_source {
-    *u_at_debug_overlay|source_snapshot* *u_at_debug_overlay|source_sequence*
-} 0]
-set debug_snapshot_capture [at_regs debug_snapshot_capture {
-    *u_at_debug_overlay|video_snapshot* *u_at_debug_overlay|video_sequence*
-} 0]
-set debug_snapshot_request [at_regs debug_snapshot_request {
-    *u_at_debug_overlay|snapshot_request
-} 0]
-set debug_snapshot_request_meta [at_regs debug_snapshot_request_meta {
-    *u_at_debug_overlay|snapshot_request_src1
-} 0]
-set debug_snapshot_ack [at_regs debug_snapshot_ack {
-    *u_at_debug_overlay|snapshot_acknowledge
-} 0]
-set debug_snapshot_ack_meta [at_regs debug_snapshot_ack_meta {
-    *u_at_debug_overlay|snapshot_ack_video1
-} 0]
-if {[get_collection_size $debug_snapshot_request] &&
-    [get_collection_size $debug_snapshot_request_meta]} {
-    set_false_path -from $debug_snapshot_request -to $debug_snapshot_request_meta
-}
-if {[get_collection_size $debug_snapshot_ack] &&
-    [get_collection_size $debug_snapshot_ack_meta]} {
-    set_false_path -from $debug_snapshot_ack -to $debug_snapshot_ack_meta
-}
-if {[get_collection_size $debug_snapshot_source] &&
-    [get_collection_size $debug_snapshot_capture]} {
-    set_max_delay -from $debug_snapshot_source \
-                  -to $debug_snapshot_capture 20.0
-    set_false_path -hold -from $debug_snapshot_source \
-                             -to $debug_snapshot_capture
-}
-
 # The boot splash is optional at build time. When compiled in, a normal
 # candidate build must still fail if its synchronizer is absent. An explicitly
 # labelled reanalysis may lack this newly added stage.

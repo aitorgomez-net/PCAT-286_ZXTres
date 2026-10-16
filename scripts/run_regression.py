@@ -54,6 +54,7 @@ TESTS = [
     shell("dma-refresh", "devices", "test_a4_dma_refresh_pit"),
     shell("device-routing", "devices", "test_a5_at_devices"),
     shell("dma-registers", "devices", "test_at_dma_registers"),
+    shell("ems", "devices", "test_at_ems"),
     shell("keyboard", "devices", "test_at_keyboard"),
     shell("mouse", "devices", "test_at_mouse"),
     shell("rtc", "devices", "test_at_rtc_cmos"),

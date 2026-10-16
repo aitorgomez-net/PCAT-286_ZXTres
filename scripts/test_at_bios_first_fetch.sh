@@ -106,8 +106,6 @@ verilator -Irtl/KFPC-XT/HDL/KF8253/HDL --binary --timing --trace-fst --trace-dep
   >"$build_dir/verilator-build.log" 2>&1
 cd "$root/rtl/video" # Resolve the production splash ROM without warnings.
 for rom in "$rom_path" \
-  "$root/SW/ROMs/pcxt_xtsergey.rom" \
-  "$root/SW/ROMs/xtsergey_mod_at.rom" \
   "$root/SW/ROMs/test/Supersoft_Landmark_1.2.0_AT_5170_64K.BIN" \
   "$root/SW/ROMs/test/IBM_AT_5170_15NOV85_62X082x_64K.BIN"; do
   if [[ ! -f "$rom" ]]; then
@@ -130,14 +128,11 @@ grep -q AT_RAM16_BACKEND_ISOLATION_PASS "$build_dir/ram16-profile.log"
 # Boot through the splash as the top does: the mode 13h splash owns the
 # connector for a full frame while the CPU is held, then the CPU must fetch
 # the BIOS reset vector while the EGA raster and A000 aperture are restored.
-for rom in "$rom_path" "$root/SW/ROMs/xtsergey_mod_at.rom"; do
-  [[ -f "$rom" ]] || continue
-  log="$build_dir/splash-$(basename "$rom").log"
-  timeout 600s "$build_dir/verilator-obj/first_fetch_vlt" "+ROM=$rom" +SPLASH | tee "$log"
-  grep -q AT_SPLASH_VISIBLE_PASS "$log"
-  grep -q AT_SPLASH_HANDOFF_PASS "$log"
-  grep -q AT_BIOS_FIRST_FETCH_PASS "$log"
-done
+log="$build_dir/splash.log"
+timeout 600s "$build_dir/verilator-obj/first_fetch_vlt" "+ROM=$rom_path" +SPLASH | tee "$log"
+grep -q AT_SPLASH_VISIBLE_PASS "$log"
+grep -q AT_SPLASH_HANDOFF_PASS "$log"
+grep -q AT_BIOS_FIRST_FETCH_PASS "$log"
 
 # F12 pause: the running CPU goes on HOLD, issues no bus cycle until the
 # pause ends, then keeps executing the BIOS.

@@ -24,10 +24,6 @@ pic_model_sources=(
   sim/spk286_integration/spk286_at_pic_model.sv
   sim/spk286_integration/spk286_at_pic_tb.sv
 )
-nmi_sources=(
-  rtl/spk286_integration/spk286_at_nmi_gate.sv
-  sim/spk286_integration/spk286_at_nmi_gate_tb.sv
-)
 
 # Keep a production-wrapper compile check in Icarus even though its runtime
 # is covered below by Verilator.  The imported KF8259 cascade contains a
@@ -42,22 +38,21 @@ iverilog -g2012 -DA3_PIC_MODEL -s spk286_at_pic_tb \
   >"$build_dir/pic-iverilog-build.log" 2>&1
 vvp "$build_dir/pic_iv" | tee "$build_dir/pic-iverilog-run.log"
 
-iverilog -g2012 -s spk286_at_nmi_gate_tb \
-  -o "$build_dir/nmi_iv" "${nmi_sources[@]}" \
-  >"$build_dir/nmi-iverilog-build.log" 2>&1
-vvp "$build_dir/nmi_iv" | tee "$build_dir/nmi-iverilog-run.log"
+# A spurious request withdrawn before INTA must yield the IRQ7 vector of the
+# programmed base, through the unchanged KF8259 behind the portable model.
+iverilog -g2012 -I"$kf_dir" -s spk286_pic_spurious_tb \
+  -o "$build_dir/pic_spurious_iv" \
+  sim/spk286_integration/spk286_pic_spurious_tb.sv \
+  sim/spk286_integration/spk286_pic_model.sv "${kf_sources[@]}" \
+  >"$build_dir/pic-spurious-iverilog-build.log" 2>&1
+vvp "$build_dir/pic_spurious_iv" | tee "$build_dir/pic-spurious-iverilog-run.log"
+grep -q I4_PIC_SPURIOUS_PASS "$build_dir/pic-spurious-iverilog-run.log"
 
-rm -rf "$build_dir/pic-verilator-obj" "$build_dir/nmi-verilator-obj"
+rm -rf "$build_dir/pic-verilator-obj"
 verilator --binary --timing --top-module spk286_at_pic_tb \
   -Wno-fatal --Mdir "$build_dir/pic-verilator-obj" -o pic_vlt \
   -I"$kf_dir" "${pic_sources[@]}" \
   >"$build_dir/pic-verilator-build.log" 2>&1
 "$build_dir/pic-verilator-obj/pic_vlt" | tee "$build_dir/pic-verilator-run.log"
-
-verilator --binary --timing --top-module spk286_at_nmi_gate_tb \
-  -Wno-fatal --Mdir "$build_dir/nmi-verilator-obj" -o nmi_vlt \
-  "${nmi_sources[@]}" \
-  >"$build_dir/nmi-verilator-build.log" 2>&1
-"$build_dir/nmi-verilator-obj/nmi_vlt" | tee "$build_dir/nmi-verilator-run.log"
 
 echo A3_INTERRUPT_TEST_PASS

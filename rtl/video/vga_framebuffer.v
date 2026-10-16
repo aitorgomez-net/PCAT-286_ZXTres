@@ -38,7 +38,7 @@ module vga_framebuffer #(
     // cycle, and asking for that is what makes the Fitter build a second copy.
     //
     // Nothing observes the difference. MEMR# and MEMW# are never low together
-    // on the ISA bus, so vga_a000_cpu_frontend never asserts cpu_read and
+    // on the ISA bus, so the AT video adapter never asserts cpu_read and
     // cpu_write at once, and the value here during a write is not read by
     // anyone: cpu_ready gates it.
     //
