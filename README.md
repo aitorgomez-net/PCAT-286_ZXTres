@@ -508,12 +508,15 @@ tools measure aggregate work, not native CPU pins, exact cycles or IRQ latency.
 The following limits describe the retained implementation; cleanup of the
 repository does not resolve them or constitute a new full regression.
 
-- **FPGA timing:** the selected October 2026 fit has CPU setup/hold minima
-  of +0.486/+0.120 ns and common 50 MHz-domain minima of +0.164/+0.110 ns.
-  Global hold is positive (+0.027 ns minimum), but the cold HDMI scaler
-  `o_ihsize[3] → o_hacc_next[12]` path still has -0.063 ns setup slack.
-  Placed utilization is 36,701/41,910 ALMs (87.57%). This is not complete
-  timing sign-off; results apply to that recorded fit, not every rebuild.
+- **FPGA timing (as of 17 October 2026):** the selected fit (fitter `SEED 4`,
+  DDR3 AT RAM, boot splash, F12 credits) meets setup, hold, recovery and
+  removal in all four speed/temperature corners. Worst slacks are global
+  setup +0.178 ns, HDMI scaler setup +0.236 ns, global hold +0.078 ns, CPU
+  setup/hold +1.091/+0.104 ns and the common 50 MHz domain +0.477/+0.104 ns.
+  Placed utilization is 32,029/41,910 ALMs (76%) and 465/553 M10K blocks.
+  These figures describe that dated fit, not every later rebuild: the HDMI
+  scaler paths depend on the seed, and on the same sources seed 2 missed
+  them by 0.003 ns.
 - **Current-source validation:** the latest CPU/timing increments have
   directed checks, but their complete current-source regression and a new
   source-bound MiSTer candidate acceptance remain outstanding. An older
