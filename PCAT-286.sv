@@ -303,11 +303,15 @@ module emu_at
     wire ps2_mouse_clk_in;
     wire ps2_mouse_data_in;
 
+    // F12KEYMOD hands plain F12 to the core (pause and credits) and leaves
+    // Win+F12 for the menu, as the splash says. MiSTer only assumes that for
+    // cores named PCXT, Tandy1000 or PCjr.
     hps_io #(
         .CONF_STR (CONF_STR_AT),
         .PS2DIV   (2000),
         .PS2WE    (1),
-        .WIDE     (1)
+        .WIDE     (1),
+        .F12KEYMOD(1)
     ) hps_io_at (
         .clk_sys              (CLK_50M),
         .HPS_BUS              (HPS_BUS),
@@ -981,10 +985,28 @@ module emu_at
     // disappear; the host reset controls belong to the machine reset below.
     wire at_splash_reset = RESET | !main_rom_loaded | !at_video_pll_locked;
 
+    // Boot splash lifetime, driven by u_at_splash_control below.
+    wire at_splashscreen;
+    wire at_splash_boot_hold;
+    wire at_splash_paused;
+
+    // F12 pauses the running machine and shows the credits (PCXT-EGA
+    // behaviour); the key itself never reaches the AT keyboard.
+    wire [10:0] at_ps2_key_machine;
+    wire        at_pause_core;
+    spk286_at_pause_key u_at_pause_key (
+        .clk         (CLK_50M),
+        .reset       (at_boot_reset),
+        .allow       (!at_splash_boot_hold),
+        .ps2_key_in  (ps2_key),
+        .ps2_key_out (at_ps2_key_machine),
+        .pause       (at_pause_core)
+    );
+
     spk286_at_keyboard u_at_keyboard (
         .clk                    (CLK_50M),
         .reset                  (at_boot_reset),
-        .ps2_key                (ps2_key),
+        .ps2_key                (at_ps2_key_machine),
         .translate_set1         (keyboard_translate_set1),
         .num_lock               (keyboard_num_lock),
         .keyboard_byte_ready    (keyboard_byte_ready),
@@ -1008,20 +1030,29 @@ module emu_at
     // this was wired directly to hps_status[7], which made the default
     // "Yes" setting hold the image forever while the CPU continued running
     // behind it.
-    wire at_splashscreen;
-    wire at_splash_boot_hold;
+    // F12 on the splash holds it there with the credits, as in PCXT-EGA. The
+    // machine is held in reset meanwhile, so the key is caught here.
 `ifdef SPK286_AT_BOOT_SPLASH
     spk286_at_splash_control u_at_splash_control (
         .clk         (CLK_50M),
         .reset       (at_splash_reset),
         .option_off  (hps_status[7]),
         .second_tick (second_tick),
+        .paused      (at_splash_paused),
         .splash_active(at_splashscreen),
         .boot_hold   (at_splash_boot_hold)
+    );
+
+    splash_f12_pause u_at_splash_pause (
+        .clock         (CLK_50M),
+        .splash_active (at_splashscreen),
+        .ps2_key       (ps2_key),
+        .paused        (at_splash_paused)
     );
 `else
     assign at_splashscreen   = 1'b0;
     assign at_splash_boot_hold = 1'b0;
+    assign at_splash_paused  = 1'b0;
 `endif
 
     // Keep the processor stopped until both required firmware images exist.
@@ -1191,6 +1222,7 @@ module emu_at
         .joya0                  (joystick_l_analog_0),
         .joya1                  (joystick_l_analog_1),
         .execute_enable         (1'b1),
+        .pause                  (at_pause_core),
         .counter_clock          (counter_clock),
         .refresh_enable         (1'b1),
         .keyboard_byte_valid    (keyboard_byte_valid),
@@ -1568,14 +1600,78 @@ module emu_at
         .alt_active    (at_video_crt350_active)
     );
 
-    wire [7:0] at_video_mix_r = at_video_crt350_active ? at_fb_r : at_video_mono_r;
-    wire [7:0] at_video_mix_g = at_video_crt350_active ? at_fb_g : at_video_mono_g;
-    wire [7:0] at_video_mix_b = at_video_crt350_active ? at_fb_b : at_video_mono_b;
-    wire       at_video_mix_hs = at_video_crt350_active ? at_fb_hs : at_video_mono_hs;
-    wire       at_video_mix_vs = at_video_crt350_active ? at_fb_vs : at_video_mono_vs;
-    wire       at_video_mix_hb = at_video_crt350_active ? at_fb_hb : at_video_mono_hb;
-    wire       at_video_mix_vb = at_video_crt350_active ? at_fb_vb : at_video_mono_vb;
+    wire [7:0] at_video_src_r = at_video_crt350_active ? at_fb_r : at_video_mono_r;
+    wire [7:0] at_video_src_g = at_video_crt350_active ? at_fb_g : at_video_mono_g;
+    wire [7:0] at_video_src_b = at_video_crt350_active ? at_fb_b : at_video_mono_b;
+    wire       at_video_src_hs = at_video_crt350_active ? at_fb_hs : at_video_mono_hs;
+    wire       at_video_src_vs = at_video_crt350_active ? at_fb_vs : at_video_mono_vs;
+    wire       at_video_src_hb = at_video_crt350_active ? at_fb_hb : at_video_mono_hb;
+    wire       at_video_src_vb = at_video_crt350_active ? at_fb_vb : at_video_mono_vb;
     wire       at_video_mix_ce = at_video_crt350_active ? at_fb_ce_pix : at_video_ce_pipe_q;
+
+    // F12 credits overlay, as in PCXT-EGA. It sits ahead of the mixer so the
+    // gamma table and scaler treat it like the picture underneath. It shows
+    // while the machine is paused and while the splash is held by F12.
+    logic at_credits_show_src_q = 1'b0;
+    always_ff @(posedge CLK_50M)
+        at_credits_show_src_q <= at_pause_core | at_splash_paused;
+
+    (* altera_attribute = "-name SYNCHRONIZER_IDENTIFICATION FORCED_IF_ASYNCHRONOUS" *)
+    logic at_credits_show_s1_q;
+    (* altera_attribute = "-name SYNCHRONIZER_IDENTIFICATION FORCED_IF_ASYNCHRONOUS" *)
+    logic at_credits_show_q;
+    always_ff @(posedge at_video_clk_57) begin
+        at_credits_show_s1_q <= at_credits_show_src_q;
+        at_credits_show_q    <= at_credits_show_s1_q;
+    end
+
+    wire [23:0] at_credits_rgb;
+    wire        at_credits_hb;
+    wire        at_credits_vb;
+    jtframe_credits #(
+        .PAGES  (4),
+        .COLW   (8),
+        .BLKPOL (1)
+    ) u_at_credits (
+        .rst        (at_video_pipe_reset_57),
+        .clk        (at_video_clk_57),
+        .pxl_cen    (at_video_mix_ce),
+        .HB         (at_video_src_hb),
+        .VB         (at_video_src_vb),
+        .rgb_in     ({at_video_src_r, at_video_src_g, at_video_src_b}),
+        .vram_din   (9'h000),
+        .vram_addr  (10'h000),
+        .vram_we    (1'b0),
+        .vram_dout  (),
+        .enable     (at_credits_show_q),
+        .toggle     (1'b0),
+        .vram_ctrl  (3'b000),
+        .fast_scroll(1'b0),
+        .rotate     (2'd0),
+        .border     (1'b0),
+        .HB_out     (at_credits_hb),
+        .VB_out     (at_credits_vb),
+        .rgb_out    (at_credits_rgb)
+    );
+
+    // The credits block registers colour and blanking once per pixel enable,
+    // overlay shown or not; give the syncs the same register.
+    logic at_credits_hs_q;
+    logic at_credits_vs_q;
+    always_ff @(posedge at_video_clk_57) begin
+        if (at_video_mix_ce) begin
+            at_credits_hs_q <= at_video_src_hs;
+            at_credits_vs_q <= at_video_src_vs;
+        end
+    end
+
+    wire [7:0] at_video_mix_r  = at_credits_rgb[23:16];
+    wire [7:0] at_video_mix_g  = at_credits_rgb[15:8];
+    wire [7:0] at_video_mix_b  = at_credits_rgb[7:0];
+    wire       at_video_mix_hs = at_credits_hs_q;
+    wire       at_video_mix_vs = at_credits_vs_q;
+    wire       at_video_mix_hb = at_credits_hb;
+    wire       at_video_mix_vb = at_credits_vb;
     wire       at_video_mixer_ce;
     wire [7:0] at_video_mixer_r;
     wire [7:0] at_video_mixer_g;
@@ -1808,8 +1904,10 @@ module emu_at
         end
     end
 
-    assign AUDIO_L      = hps_status[37:36] ? audio_cmp_l_q : audio_out_l_q;
-    assign AUDIO_R      = hps_status[37:36] ? audio_cmp_r_q : audio_out_r_q;
+    assign AUDIO_L      = at_pause_core ? 16'd0 :
+                          hps_status[37:36] ? audio_cmp_l_q : audio_out_l_q;
+    assign AUDIO_R      = at_pause_core ? 16'd0 :
+                          hps_status[37:36] ? audio_cmp_r_q : audio_out_r_q;
     assign AUDIO_S      = 1'b1;
     assign AUDIO_MIX    = hps_status[39:38];
     assign ADC_BUS      = 4'hz;

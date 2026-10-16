@@ -504,7 +504,7 @@ module spk286_at_machine_tb;
         .uart1_rx(1'b1),
         .uart2_rx(1'b1), .uart2_cts_n(1'b1), .uart2_dsr_n(1'b1),
         .uart2_dcd_n(1'b1),
-        .execute_enable(execute_enable),
+        .execute_enable(execute_enable), .pause(1'b0),
         .counter_clock(counter_clock), .refresh_enable(refresh_enable),
         .mgmt_address(16'h0000), .mgmt_writedata(16'h0000),
         .mgmt_write(1'b0), .mgmt_read(1'b0), .mgmt_readdata(),

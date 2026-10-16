@@ -79,6 +79,9 @@ module spk286_at_machine #(
     input  logic [15:0]  joya0,
     input  logic [15:0]  joya1,
     input  logic         execute_enable,
+    // F12 pause: the CPU is put on HOLD, like a DMA owner would. It finishes
+    // its bus cycle, raises HLDA and stays off the bus; devices keep running.
+    input  logic         pause,
     input  logic         counter_clock,
     input  logic         refresh_enable,
 
@@ -753,7 +756,7 @@ module spk286_at_machine #(
         .data_in                (cpu_data_in_i),
         .intr                   (intr),
         .nmi                    (nmi),
-        .hold_request           (cpu_hold_request),
+        .hold_request           (cpu_hold_request | pause),
         .address                (cpu_address),
         .data_out               (cpu_data_out),
         .data_oe                (cpu_data_oe),

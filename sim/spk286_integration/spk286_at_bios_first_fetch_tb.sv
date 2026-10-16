@@ -125,6 +125,13 @@ module spk286_at_bios_first_fetch_tb #(
     logic splash_released = 1'b0;
     integer splash_release_cycles = 0;
     logic splash_handoff_done = 1'b0;
+    // +PAUSE engages the F12 pause once the BIOS is running: the CPU must go
+    // on HOLD, stay off the bus for the whole pause and then carry on.
+    logic pause_tb = 1'b0;
+    logic pause_done = 1'b0;
+    integer pause_cycles = 0;
+    integer pause_hold_cycles = 0;
+    integer pause_fetch_mark = 0;
     logic machine_boot_reset = 1;
     wire counter_clock;
     wire normal_counter_clock;
@@ -468,6 +475,39 @@ module spk286_at_bios_first_fetch_tb #(
                 $display("AT_SPLASH_HANDOFF_PASS cycles=%0d cpu_fetches=%0d",
                          splash_release_cycles, cpu_fetch_returns);
                 splash_handoff_done <= 1'b1;
+            end
+        end
+    end
+
+    always @(posedge clk) begin
+        if ($test$plusargs("PAUSE") && !reset && !cpu_boot_reset && !pause_done) begin
+            if (!pause_tb) begin
+                if (cpu_fetch_returns >= 8) begin
+                    pause_tb <= 1'b1;
+                    pause_cycles <= 0;
+                    pause_hold_cycles <= 0;
+                end
+            end else begin
+                pause_cycles <= pause_cycles + 1;
+                if (pause_hold_cycles == 0 && pause_cycles > 2000)
+                    $fatal(1,"PAUSE: CPU never acknowledged HOLD");
+                if (cpu_hlda) begin
+                    if (pause_hold_cycles == 0)
+                        pause_fetch_mark <= cpu_fetch_returns;
+                    else if (cpu_fetch_returns != pause_fetch_mark)
+                        $fatal(1,"PAUSE: CPU fetched while paused");
+                    if (cpu_bus_valid)
+                        $fatal(1,"PAUSE: CPU bus cycle while on HOLD");
+                    pause_hold_cycles <= pause_hold_cycles + 1;
+                end else if (pause_hold_cycles != 0) begin
+                    $fatal(1,"PAUSE: HLDA dropped while paused");
+                end
+                if (pause_hold_cycles == 20000) begin
+                    $display("AT_PAUSE_HOLD_PASS hold_cycles=%0d fetches=%0d",
+                             pause_hold_cycles, cpu_fetch_returns);
+                    pause_tb <= 1'b0;
+                    pause_done <= 1'b1;
+                end
             end
         end
     end
@@ -1135,7 +1175,7 @@ module spk286_at_bios_first_fetch_tb #(
         .cpu_reset(reset | cpu_boot_reset), .clk_video(clk_video), .splashscreen(splash_tb),
         .ega_monitor_profile(2'b00),
         .installed_ram_size_osd(installed_ram_size_osd),
-        .execute_enable(execute_enable),
+        .execute_enable(execute_enable), .pause(pause_tb),
         .counter_clock(counter_clock), .refresh_enable(refresh_enable),
         .mgmt_address(mgmt_address), .mgmt_writedata(mgmt_writedata),
         .mgmt_write(mgmt_write), .mgmt_read(mgmt_read),
@@ -1763,7 +1803,9 @@ module spk286_at_bios_first_fetch_tb #(
             if(landmark_case==0 && !warm_reset_test &&
                !$test$plusargs("FULL_BOOT") &&
                fetch_returns>=32 && cpu_fetch_returns>=16 && saw_opcode &&
-               saw_low_rom_fetch && (!splash_released || splash_handoff_done)) begin
+               saw_low_rom_fetch && (!splash_released || splash_handoff_done) &&
+               (!$test$plusargs("PAUSE") ||
+                (pause_done && cpu_fetch_returns > pause_fetch_mark + 16))) begin
                 $display("AT_BIOS_FIRST_FETCH_PASS fetches=%0d cpu_responses=%0d opcode=%02h cycles=%0d",fetch_returns,cpu_fetch_returns,rom[16'hfff0],cycles);
                 $finish;
             end

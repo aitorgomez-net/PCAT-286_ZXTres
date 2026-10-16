@@ -31,3 +31,4 @@ set_global_assignment -name SYSTEMVERILOG_FILE "rtl/KFPC-XT/HDL/KF8253/HDL/KF825
 set_global_assignment -name SYSTEMVERILOG_FILE "rtl/KFPC-XT/HDL/ega_vram_bram_frontend.sv"
 set_global_assignment -name SYSTEMVERILOG_FILE "rtl/KFPC-XT/HDL/ega_bios_loaded_latch.sv"
 set_global_assignment -name SYSTEMVERILOG_FILE "rtl/KFPC-XT/HDL/rom_presence_latch.sv"
+set_global_assignment -name SYSTEMVERILOG_FILE "rtl/KFPC-XT/HDL/splash_f12_pause.sv"

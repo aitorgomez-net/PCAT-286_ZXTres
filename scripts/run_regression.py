@@ -90,6 +90,7 @@ TESTS = [
     shell("video-window", "video", "test_at_video_window"),
     shell("ega-decode", "video", "test_at_ega_decode"),
     shell("splash", "video", "test_at_splash_control"),
+    shell("pause-key", "video", "test_at_pause_key"),
     shell("scaler-config", "video", "test_at_scaler_config", tools=("iverilog", "vvp")),
     shell("machine", "machine", "test_at_machine_boundary", tools=(*SIM, "nasm")),
     shell("first-fetch", "machine", "test_at_bios_first_fetch", tools=(*SIM, "nasm")),

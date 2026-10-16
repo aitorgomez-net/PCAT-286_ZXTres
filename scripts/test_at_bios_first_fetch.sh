@@ -138,6 +138,13 @@ for rom in "$rom_path" "$root/SW/ROMs/xtsergey_mod_at.rom"; do
   grep -q AT_SPLASH_HANDOFF_PASS "$log"
   grep -q AT_BIOS_FIRST_FETCH_PASS "$log"
 done
+
+# F12 pause: the running CPU goes on HOLD, issues no bus cycle until the
+# pause ends, then keeps executing the BIOS.
+log="$build_dir/pause.log"
+timeout 300s "$build_dir/verilator-obj/first_fetch_vlt" "+ROM=$rom_path" +PAUSE | tee "$log"
+grep -q AT_PAUSE_HOLD_PASS "$log"
+grep -q AT_BIOS_FIRST_FETCH_PASS "$log"
 cd "$root"
 sha256sum --check "$build_dir/compiled-sources.sha256" > "$build_dir/sources-verified.log"
 echo AT_BIOS_FIRST_FETCH_TEST_PASS

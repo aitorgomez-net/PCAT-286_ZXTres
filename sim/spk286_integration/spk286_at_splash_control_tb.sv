@@ -5,6 +5,7 @@ module spk286_at_splash_control_tb;
     logic reset = 1'b1;
     logic option_off = 1'b0;
     logic second_tick = 1'b0;
+    logic paused = 1'b0;
     wire  splash_active;
     wire  boot_hold;
     wire  cpu_reset = reset | boot_hold;
@@ -20,7 +21,7 @@ module spk286_at_splash_control_tb;
 
     spk286_at_splash_control dut (
         .clk(clk), .reset(reset), .option_off(option_off),
-        .second_tick(second_tick), .splash_active(splash_active),
+        .second_tick(second_tick), .paused(paused), .splash_active(splash_active),
         .boot_hold(boot_hold)
     );
 
@@ -85,11 +86,26 @@ module spk286_at_splash_control_tb;
         if (!splash_active || !boot_hold)
             $fatal(1, "splash did not start after the delay");
 
-        repeat (4) begin
+        repeat (2) begin
             pulse_second();
             #1;
             if (!splash_active || !boot_hold)
                 $fatal(1, "splash released the CPU too soon");
+        end
+        // F12 on the splash holds it however many seconds pass.
+        paused = 1'b1;
+        repeat (8) begin
+            pulse_second();
+            #1;
+            if (!splash_active || !boot_hold)
+                $fatal(1, "paused splash expired");
+        end
+        paused = 1'b0;
+        repeat (2) begin
+            pulse_second();
+            #1;
+            if (!splash_active || !boot_hold)
+                $fatal(1, "splash released the CPU too soon after the pause");
         end
         pulse_second();
         #1;
@@ -132,6 +148,7 @@ module spk286_at_splash_control_tb;
         check_first_fetch();
 
         $display("AT_SPLASH_RESET_FETCH_PASS address=fffff0 data=12ea");
+        $display("AT_SPLASH_PAUSE_PASS held_seconds=8");
         $display("AT_SPLASH_CONTROL_PASS");
         $finish;
     end

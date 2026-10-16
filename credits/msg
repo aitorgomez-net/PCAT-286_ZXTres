@@ -1,114 +1,92 @@
-\R     *       (                     (            )          
-\R     (  `      )\\ )  *   )           )\\ )  (   ( /(   *   )  
-\R     )\\))(  ( (()/(` )  /(  (  (    (()/(  )\\  )\\())` )  /(  
-\R    ((_)()\\ )\\ /(_))( )(_))))\\ )(    /(_)|((_)((_)\\  ( )(_))
-\W    (_()((_|(_|_)) (_(_())/((_|()\\  (_)) )\\_____((_)(_(_())  
-\W    |  \\/  |(_) __||_   _(_))  ((_) | _ ((/ __\\ \\/ /|_   _|  
-\W    | |\\/| || \\__ \\  | | / -_)| '_| |  _/| (__ >  <   | |   
-\W    |_|  |_||_|___/  |_| \\___||_|   |_|   \\___/_/\\_\\  |_|
+\R       *             (      *                   (      )
+\R       (      )      )\\    ` )            )    )\\     (
+\R      )\\)    ((     ((_)    ( /(         ( /  ((_)    )\\
+\R     ((_)(  ((_)   )\\_)\\   )(_))         )(_   )_)(  ((_
+\W      ___    ___     _     _____         ___   ___    __
+\W     | _ \\  / __|   /_\\   |_   _|  ___  |_  ) ( _ )  / /
+\W     |  _/ | (__   / _ \\    | |   |___|  / /  / _ \\ / _ \\
+\W     |_|    \\___| /_/ \\_\\   |_|         /___| \\___/ \\___/
 
-\G                          EGA version
+\G          MiSTer FPGA * SPK286 CPU * EGA/VGA
 
 \W                                             by \Gspark2k06
 
-                      Aitor Gomez Garcia 
-                  https://ko-fi.com/spark2k06 
+                      Aitor Gomez Garcia
+                   https://www.aitorgomez.net
+                  https://ko-fi.com/spark2k06
 
-                          \BPOWERED BY 
+                          \BPOWERED BY
 
-                     KFPC-XT * kitune-san 
-                 https://github.com/kitune-san 
+                     SPK286 CPU * spark2k06
+              https://github.com/spark2k06/SPK286
 
-                      MCL86 * Ted Fried
-                 http://www.microcorelabs.com/
+                     KFPC-XT * kitune-san
+                 https://github.com/kitune-san
+
+                 Based on PCXT-EGA MiSTer core
+       https://github.com/MiSTer-devel/PCXT-EGA_MiSTer
 
                              \BALSO
 
-                   JTOPL * JT89 * JTCREDITS 
-                     Jose Tejada (jotego) 
-                 https://www.patreon.com/jotego 
+                   JTOPL * JT89 * JTCREDITS
+                     Jose Tejada (jotego)
+                 https://www.patreon.com/jotego
 
-                      MS Mouse PS2 to Serial 
-                   Antonio Sanchez (TheSonders) 
+                      MS Mouse PS2 to Serial
+                   Antonio Sanchez (TheSonders)
                   https://github.com/TheSonders
 
                     2 Button Analog Joysticks
-                           Flandango 
-                  https://github.com/Flandango 
+                           Flandango
+                  https://github.com/Flandango
 
-                           UART 16750 
-                         Sebastian Witt 
-            https://opencores.org/users/hasw/profile 
+                           UART 16750
+                         Sebastian Witt
+            https://opencores.org/users/hasw/profile
 
-                   Other ao486-based modules 
-                   Alexey Melnikov (sorgelig) 
-                          Kitrinx
-               https://www.patreon.com/FPGAMiSTer 
+        Sound Blaster * C/MS * IDE * Floppy (ao486-based)
+                  Aleksander Osman * Kitrinx
+                   Alexey Melnikov (sorgelig)
+               https://www.patreon.com/FPGAMiSTer
 
-______________________________________________________________ 
+______________________________________________________________
 
-                    \BDEVELOPERS \W& \GCO-WORKERS 
+                    \BDEVELOPERS \W& \GCO-WORKERS
 
-                 Aitor Gomez Garcia (spark2k06) 
-                         kitune-san 
-                   Ted Fried (MicroCoreLabs) 
-                         Boogermann
-                            nizmow
-                           somhi 
-                   David Gila Blazquez (Mills)
-                   https://github.com/mills32
-
-                         flynnsbit
-                    Jason Alexander (JasonA) 
-                          Newsdee 
-                          birdybro 
-                     Pedro Gimeno (pgimeno) 
-                       Jordi (jsmolina) 
+                Aitor Gomez Garcia (spark2k06)
+                          kitune-san
+                    Neil Houghton (nizmow)
+                           birdybro
 
 ______________________________________________________________
 
                   \BTESTING \W& \GCOMMUNITY FEEDBACK
 
-                           thorr
-                        MiSTerTea
-                       manfredi90
-                          akeley
+                            thorr
+                         AmintaMister
+                            akeley
+                           vanfanel
+                            remax
+                          breiztiger
+                           NthLink
+                            Mills
 
-______________________________________________________________ 
+______________________________________________________________
 
-                       \BSpecial Thanks 
+                       \BSpecial Thanks
 
-             https://www.xtideuniversalbios.org/ 
-                 https://www.lo-tech.co.uk 
-             https://github.com/640-KB/GLaBIOS 
-           https://github.com/virtualxt/pcxtbios 
-           https://github.com/skiselev/8088_bios 
-            Alejandro Valero Sebastian (Wilco2009) 
-                           naeloob 
-                           gyurco 
+            https://86box.net (EGA/VGA reference)
+                            gyurco
 
-______________________________________________________________ 
+______________________________________________________________
 
-             \BThanks for supporting this project!!! 
+             \BThanks for supporting this project!!!
 
-                       MiSTerFPGA.co.uk 
+                            thorr
 
-                           Adr1048 
+                        masterhand789
 
-                     Maxim Enbaev (emax73) 
-                      gitlab.com/emax73g 
-
-                         TonyEscobar 
-
-                          Kathleen 
-
-                        Jordi (jsmolina) 
-
-                           thorr 
-
-                           Caldor 
-
-______________________________________________________________ 
+______________________________________________________________
 
                        \RReport issues to
-        https://github.com/MiSTer-devel/PCXT_MiSTer/issues
+      https://github.com/MiSTer-devel/PCAT-286_MiSTer/issues

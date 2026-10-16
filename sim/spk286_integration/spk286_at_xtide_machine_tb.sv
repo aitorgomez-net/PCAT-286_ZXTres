@@ -39,7 +39,7 @@ module spk286_at_xtide_machine_tb;
         .clk(clk), .clk_cpu(clk), .cpu_sample_edge(1'b1), .reset(reset), .video_reset(reset),
         .cpu_reset(1'b0), .clk_video(clk),
         .splashscreen(1'b0), .ega_monitor_profile(2'b00),
-        .execute_enable(1'b1), .counter_clock(1'b0),
+        .execute_enable(1'b1), .pause(1'b0), .counter_clock(1'b0),
         .at286ctl_eff_opl2(2'd0), .at286ctl_eff_cms(1'b1),
         .at286ctl_eff_tandy(1'b0),
         .at286ctl_eff_mpu401(`ENABLE_MIDI),

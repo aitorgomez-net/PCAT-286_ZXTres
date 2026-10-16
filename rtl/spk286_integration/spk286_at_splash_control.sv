@@ -4,6 +4,7 @@
 // profile's lifetime in a small, clocked block gives it the same behaviour:
 // one second of boot settling followed by a five-second splash.  The OSD
 // option is still authoritative and can remove the splash immediately.
+// F12 on the splash (paused) holds it, and the CPU, until pressed again.
 `timescale 1ns/1ps
 
 module spk286_at_splash_control (
@@ -11,6 +12,7 @@ module spk286_at_splash_control (
     input  logic reset,
     input  logic option_off,
     input  logic second_tick,
+    input  logic paused,
     output logic splash_active,
     // Hold the CPU before the image starts as well as while it is visible.
     // The pending interval must not become an unintended first BIOS run.
@@ -40,7 +42,7 @@ module spk286_at_splash_control (
                 splash_seconds_q <= 3'd0;
                 splash_active    <= 1'b1;
             end
-        end else if (splash_active && second_tick) begin
+        end else if (splash_active && second_tick && !paused) begin
             if (splash_seconds_q == 3'd4) begin
                 splash_active <= 1'b0;
             end else begin

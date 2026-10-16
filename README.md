@@ -42,6 +42,14 @@ table, so it needs no ROM of its own. Edit
 run `SW/make_vga_splash_rom.py` (or its `.ps1` equivalent) to regenerate
 `rtl/video/splash_vga_320x200.hex` and `rtl/video/splash_vga_palette.hex`.
 
+**F12** pauses the machine and scrolls the credits over the dimmed picture;
+F12 again resumes. The pause puts the CPU on HOLD and mutes the audio; the key
+never reaches the AT keyboard, and other key presses are ignored while paused.
+F12 on the boot splash holds it with the credits until pressed again. The OSD
+opens with **Win + F12**. The credits text is [credits/msg](credits/msg):
+build `credits/msg2hex.cc`, run it on that file and copy the resulting
+`msg.bin` to `rtl/common/msg.bin`.
+
 1. Copy the built RBF to the MiSTer SD card and load it.
 2. Open the OSD with **Win + F12**. Select both ROMs under **System & BIOS**:
    **PCAT BIOS** and **EGA BIOS**.

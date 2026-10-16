@@ -160,6 +160,9 @@ if {[get_collection_size $debug_snapshot_source] &&
 # labelled reanalysis may lack this newly added stage.
 set at_require_new [expr {![info exists ::env(P05_REFERENCE_FIT)] || $::env(P05_REFERENCE_FIT) ne "1"}]
 at_sync splash $AT_CPU {*u_video|splash_video_sync1_q} [expr {$at_boot_splash_enabled && $at_require_new}]
+# F12 credits overlay: a 50 MHz level (machine or splash paused) crossing into
+# the 57 MHz video output clock through a two-stage synchronizer.
+at_sync credits_show $AT_CPU {emu|at_credits_show_s1_q} $at_require_new
 # Whether the splash picture preloaded into the mode 13h framebuffer is still
 # intact: a sticky CPU-domain level, sampled by a two-stage synchronizer.
 at_sync splash_image $AT_CPU {*u_video|splash_image_video_sync1_q} [expr {$at_boot_splash_enabled && $at_require_new}]
