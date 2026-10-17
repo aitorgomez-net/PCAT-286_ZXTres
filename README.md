@@ -110,7 +110,7 @@ side effects. Its 8042 controls A20 and CPU reset; CPU SHUTDOWN also requests
 the AT reset path used by BIOS protected-mode return services.
 
 The bridge retains a request's address, cycle class, direction, byte lanes and
-payload until completion. Aligned RAM words use the x16 SDRAM path; EGA and
+payload until completion. Aligned RAM words use the x16 RAM path; EGA and
 byte devices preserve individual accesses and their side effects. The CPU
 already splits odd words into physical transfers. READY, LOCK and HOLD/HLDA
 remain functional dependencies in every speed profile. PIC vectors come from
@@ -124,7 +124,7 @@ into an 8088 status encoding. `A0` and active-low `BHE` select the low/high
 byte lanes; retained transfers must complete exactly once even across READY
 stalls, reset cancellation and repeated identical requests.
 
-CPU, bridge and SDRAM service run on a common 50 MHz clock. Code/data read
+CPU, bridge and RAM service run on a common 50 MHz clock. Code/data read
 buffers and a single-entry posted-write buffer reduce memory overhead while
 retaining write ordering, snooping and reset/drain rules. Peripheral clocks,
 video clocks and the MiSTer video/HPS clock crossings remain independent.
@@ -145,7 +145,8 @@ SDRAM.
 
 ## Memory map
 
-Addresses below are CPU-visible, before translation to private SDRAM backing.
+Addresses below are CPU-visible, before translation to the private backing RAM
+(DDR3 or SDRAM).
 The EGA graphics controller selects its active aperture within the reserved
 `A0000h–BFFFFh` region. ROM writes are blocked during CPU execution.
 Unmapped reads return `FFh` per byte and unmapped writes have no effect.
@@ -182,10 +183,10 @@ EMS provides 128 pages of 16 KiB (2 MiB total), selected through
 UMB and the EMS facility have no OSD enable switch. DOS needs a compatible
 memory manager to expose them through DOS/EMS services.
 
-The EMS backing occupies SDRAM `200000h–3FFFFFh`; CPU RAM at and above
-2 MiB is translated upward by 2 MiB to avoid aliasing it. The CPU BIOS alias
-is resolved before this backend boundary and must not be reapplied inside
-the read buffers or SDRAM owner. A20 masking exempts the high BIOS alias so
+The EMS backing occupies backing-RAM `200000h–3FFFFFh` (in the DDR3 window or
+SDRAM alike); CPU RAM at and above 2 MiB is translated upward by 2 MiB to
+avoid aliasing it. The CPU BIOS alias is resolved before this backend boundary
+and must not be reapplied inside the read buffers or the DDR3/SDRAM owner. A20 masking exempts the high BIOS alias so
 reset fetches remain valid when A20 is disabled.
 
 ## I/O, interrupts and audio
@@ -392,7 +393,7 @@ of `1234h` to `0040:0072`; run the TSR again afterward.
 | `rtl/spk286_timing/` | Instruction scheduling and target handoff |
 | `vendor/spk286/` | Pinned CPU RTL, authoritative microcode, generators and CPU tests |
 | `rtl/video/` | EGA, bounded VGA extension and video testbenches |
-| `rtl/KFPC-XT/` | Retained KF8259, KF8254 (KF8253) and KFSDRAM components |
+| `rtl/KFPC-XT/` | Retained KF8259, KF8254 (KF8253) and KFSDRAM components, plus the EGA VRAM front end, ROM-presence latch and F12 pause key |
 | `rtl/sound/`, `rtl/uart/`, `rtl/common/`, `sys/` | Audio, serial and MiSTer support |
 | `sim/`, `tests/`, `scripts/` | Directed simulations, firmware and verification entrypoints |
 | `SW/`, `hdd/` | DOS utilities, EGA ROM preparation, splash artwork and boot examples |
@@ -549,9 +550,10 @@ repository does not resolve them or constitute a new full regression.
 - **Historical timing:** instruction estimates, internal EU/IU/BIU overlap,
   prefetch refill, native Ts/Tc/READY phases and board wait/HOLD timing are
   not fully certified. Aggregate 6/12 MHz reference results do not establish
-  cycle or pin accuracy for all profiles. CPU pause is not exposed; an
-  outstanding bus response must not be discarded by treating execution
-  enable as a general clock gate.
+  cycle or pin accuracy for all profiles. The F12 pause holds the CPU off
+  the bus through HOLD/HLDA rather than stopping its clock; an outstanding
+  bus response must not be discarded by treating execution enable as a
+  general clock gate.
 
 ## Sources, credits and licenses
 
@@ -569,12 +571,12 @@ framework contributions, UM6845R video support, Jotego audio cores and ao486
 Sound Blaster DSP work by Aleksander Osman and Alexey Melnikov. EGA and the
 bounded VGA extension were developed using 86Box video behaviour as a
 reference. Earlier PCXT video work included TubeTimeUS/schlae's Graphics
-Gremlin.
+Gremlin. The full list of developers, testers and supporters is in
+[credits/msg](credits/msg), the text the F12 credits scroll.
 
 The inherited root [LICENSE](LICENSE) is GNU GPL version 3. Component-specific
 licenses, copyright headers and redistribution notices remain authoritative
 for their respective files, including bundled utilities and firmware sources.
-The imported SPK286 snapshot did not include a standalone license file; its
-licensing must be resolved explicitly before public distribution. No license
-is inferred from the presence of the vendored copy. Third-party BIOS images
+The vendored SPK286 CPU is under the MIT License in
+[vendor/spk286/LICENSE](vendor/spk286/LICENSE). Third-party BIOS images
 and external test corpora are separate inputs, not covered by the root license.
