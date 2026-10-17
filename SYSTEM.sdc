@@ -5,21 +5,9 @@
 derive_pll_clocks
 derive_clock_uncertainty
 
-# The palette's MLAB write address is synchronous to the video clock. Require
-# additional minimum route delay instead of relying on a hand-inserted LCELL
-# delay. Setup keeps its existing single-cycle requirement; no path is cut.
-# The palette is optional, so this collection is empty when VGA is disabled.
-set at_dac_write_index [get_registers -nowarn {*|vga_dac_io_inst|write_index[*]}]
-set at_dac_write_address [get_registers -nowarn {
-    *|dac|port_*_ram_rtl_*|*OBSERVABLEPORTAADDRESSREGOUT*
-    *|dac|sample_*_ram_rtl_*|*OBSERVABLEPORTAADDRESSREGOUT*
-}]
-post_message "AT SDC DAC minimum route: [get_collection_size $at_dac_write_index] sources, [get_collection_size $at_dac_write_address] endpoints"
-if {[get_collection_size $at_dac_write_index] && [get_collection_size $at_dac_write_address]} {
-    set_min_delay -from $at_dac_write_index -to $at_dac_write_address 0.500
-} elseif {[get_collection_size $at_dac_write_index]} {
-    error "AT SDC DAC write-address endpoint collection is empty"
-}
+# The VGA palette MLABs are written on the falling edge of the video clock
+# (vga_dac.v), so their write-address hold check has half a period of
+# margin and needs no minimum-delay constraint.
 
 proc at_clock {name} {
     set c [get_clocks -nowarn $name]
@@ -127,6 +115,8 @@ at_sync credits_show $AT_CPU {emu|at_credits_show_s1_q} $at_require_new
 # Whether the splash picture preloaded into the mode 13h framebuffer is still
 # intact: a sticky CPU-domain level, sampled by a two-stage synchronizer.
 at_sync splash_image $AT_CPU {*u_video|splash_image_video_sync1_q} [expr {$at_boot_splash_enabled && $at_require_new}]
+# Splash fade-out request (last second of the splash), a 50 MHz level.
+at_sync splash_fade $AT_CPU {*u_video|splash_fade_video_sync1_q} [expr {$at_boot_splash_enabled && $at_require_new}]
 
 # These registers asynchronously assert reset, then release on their local
 # clock. Cut only the async control pin, not their synchronous D paths.

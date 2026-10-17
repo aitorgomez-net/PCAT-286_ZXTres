@@ -15,7 +15,7 @@ module spk286_at_soundblaster_machine_tb;
         .clk(clk), .clk_cpu(clk), .cpu_sample_edge(1'b1),
         .reset(reset), .video_reset(reset), .cpu_reset(1'b0), .clk_video(clk),
         .execute_enable(1'b1), .pause(1'b0), .counter_clock(1'b0), .refresh_enable(1'b0),
-        .splashscreen(1'b0), .ega_monitor_profile(2'd0),
+        .splashscreen(1'b0), .splash_fade_out(1'b0), .ega_monitor_profile(2'd0),
         .at286ctl_status_effective(40'd0), .at286ctl_status_osd_match(18'd0),
         .at286ctl_eff_opl2(2'd2), .at286ctl_eff_cms(cms_enabled),
         .at286ctl_eff_sb(sb_enabled), .at286ctl_eff_sb_irq(sb_irq_select),

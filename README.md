@@ -39,7 +39,9 @@ and its OSD option. Required-ROM detection and the preboot video raster remain
 active without that artwork.
 
 The splash is a 320x200, 256-colour picture drawn by the VGA mode 13h raster,
-at the Native or 15 kHz rate the OSD selects for mode 13h. Its pixels are
+at the Native or 15 kHz rate the OSD selects for mode 13h. It fades in over
+about half a second and fades out during its last second; F12 holds it at full
+brightness. Its pixels are
 preloaded into the mode 13h framebuffer and its colours sit in a small palette
 table, so it needs no ROM of its own. Edit
 [SW/splash_vga_320x200.png](SW/splash_vga_320x200.png) (an indexed PNG) and

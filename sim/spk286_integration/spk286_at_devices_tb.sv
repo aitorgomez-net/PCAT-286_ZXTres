@@ -130,7 +130,7 @@ module spk286_at_devices_tb;
         .clk(clk), .reset(reset), .uart_baudce(1'b1),
         .uart1_rx(uart1_rx), .uart1_rts_n(uart1_rts_n),
         .video_reset(reset), .prebios_video(1'b0),
-        .clk_video(clk_video), .splashscreen(splashscreen),
+        .clk_video(clk_video), .splashscreen(splashscreen), .splash_fade_out(1'b0),
         .ega_monitor_profile(2'b00),
         .clear_vga13(clear_vga13),
         .at286ctl_status_effective(at286ctl_status_effective),

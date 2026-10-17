@@ -54,7 +54,7 @@ module vga_framebuffer_tb;
         .cpu_addr(cpu_addr), .cpu_din(cpu_din),
         .cpu_read(cpu_read), .cpu_write(cpu_write),
         .cpu_dout(cpu_dout), .cpu_ready(cpu_ready),
-        .cpu_written(cpu_written),
+        .written_clear(reset_cpu), .cpu_written(cpu_written),
         .clk_video(clk_video), .video_addr(video_addr),
         .video_read_en(video_read_en),
         .video_pixel(video_pixel), .video_data_valid(video_data_valid)
@@ -135,6 +135,9 @@ module vga_framebuffer_tb;
         probe[4] = 16'hFAFF; value[4] = 8'h7E;   // last byte of a 320x200 page
         probe[5] = 16'hFFFF; value[5] = 8'hDB;
 
+        // The project allows power-up don't care: the flag may come up set.
+        // The load-time clear has to bring it back regardless.
+        dut.cpu_written = 1'b1;
         repeat (4) @(posedge clk_cpu);
         reset_cpu <= 1'b0;
         repeat (4) @(posedge clk_cpu);

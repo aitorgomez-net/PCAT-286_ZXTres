@@ -319,9 +319,9 @@ module vga_dac(
     wire full_write = palette_write && write_en;
     wire component_write = palette_write && !write_en && component_write_en;
     wire [7:0] ram_write_index = full_write ? write_index : component_write_index;
-    // Store software colours through a bijective address transform. Every
-    // physical write-address bit crosses required XOR logic before the MLAB
-    // address register; the normal single-cycle setup and hold checks remain.
+    // Store software colours through a bijective address transform. It was
+    // added to lengthen the MLAB write-address path for hold; the falling-edge
+    // write below now provides that margin, and the transform stays harmless.
     // Default ROMs, validity/override bits and bypass comparisons use logical
     // addresses. Applying this same permutation to reads preserves all data.
     function [7:0] palette_ram_address;
@@ -351,20 +351,35 @@ module vga_dac(
         last_red_write <= red_write;
         last_green_write <= green_write;
         last_blue_write <= blue_write;
+        if (red_write)
+            last_red_data <= red_write_data;
+        if (green_write)
+            last_green_data <= green_write_data;
+        if (blue_write)
+            last_blue_data <= blue_write_data;
+    end
+
+    // The MLABs take their write on the falling edge. An MLAB write-address
+    // register needs a positive hold time, and launched and captured on the
+    // same rising edge that path had only picoseconds to spare: no SDC
+    // minimum-delay constraint held once the Fitter duplicated a write_index
+    // register. Half a clock now separates launch from capture, which is all
+    // hold margin; the write controls are registered on the rising edge, so
+    // they settle well within the half period left for setup. The entry is
+    // written before the next rising edge sets its override bit, so a read
+    // never sees a stale value; the bypass above covers the cycle after.
+    always @(negedge clock) begin
         if (red_write) begin
             sample_red_ram[encoded_write_index] <= red_write_data;
             port_red_ram[encoded_write_index] <= red_write_data;
-            last_red_data <= red_write_data;
         end
         if (green_write) begin
             sample_green_ram[encoded_write_index] <= green_write_data;
             port_green_ram[encoded_write_index] <= green_write_data;
-            last_green_data <= green_write_data;
         end
         if (blue_write) begin
             sample_blue_ram[encoded_write_index] <= blue_write_data;
             port_blue_ram[encoded_write_index] <= blue_write_data;
-            last_blue_data <= blue_write_data;
         end
     end
 

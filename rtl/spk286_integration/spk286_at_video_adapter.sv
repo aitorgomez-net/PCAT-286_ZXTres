@@ -17,6 +17,7 @@ module spk286_at_video_adapter (
     input  logic        prebios_video,
     input  logic        clk_video,
     input  logic        splashscreen,
+    input  logic        splash_fade_out,
     input  logic [1:0]  ega_monitor_profile,
     input  logic        vga_enabled,
     input  logic        vga_mode13_native,
@@ -96,6 +97,10 @@ module spk286_at_video_adapter (
     (* altera_attribute = "-name SYNCHRONIZER_IDENTIFICATION FORCED_IF_ASYNCHRONOUS" *)
     logic prebios_video_sync2_q;
     (* altera_attribute = "-name SYNCHRONIZER_IDENTIFICATION FORCED_IF_ASYNCHRONOUS" *)
+    logic splash_fade_video_sync1_q;
+    (* altera_attribute = "-name SYNCHRONIZER_IDENTIFICATION FORCED_IF_ASYNCHRONOUS" *)
+    logic splash_fade_video_sync2_q;
+    (* altera_attribute = "-name SYNCHRONIZER_IDENTIFICATION FORCED_IF_ASYNCHRONOUS" *)
     logic splash_image_video_sync1_q;
     (* altera_attribute = "-name SYNCHRONIZER_IDENTIFICATION FORCED_IF_ASYNCHRONOUS" *)
     logic splash_image_video_sync2_q;
@@ -111,6 +116,8 @@ module spk286_at_video_adapter (
             prebios_video_sync2_q <= 1'b0;
             splash_image_video_sync1_q <= 1'b0;
             splash_image_video_sync2_q <= 1'b0;
+            splash_fade_video_sync1_q <= 1'b0;
+            splash_fade_video_sync2_q <= 1'b0;
             vga_mode13_native_video_sync1_q <= 1'b1;
             vga_mode13_native_video_sync2_q <= 1'b1;
         end else begin
@@ -120,6 +127,8 @@ module spk286_at_video_adapter (
             prebios_video_sync2_q <= prebios_video_sync1_q;
             splash_image_video_sync1_q <= !vga_framebuffer_cpu_written;
             splash_image_video_sync2_q <= splash_image_video_sync1_q;
+            splash_fade_video_sync1_q <= splash_fade_out;
+            splash_fade_video_sync2_q <= splash_fade_video_sync1_q;
             vga_mode13_native_video_sync1_q <= vga_mode13_native;
             vga_mode13_native_video_sync2_q <= vga_mode13_native_video_sync1_q;
         end
@@ -519,6 +528,8 @@ module spk286_at_video_adapter (
                              vga_packed_memory_request),
         .cpu_dout           (vga_framebuffer_cpu_dout),
         .cpu_ready          (vga_framebuffer_cpu_ready),
+        // Raised by core load (RESET), never by a BIOS reload from the OSD.
+        .written_clear      (video_reset_at_sync2_q),
         .cpu_written        (vga_framebuffer_cpu_written),
         .clk_video          (clk_video),
         .video_addr         (vga_framebuffer_addr),
@@ -721,6 +732,7 @@ module spk286_at_video_adapter (
         .ega_vmode_toggle_out       (video_vmode_toggle),
         .splashscreen               (splash_video_sync2_q),
         .splash_image_valid         (splash_image_video_sync2_q),
+        .splash_fade_out            (splash_fade_video_sync2_q),
         .prebios_video              (prebios_video_sync2_q),
         .thin_font                  (1'b0),
         .scandouble_en              (1'b0),

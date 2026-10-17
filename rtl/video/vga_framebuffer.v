@@ -18,9 +18,11 @@ module vga_framebuffer #(
     input  wire        cpu_write,
     output reg  [7:0]  cpu_dout = 8'h00,
     output reg         cpu_ready = 1'b0,
-    // Set by the first CPU write and cleared only by reconfiguring the FPGA,
-    // so it says whether the INIT_FILE contents are still intact. Deliberately
-    // not reset: a machine reset does not restore the picture either.
+    // Set by the first CPU write and cleared by written_clear, which the core
+    // raises only when it is loaded (the FPGA has just been configured with
+    // INIT_FILE). It says whether the INIT_FILE contents are still intact; a
+    // machine reset does not restore the picture, so it does not clear it.
+    input  wire        written_clear,
     (* preserve *) output reg cpu_written = 1'b0,
 
     input  wire        clk_video,
@@ -52,11 +54,14 @@ module vga_framebuffer #(
             $readmemh(INIT_FILE, mem);
     end
 
-    // Written as a feedback OR, not "if (cpu_write) cpu_written <= 1": with a
-    // constant D Quartus drops the power-up value and ties the flag to 1,
-    // which would declare the splash picture overwritten from the start.
+    // The project allows power-up don't care, so Quartus is free to ignore
+    // the initial value above: the flag must come out of a real reset, or the
+    // splash may be declared overwritten (and shown black) from the start.
     always @(posedge clk_cpu) begin
-        cpu_written <= cpu_written | cpu_write;
+        if (written_clear)
+            cpu_written <= 1'b0;
+        else if (cpu_write)
+            cpu_written <= 1'b1;
     end
 
     always @(posedge clk_cpu) begin

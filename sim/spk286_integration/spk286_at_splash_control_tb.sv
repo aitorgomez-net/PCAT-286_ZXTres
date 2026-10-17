@@ -8,6 +8,7 @@ module spk286_at_splash_control_tb;
     logic paused = 1'b0;
     wire  splash_active;
     wire  boot_hold;
+    wire  fade_out;
     wire  cpu_reset = reset | boot_hold;
     wire  fetch_bus_valid;
     wire [23:0] fetch_address;
@@ -21,7 +22,7 @@ module spk286_at_splash_control_tb;
 
     spk286_at_splash_control dut (
         .clk(clk), .reset(reset), .option_off(option_off),
-        .second_tick(second_tick), .paused(paused), .splash_active(splash_active),
+        .second_tick(second_tick), .paused(paused), .splash_active(splash_active), .fade_out(fade_out),
         .boot_hold(boot_hold)
     );
 
@@ -85,6 +86,8 @@ module spk286_at_splash_control_tb;
         #1;
         if (!splash_active || !boot_hold)
             $fatal(1, "splash did not start after the delay");
+        if (fade_out)
+            $fatal(1, "fade-out requested as the splash appears");
 
         repeat (2) begin
             pulse_second();
@@ -107,6 +110,15 @@ module spk286_at_splash_control_tb;
             if (!splash_active || !boot_hold)
                 $fatal(1, "splash released the CPU too soon after the pause");
         end
+        // Last second: the picture fades out, unless F12 holds it.
+        if (!fade_out)
+            $fatal(1, "no fade-out request in the last second");
+        paused = 1'b1;
+        #1;
+        if (fade_out)
+            $fatal(1, "fade-out requested while F12 holds the splash");
+        paused = 1'b0;
+        #1;
         pulse_second();
         #1;
         if (splash_active || boot_hold)
@@ -149,6 +161,7 @@ module spk286_at_splash_control_tb;
 
         $display("AT_SPLASH_RESET_FETCH_PASS address=fffff0 data=12ea");
         $display("AT_SPLASH_PAUSE_PASS held_seconds=8");
+        $display("AT_SPLASH_FADE_REQUEST_PASS last_second_only=1");
         $display("AT_SPLASH_CONTROL_PASS");
         $finish;
     end

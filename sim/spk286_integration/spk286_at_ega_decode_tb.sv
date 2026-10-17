@@ -15,7 +15,7 @@ module spk286_at_ega_decode_tb;
     integer checks = 0;
     spk286_at_video_adapter dut (
         .clk(clk), .reset(reset), .video_reset_in(video_reset),
-        .clk_video(clk_video), .prebios_video(1'b0), .splashscreen(1'b0),
+        .clk_video(clk_video), .prebios_video(1'b0), .splashscreen(1'b0), .splash_fade_out(1'b0),
         .ega_monitor_profile(2'd0), .vga_enabled(1'b0), .vga_mode13_native(1'b0),
         .crt_h_offset(4'd6), .crt_v_offset(3'd4),
         .vsync_width_osd(3'd0), .hsync_width_osd(3'd0),

@@ -14,6 +14,9 @@ module spk286_at_splash_control (
     input  logic second_tick,
     input  logic paused,
     output logic splash_active,
+    // Raised for the last second of the splash so the picture can fade out
+    // before the machine starts. F12 holds the splash, and lifts this too.
+    output logic fade_out,
     // Hold the CPU before the image starts as well as while it is visible.
     // The pending interval must not become an unintended first BIOS run.
     output logic boot_hold
@@ -22,6 +25,7 @@ module spk286_at_splash_control (
     logic [2:0] splash_seconds_q;
 
     assign boot_hold = reset | splash_pending_q | splash_active;
+    assign fade_out  = splash_active && (splash_seconds_q == 3'd4) && !paused;
 
     always_ff @(posedge clk or posedge reset) begin
         if (reset) begin

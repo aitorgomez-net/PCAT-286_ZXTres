@@ -125,6 +125,9 @@ module spk286_at_bios_first_fetch_tb #(
     logic splash_released = 1'b0;
     integer splash_release_cycles = 0;
     logic splash_handoff_done = 1'b0;
+    // Coloured pixels the adapter actually sends out while the splash shows.
+    integer splash_lit_pixels = 0;
+    integer splash_de_pixels = 0;
     // +PAUSE engages the F12 pause once the BIOS is running: the CPU must go
     // on HOLD, stay off the bus for the whole pause and then carry on.
     logic pause_tb = 1'b0;
@@ -476,6 +479,14 @@ module spk286_at_bios_first_fetch_tb #(
                          splash_release_cycles, cpu_fetch_returns);
                 splash_handoff_done <= 1'b1;
             end
+        end
+    end
+
+    always @(posedge clk_video) begin
+        if (splash_tb && `AT_TB_VIDEO.video_de) begin
+            splash_de_pixels = splash_de_pixels + 1;
+            if ({`AT_TB_VIDEO.video_red, `AT_TB_VIDEO.video_green, `AT_TB_VIDEO.video_blue} != 18'd0)
+                splash_lit_pixels = splash_lit_pixels + 1;
         end
     end
 
@@ -1172,7 +1183,7 @@ module spk286_at_bios_first_fetch_tb #(
         .clk(clk), .clk_cpu(clk_cpu), .uart1_rx(1'b1),
         .cpu_sample_edge(CPU_DIV2_TEST ? ~clk_cpu_div : 1'b1),
         .reset(reset | machine_boot_reset), .video_reset(reset | machine_boot_reset),
-        .cpu_reset(reset | cpu_boot_reset), .clk_video(clk_video), .splashscreen(splash_tb),
+        .cpu_reset(reset | cpu_boot_reset), .clk_video(clk_video), .splashscreen(splash_tb), .splash_fade_out(1'b0),
         .ega_monitor_profile(2'b00),
         .installed_ram_size_osd(installed_ram_size_osd),
         .execute_enable(execute_enable), .pause(pause_tb),
@@ -1315,12 +1326,22 @@ module spk286_at_bios_first_fetch_tb #(
             // Let the splash own the connector for a complete frame of the
             // mode 13h raster before the hold ends.
             wait (`AT_TB_VIDEO.u_ega.vga_splash_active);
+            // The splash fades in over about half a second; measure it once
+            // it has reached full brightness.
+            wait (`AT_TB_VIDEO.u_ega.vga_splash_level == 7'd64);
             @(posedge `AT_TB_VIDEO.u_ega.vga_renderer.vblank);
+            splash_lit_pixels = 0;
+            splash_de_pixels = 0;
             @(posedge `AT_TB_VIDEO.u_ega.vga_renderer.vblank);
+            if (splash_de_pixels < 100000 || splash_lit_pixels < splash_de_pixels / 2)
+                $fatal(1,"SPLASH picture not on the adapter output: de=%0d lit=%0d valid=%b",
+                       splash_de_pixels, splash_lit_pixels,
+                       `AT_TB_VIDEO.splash_image_video_sync2_q);
             if (!`AT_TB_VIDEO.vga_mode13_active_video)
                 $fatal(1,"SPLASH raster does not own the connector");
             if (`AT_TB_VIDEO.vga_framebuffer_cpu_written)
                 $fatal(1,"SPLASH picture overwritten before the CPU ran");
+            $display("AT_SPLASH_PIXELS de=%0d lit=%0d", splash_de_pixels, splash_lit_pixels);
             $display("AT_SPLASH_VISIBLE_PASS image_valid=%b",
                      `AT_TB_VIDEO.splash_image_video_sync2_q);
         end

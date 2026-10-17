@@ -954,6 +954,7 @@ module emu_at
     wire at_splashscreen;
     wire at_splash_boot_hold;
     wire at_splash_paused;
+    wire at_splash_fade_out;
 
     // F12 pauses the running machine and shows the credits (PCXT-EGA
     // behaviour); the key itself never reaches the AT keyboard.
@@ -1005,6 +1006,7 @@ module emu_at
         .second_tick (second_tick),
         .paused      (at_splash_paused),
         .splash_active(at_splashscreen),
+        .fade_out    (at_splash_fade_out),
         .boot_hold   (at_splash_boot_hold)
     );
 
@@ -1018,6 +1020,7 @@ module emu_at
     assign at_splashscreen   = 1'b0;
     assign at_splash_boot_hold = 1'b0;
     assign at_splash_paused  = 1'b0;
+    assign at_splash_fade_out = 1'b0;
 `endif
 
     // Keep the processor stopped until both required firmware images exist.
@@ -1154,6 +1157,7 @@ module emu_at
         .cpu_reset              (at_machine_reset),
         .clk_video              (at_video_clk_28),
         .splashscreen           (at_splashscreen),
+        .splash_fade_out        (at_splash_fade_out),
         .ega_monitor_profile    (at_monitor_profile_applied),
         .at286ctl_status_effective(at286ctl_status_effective),
         .at286ctl_status_osd_match(at286ctl_status_osd_match),

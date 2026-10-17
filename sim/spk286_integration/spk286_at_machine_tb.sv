@@ -494,7 +494,7 @@ module spk286_at_machine_tb;
 
     spk286_at_machine dut (
         .clk(clk), .clk_cpu(clk), .cpu_sample_edge(1'b1), .reset(reset), .video_reset(reset),
-        .cpu_reset(reset | cpu_local_reset), .clk_video(clk_video), .splashscreen(1'b0),
+        .cpu_reset(reset | cpu_local_reset), .clk_video(clk_video), .splashscreen(1'b0), .splash_fade_out(1'b0),
         .cpu_speed_requested(3'(selected_cpu_profile)),
         .cpu_speed_active(applied_cpu_profile), .cpu_speed_pending(cpu_profile_pending),
         .ega_monitor_profile(2'b00),

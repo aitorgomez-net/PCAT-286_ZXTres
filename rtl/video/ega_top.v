@@ -89,6 +89,8 @@ module ega_top(
     // The splash picture is still intact in the mode 13h framebuffer. Low once
     // software has written there; the splash interval then stays black.
     input splash_image_valid,
+    // Fade the splash out (its last second); see vga_splash_fade.
+    input splash_fade_out,
     input prebios_video,
     input thin_font,
     input scandouble_en,
@@ -110,6 +112,10 @@ module ega_top(
     );
 
     parameter BLINK_MAX = 0;
+    // Splash fade steps per frame on a 0-64 brightness scale. A step of 64
+    // makes the splash appear at full brightness at once (testbenches).
+    parameter [6:0] SPLASH_FADE_IN_STEP = 7'd2;
+    parameter [6:0] SPLASH_FADE_OUT_STEP = 7'd1;
     parameter USE_BUS_WAIT = 0;
     parameter NO_DISPLAY_DISABLE = 0;
     parameter IO_BASE_ADDR = 16'h3d0;
@@ -998,17 +1004,48 @@ module ega_top(
 
     // The splash colours come from their own table, so the emulated DAC keeps
     // the state the machine expects at power-on.
+    // They are scaled by a per-frame level so the splash fades in when it
+    // appears and out over its last second.
     wire [5:0] vga_splash_red;
     wire [5:0] vga_splash_green;
     wire [5:0] vga_splash_blue;
 
 `ifndef PCAT_EGA_ONLY
+    wire [5:0] vga_splash_red_full;
+    wire [5:0] vga_splash_green_full;
+    wire [5:0] vga_splash_blue_full;
+    wire [6:0] vga_splash_level;
+    reg        vga_splash_vblank_q = 1'b0;
+
     vga_splash_palette vga_splash_palette_inst (
         .index (vga_packed_dac_index),
-        .red   (vga_splash_red),
-        .green (vga_splash_green),
-        .blue  (vga_splash_blue)
+        .red   (vga_splash_red_full),
+        .green (vga_splash_green_full),
+        .blue  (vga_splash_blue_full)
     );
+
+    always @(posedge clk)
+        vga_splash_vblank_q <= vga_packed_vblank;
+
+    vga_splash_fade #(
+        .IN_STEP  (SPLASH_FADE_IN_STEP),
+        .OUT_STEP (SPLASH_FADE_OUT_STEP)
+    ) vga_splash_fade_inst (
+        .clock      (clk),
+        .reset      (reset),
+        .active     (vga_splash_active),
+        .fade_out   (splash_fade_out),
+        .frame_tick (vga_packed_vblank & ~vga_splash_vblank_q),
+        .level      (vga_splash_level)
+    );
+
+    // Level 64 leaves a component unchanged; the product never exceeds 63*64.
+    wire [12:0] vga_splash_red_scaled   = vga_splash_red_full   * vga_splash_level;
+    wire [12:0] vga_splash_green_scaled = vga_splash_green_full * vga_splash_level;
+    wire [12:0] vga_splash_blue_scaled  = vga_splash_blue_full  * vga_splash_level;
+    assign vga_splash_red   = vga_splash_red_scaled[11:6];
+    assign vga_splash_green = vga_splash_green_scaled[11:6];
+    assign vga_splash_blue  = vga_splash_blue_scaled[11:6];
 `else
     assign vga_splash_red = '0;
     assign vga_splash_green = '0;

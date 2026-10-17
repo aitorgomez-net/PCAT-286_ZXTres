@@ -11,8 +11,10 @@
 //    - 15 kHz (60 Hz): 1280 clocks x 200 lines, each source pixel four clocks.
 //
 //  Every visible pixel of one frame is compared against the RGB666 colour
-//  the hex images give for it, in both profiles. A splash whose picture has
-//  been overwritten (splash_image_valid low) must stay black instead.
+//  the hex images give for it, in both profiles. A fade-out request must
+//  bring the picture to black, and a splash whose picture has been
+//  overwritten (splash_image_valid low) must stay black too. The fade steps
+//  are set to a full step here; vga_splash_fade_tb covers the real ramp.
 //
 //  Run from rtl/video so the hex images resolve, e.g. via
 //    TESTBENCH/run_tests.sh vga_splash
@@ -32,6 +34,7 @@ module vga_splash_tb;
 
     reg reset = 1'b1;
     reg image_valid = 1'b1;
+    reg fade_req = 1'b0;
 
     reg [7:0]  expected_pixel [0:65535];
     reg [17:0] expected_palette [0:255];
@@ -68,20 +71,20 @@ module vga_splash_tb;
 
     vga_framebuffer #(.INIT_FILE("splash_vga_320x200.hex")) n_fb (
         .clk_cpu(clk), .reset_cpu(reset), .cpu_addr(16'h0000), .cpu_din(8'h00),
-        .cpu_read(1'b0), .cpu_write(1'b0), .cpu_dout(), .cpu_ready(), .cpu_written(),
+        .cpu_read(1'b0), .cpu_write(1'b0), .cpu_dout(), .cpu_ready(), .written_clear(reset), .cpu_written(),
         .clk_video(clk), .video_addr(n_fb_addr), .video_read_en(n_fb_read_en),
         .video_pixel(n_fb_pixel), .video_data_valid(n_fb_valid)
     );
 
     vga_framebuffer #(.INIT_FILE("splash_vga_320x200.hex")) t_fb (
         .clk_cpu(clk), .reset_cpu(reset), .cpu_addr(16'h0000), .cpu_din(8'h00),
-        .cpu_read(1'b0), .cpu_write(1'b0), .cpu_dout(), .cpu_ready(), .cpu_written(),
+        .cpu_read(1'b0), .cpu_write(1'b0), .cpu_dout(), .cpu_ready(), .written_clear(reset), .cpu_written(),
         .clk_video(clk), .video_addr(t_fb_addr), .video_read_en(t_fb_read_en),
         .video_pixel(t_fb_pixel), .video_data_valid(t_fb_valid)
     );
 
 `define SPLASH_DUT(NAME, NATIVE, VALID, FB_ADDR, FB_RE, FB_PIX, FB_VALID, RED, GREEN, BLUE, DE, VBLANK, VSYNC, PRIVATE, VMODE) \
-    ega_top NAME ( \
+    ega_top #(.SPLASH_FADE_IN_STEP(7'd64), .SPLASH_FADE_OUT_STEP(7'd64)) NAME ( \
         .clk(clk), .reset(reset), \
         .bus_a(15'h0000), .bus_ior_l(1'b1), .bus_iow_l(1'b1), .bus_d(8'h00), \
         .bus_out(), .bus_dir(), .bus_aen(1'b0), \
@@ -108,7 +111,7 @@ module vga_splash_tb;
         .ega_display_sel_out(), .ega_dot_toggle_out(), .ega_dot_clock_sel_out(), \
         .ega_scandouble_active_out(), .ega_mode350_out(), .ega_active_dots_out(), \
         .ega_active_lines_out(), .ega_vmode_toggle_out(VMODE), \
-        .splashscreen(1'b1), .splash_image_valid(VALID), .prebios_video(1'b0), \
+        .splashscreen(1'b1), .splash_image_valid(VALID), .splash_fade_out(fade_req),         .prebios_video(1'b0), \
         .thin_font(1'b0), .scandouble_en(1'b0), .ega_enabled(1'b1), \
         .ega_monitor_profile(2'b00), .vga_enabled(1'b0), \
         .vga_mode13_native(NATIVE), .vga_mode13_set(1'b0), .vga_mode13_clear(1'b0), \
@@ -276,6 +279,25 @@ module vga_splash_tb;
             errors = errors + 1;
         end
 
+        // A fade-out request takes the picture down to black. The DUTs use a
+        // full step so it happens on the next frame; vga_splash_fade_tb
+        // checks the real ramp.
+        fade_req = 1'b1;
+        @(posedge n_vblank);
+        @(posedge n_vblank);
+        check_black = 1'b1;
+        @(posedge n_vblank);
+        check_black = 1'b0;
+        if (black_violations != 0) begin
+            $display("FAIL: %0d non-black clocks after the fade-out",
+                     black_violations);
+            errors = errors + 1;
+        end
+        fade_req = 1'b0;
+        @(posedge n_vblank);
+        @(posedge n_vblank);
+        black_violations = 0;
+
         // An overwritten picture leaves the splash interval black.
         image_valid = 1'b0;
         repeat (8) @(posedge clk);
@@ -297,7 +319,7 @@ module vga_splash_tb;
     end
 
     initial begin
-        #120000000;
+        #300000000;
         $display("RESULT: FAIL (timeout)");
         $finish;
     end
