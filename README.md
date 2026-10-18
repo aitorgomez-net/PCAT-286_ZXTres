@@ -17,6 +17,13 @@ built-in audio. BIOS/DOS, Windows 3.1, OS/2 and games have been reported working
 on MiSTer. These observations do not imply complete chipset, protected-mode
 corner-case or historical timing certification; see [qualification limits](#qualification-limits).
 
+A detailed [technical report](https://spark2k06.github.io/PCAT-286_MiSTer/report/)
+(architecture, memory map, I/O, video, verification and FPGA timing; source in
+[docs/report](docs/report/CORE_REPORT.html)) complements this README, and the
+[BIOS Builder](https://spark2k06.github.io/PCAT-286_MiSTer/BIOS_Builder) prepares
+the firmware the core needs. Both are published at
+[spark2k06.github.io/PCAT-286_MiSTer](https://spark2k06.github.io/PCAT-286_MiSTer/).
+
 ## Build and first boot
 
 The checked-in project targets Quartus Prime Lite 17.0.2. Build from the
@@ -407,6 +414,7 @@ of `1234h` to `0040:0072`; run the TSR again afterward.
 | `sim/`, `tests/`, `scripts/` | Directed simulations, firmware and verification entrypoints |
 | `SW/`, `hdd/` | DOS utilities, the ROM builder (`SW/ROMs/BIOS_Builder.html`), splash artwork and boot examples |
 | `credits/` | Credits text (`msg`) and its `msg2hex` converter |
+| `docs/` | Technical report and the landing page of the GitHub Pages site |
 
 Use Python 3.10+, Bash, Icarus Verilog, Verilator, make and a C++ build
 toolchain on Linux or WSL for the portable regression entrypoint. Machine

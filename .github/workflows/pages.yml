@@ -1,11 +1,16 @@
-name: Publish web tools
+name: Publish documentation site
 
-# Publishes every SW/ROMs/*.html page to GitHub Pages as its own folder, e.g.
-# SW/ROMs/BIOS_Builder.html -> https://spark2k06.github.io/PCAT-286_MiSTer/BIOS_Builder
+# Publishes the documentation to GitHub Pages
+# (https://spark2k06.github.io/PCAT-286_MiSTer/):
+#   /             docs/index.html
+#   /report/      docs/report/CORE_REPORT.html
+#   /<Name>/      every SW/ROMs/<Name>.html, e.g. /BIOS_Builder/
 on:
   push:
     branches: [main]
     paths:
+      - docs/index.html
+      - docs/report/*.html
       - SW/ROMs/*.html
       - .github/workflows/pages.yml
   workflow_dispatch:
@@ -29,7 +34,9 @@ jobs:
       - uses: actions/checkout@v4
       - name: Stage the site
         run: |
-          mkdir _site
+          mkdir -p _site/report
+          cp docs/index.html _site/index.html
+          cp docs/report/CORE_REPORT.html _site/report/index.html
           for page in SW/ROMs/*.html; do
             name=$(basename "$page" .html)
             mkdir "_site/$name"
