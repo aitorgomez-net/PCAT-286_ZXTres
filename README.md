@@ -56,7 +56,9 @@ opens with **Win + F12**. The credits text is [credits/msg](credits/msg):
 build `credits/msg2hex.cc`, run it on that file and copy the resulting
 `msg.bin` to `rtl/common/msg.bin`.
 
-1. Copy the built RBF to the MiSTer SD card and load it.
+1. Copy the built RBF to the MiSTer SD card and load it. Build the two ROMs
+   with the [BIOS Builder](https://spark2k06.github.io/PCAT-286_MiSTer/)
+   (see [Firmware](#firmware)).
 2. Open the OSD with **Win + F12**. Select both ROMs under **System & BIOS**:
    **PCAT BIOS** and **EGA BIOS**.
 3. Mount a bootable floppy image at **Floppy A:** or an IDE disk at **IDE 0-0**.
@@ -65,12 +67,14 @@ build `credits/msg2hex.cc`, run it on that file and copy the resulting
 4. Select **Hardware → Installed RAM** and **Monitor**, then use
    **Reset & apply settings**. F12 or Esc closes the open OSD.
 
+### Firmware
+
 A system ROM is loaded at `F0000h`; supply a 64 KiB image containing the reset
 entry at offset `FFF0h`. For BIOSes distributed as separate even/odd chips,
-prepare the interleaved CPU-visible image first. The EGA ROM starts at `C0000h`
-and must fit within 32 KiB. The loader rejects an oversized EGA image instead
-of allowing it to overwrite UMB RAM. System BIOS images are not supplied:
-use an AT BIOS such as MR BIOS.
+the CPU-visible image is the two chips interleaved. The EGA ROM starts at
+`C0000h` and must fit within 32 KiB. The loader rejects an oversized EGA image
+instead of allowing it to overwrite UMB RAM. The tested system BIOSes are
+PhoenixBIOS A286 1.01 and MR BIOS V1.65.
 
 The CPU stays in reset while either required ROM is absent or being replaced.
 A visible notice identifies the missing ROM so the OSD remains usable; loading
@@ -79,11 +83,16 @@ initialize the video registers during POST. There is no separate disk option
 ROM slot: the selected AT BIOS must support the standard AT IDE interface at
 `1F0h`/`3F6h`.
 
-The original IBM EGA BIOS is not supplied. The existing helper
-[make_ega_bios_rom.py](SW/ROMs/EGA/make_ega_bios_rom.py) requires Python 3 and
-`requests`; it downloads the 16 KiB IBM 6277356 dump and reverses its byte order
-into `ega_bios.rom` in the current directory. System and video ROMs retain
-their respective owners' terms. Project-owned diagnostics are in
+The original IBM EGA BIOS and the system BIOS images are not supplied. The
+[BIOS Builder](https://spark2k06.github.io/PCAT-286_MiSTer/) (source:
+[SW/ROMs/BIOS_Builder.html](SW/ROMs/BIOS_Builder.html), which also runs from a
+local copy) prepares both from reference downloads. It builds `ega_bios.rom`
+(the 16 KiB IBM 6277356 EGA ROM in CPU address order) and a 64 KiB PhoenixBIOS
+A286 1.01 or MR BIOS V1.65 image by interleaving the even/odd chip images, and
+checks every source and output against the images tested with the core. It
+runs entirely in the browser: nothing is uploaded, and a manual file picker
+replaces the automatic download if that is blocked. System and video ROMs
+retain their respective owners' terms. Project-owned diagnostics are in
 [tests/firmware](tests/firmware); they exercise specific boundaries and do not
 replace a general-purpose PC/AT BIOS.
 
@@ -396,7 +405,7 @@ of `1234h` to `0040:0072`; run the TSR again afterward.
 | `rtl/KFPC-XT/` | Retained KF8259, KF8254 (KF8253) and KFSDRAM components, plus the EGA VRAM front end, ROM-presence latch and F12 pause key |
 | `rtl/sound/`, `rtl/uart/`, `rtl/common/`, `sys/` | Audio, serial and MiSTer support |
 | `sim/`, `tests/`, `scripts/` | Directed simulations, firmware and verification entrypoints |
-| `SW/`, `hdd/` | DOS utilities, EGA ROM preparation, splash artwork and boot examples |
+| `SW/`, `hdd/` | DOS utilities, the ROM builder (`SW/ROMs/BIOS_Builder.html`), splash artwork and boot examples |
 | `credits/` | Credits text (`msg`) and its `msg2hex` converter |
 
 Use Python 3.10+, Bash, Icarus Verilog, Verilator, make and a C++ build
@@ -582,4 +591,6 @@ licenses, copyright headers and redistribution notices remain authoritative
 for their respective files, including bundled utilities and firmware sources.
 The vendored SPK286 CPU is under the MIT License in
 [vendor/spk286/LICENSE](vendor/spk286/LICENSE). Third-party BIOS images
-and external test corpora are separate inputs, not covered by the root license.
+and external test corpora are separate inputs, not covered by the root license. The BIOS Builder contains no
+ROM data: it fetches the reference images from the 86Box ROM archive and
+minuszerodegrees.net when the user asks it to.

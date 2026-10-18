@@ -1,0 +1,39 @@
+name: Publish BIOS Builder
+
+# Publishes SW/ROMs/BIOS_Builder.html as the GitHub Pages site
+# (https://spark2k06.github.io/PCAT-286_MiSTer/).
+on:
+  push:
+    branches: [prerelease]
+    paths:
+      - SW/ROMs/BIOS_Builder.html
+      - .github/workflows/pages.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Stage the site
+        run: |
+          mkdir _site
+          cp SW/ROMs/BIOS_Builder.html _site/index.html
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+      - id: deployment
+        uses: actions/deploy-pages@v4
