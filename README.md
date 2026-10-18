@@ -57,7 +57,7 @@ build `credits/msg2hex.cc`, run it on that file and copy the resulting
 `msg.bin` to `rtl/common/msg.bin`.
 
 1. Copy the built RBF to the MiSTer SD card and load it. Build the two ROMs
-   with the [BIOS Builder](https://spark2k06.github.io/PCAT-286_MiSTer/)
+   with the [BIOS Builder](https://spark2k06.github.io/PCAT-286_MiSTer/BIOS_Builder)
    (see [Firmware](#firmware)).
 2. Open the OSD with **Win + F12**. Select both ROMs under **System & BIOS**:
    **PCAT BIOS** and **EGA BIOS**.
@@ -84,7 +84,7 @@ ROM slot: the selected AT BIOS must support the standard AT IDE interface at
 `1F0h`/`3F6h`.
 
 The original IBM EGA BIOS and the system BIOS images are not supplied. The
-[BIOS Builder](https://spark2k06.github.io/PCAT-286_MiSTer/) (source:
+[BIOS Builder](https://spark2k06.github.io/PCAT-286_MiSTer/BIOS_Builder) (source:
 [SW/ROMs/BIOS_Builder.html](SW/ROMs/BIOS_Builder.html), which also runs from a
 local copy) prepares both from reference downloads. It builds `ega_bios.rom`
 (the 16 KiB IBM 6277356 EGA ROM in CPU address order) and a 64 KiB PhoenixBIOS

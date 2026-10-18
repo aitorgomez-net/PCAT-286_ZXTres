@@ -1,12 +1,12 @@
-name: Publish BIOS Builder
+name: Publish web tools
 
-# Publishes SW/ROMs/BIOS_Builder.html as the GitHub Pages site
-# (https://spark2k06.github.io/PCAT-286_MiSTer/).
+# Publishes every SW/ROMs/*.html page to GitHub Pages as its own folder, e.g.
+# SW/ROMs/BIOS_Builder.html -> https://spark2k06.github.io/PCAT-286_MiSTer/BIOS_Builder
 on:
   push:
-    branches: [prerelease]
+    branches: [main]
     paths:
-      - SW/ROMs/BIOS_Builder.html
+      - SW/ROMs/*.html
       - .github/workflows/pages.yml
   workflow_dispatch:
 
@@ -30,7 +30,11 @@ jobs:
       - name: Stage the site
         run: |
           mkdir _site
-          cp SW/ROMs/BIOS_Builder.html _site/index.html
+          for page in SW/ROMs/*.html; do
+            name=$(basename "$page" .html)
+            mkdir "_site/$name"
+            cp "$page" "_site/$name/index.html"
+          done
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:
