@@ -4,8 +4,9 @@ plus IMAGE.sparse with only its non-zero bytes.
 
   make_fat16_image.py IMAGE FILE...
 
-The image is 8 MiB with 2 KiB clusters, the files go to the root directory
-under their 8.3 names in capitals. DeMiSTify's minfat accepts a FAT16 volume
+The image is 8 MiB with 2 KiB clusters. A FILE goes to the root directory
+under its 8.3 name in capitals; FOLDER/NAME.EXT=FILE puts it in that folder
+of the root (one cluster of entries each) under that name. DeMiSTify's minfat accepts a FAT16 volume
 that starts at sector 0.
 """
 from pathlib import Path
@@ -24,11 +25,16 @@ FAT_SECTORS = ((CLUSTERS + 2) * 2 + SECTOR - 1) // SECTOR
 DATA_START = RESERVED + FATS * FAT_SECTORS + ROOT_SECTORS
 
 
-def name83(path):
-    stem, _, ext = path.name.upper().partition('.')
+def name83(name):
+    stem, _, ext = name.upper().partition('.')
     if not (1 <= len(stem) <= 8 and len(ext) <= 3):
-        sys.exit(f'{path.name}: not an 8.3 name')
+        sys.exit(f'{name}: not an 8.3 name')
     return stem.ljust(8).encode() + ext.ljust(3).encode()
+
+
+def entry(name, attributes, cluster, size):
+    return struct.pack('<11sBBBHHHHHHHI', name, attributes, 0, 0, 0, 0, 0, 0,
+                       0, 0, cluster, size)
 
 
 def main():
@@ -43,21 +49,41 @@ def main():
     image[510:512] = b'\x55\xAA'
 
     fat = [0xFFF8, 0xFFFF]
-    root = bytearray()
-    cluster = 2
+    cluster_bytes = SECTORS_PER_CLUSTER * SECTOR
+
+    def put(cluster, data):
+        offset = (DATA_START + (cluster - 2) * SECTORS_PER_CLUSTER) * SECTOR
+        image[offset:offset + len(data)] = data
+
+    files = []
     for argument in sys.argv[2:]:
-        path = Path(argument)
-        data = path.read_bytes()
-        clusters = max(1, -(-len(data) // (SECTORS_PER_CLUSTER * SECTOR)))
-        first = cluster
+        target, _, source = argument.rpartition('=')
+        folder, _, name = (target or Path(source).name).rpartition('/')
+        files.append((folder.upper(), name, Path(source).read_bytes()))
+    # One cluster per folder, then the files.
+    folders = {}
+    root = bytearray()
+    for folder in dict.fromkeys(f for f, _, _ in files if f):
+        folders[folder] = [len(fat), bytearray()]
+        fat.append(0xFFFF)
+        folders[folder][1] += entry(b'.          ', 0x10, folders[folder][0], 0)
+        folders[folder][1] += entry(b'..         ', 0x10, 0, 0)
+        root += entry(name83(folder), 0x10, folders[folder][0], 0)
+    for folder, name, data in files:
+        first = len(fat)
+        clusters = max(1, -(-len(data) // cluster_bytes))
         for index in range(clusters):
-            fat.append(0xFFFF if index == clusters - 1 else cluster + 1)
-            offset = (DATA_START + (cluster - 2) * SECTORS_PER_CLUSTER) * SECTOR
-            chunk = data[index * SECTORS_PER_CLUSTER * SECTOR:(index + 1) * SECTORS_PER_CLUSTER * SECTOR]
-            image[offset:offset + len(chunk)] = chunk
-            cluster += 1
-        root += struct.pack('<11sBBBHHHHHHHI', name83(path), 0x20, 0, 0, 0, 0, 0, 0,
-                            0, 0, first, len(data))
+            fat.append(0xFFFF if index == clusters - 1 else len(fat) + 1)
+            put(first + index, data[index * cluster_bytes:(index + 1) * cluster_bytes])
+        record = entry(name83(name), 0x20, first, len(data))
+        if folder:
+            folders[folder][1] += record
+        else:
+            root += record
+    for first, entries in folders.values():
+        if len(entries) > cluster_bytes:
+            sys.exit('too many files in one folder')
+        put(first, entries)
     fat_bytes = struct.pack(f'<{len(fat)}H', *fat)
     for copy in range(FATS):
         offset = (RESERVED + copy * FAT_SECTORS) * SECTOR
@@ -71,7 +97,7 @@ def main():
         for address, value in enumerate(image):
             if value:
                 sparse.write(f'{address:x} {value:02x}\n')
-    print(f'{sys.argv[1]}: {len(sys.argv) - 2} files, data from sector {DATA_START}')
+    print(f'{sys.argv[1]}: {len(files)} files, {len(folders)} folders, data from sector {DATA_START}')
 
 
 if __name__ == '__main__':

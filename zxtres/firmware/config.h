@@ -15,17 +15,16 @@
 
 #undef CONFIG_CD
 
-/* Block devices for the core (user_io sd_*): unit 2 is the CMOS file,
-   PCAT286.CMS; units 0 and 1 are kept for the floppy images (not yet, see
-   zxtres/PORT.md). With CONFIG_IDE as well, overrides.c provides
-   loadimage(). */
+/* Block devices for the core (user_io sd_*): units 0 and 1 are the hard
+   disks, PCAT286A.VHD and PCAT286B.VHD, which zxtres_ide_store.sv serves to
+   the machine's own IDE device; unit 2 is the CMOS file, PCAT286.CMS; units
+   3 and 4 are floppy drives A and B, chosen from the OSD
+   (zxtres_fdd_store.sv). The MiST IDE emulation (CONFIG_IDE) is not used:
+   the machine has the AO486 IDE device, not the MiST one. DeMiSTify reads a
+   unit number in two bits; build_firmware.sh stages diskimg.c with three. */
 #define CONFIG_DISKIMG
-#define CONFIG_DISKIMG_UNITS 3
-
-/* Hard disks: MiST IDE emulation from VHD files, two units (0-0, 0-1). */
-#define CONFIG_IDE
-#define CONFIG_IDE_UNITS 2
-#define CONFIG_IDE_PC_HD
+#define CONFIG_DISKIMG_UNITS 5
+#undef CONFIG_IDE
 
 #define CONFIG_FILEBOOKMARKS 16
 

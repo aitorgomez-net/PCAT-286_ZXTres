@@ -48,6 +48,12 @@ module zxtres_cmos_store #(
     input  logic [15:0] mgmt_readdata,     // CMOS bytes use bits 7:0
     /* verilator lint_on UNUSEDSIGNAL */
 
+    // The IDE store shares the window: while `pause` is high the scan holds
+    // (and restarts its pass), and scan_idle says the window is not needed
+    // for a file transfer.
+    input  logic        pause,
+    output logic        scan_idle,
+
     output logic        busy,          // reading or restoring: hold the machine
     output logic        restored,      // the last mount restored a signed image
     output logic [15:0] save_count     // sectors written since configuration
@@ -95,6 +101,7 @@ module zxtres_cmos_store #(
     wire [15:0] hash_next = probe_kept ? ({scan_hash_q[14:0], scan_hash_q[15]} ^ {8'h00, cmos_byte})
                                        : scan_hash_q;
 
+    assign scan_idle = (state_q == S_SCAN) || (state_q == S_IDLE);
     assign busy = (state_q == S_READ_REQ) || (state_q == S_READ) || (state_q == S_RESTORE);
     // The controller fetches sd_din by sd_buff_addr; mgmt_address follows it
     // one clock later, like a block RAM read.
@@ -162,7 +169,11 @@ module zxtres_cmos_store #(
                     end
                 end
 
-                S_SCAN: begin
+                S_SCAN: if (pause) begin
+                    mgmt_address <= 16'hF400;
+                    scan_dirty_q <= 1'b0;
+                    scan_hash_q <= '0;
+                end else begin
                     mgmt_address <= {9'b1111_0100_0, probe + 7'd1};
                     if (quiet_q < QUIET_CYCLES)
                         quiet_q <= quiet_q + 32'd1;

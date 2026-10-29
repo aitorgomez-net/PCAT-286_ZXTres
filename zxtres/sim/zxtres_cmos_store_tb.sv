@@ -64,7 +64,7 @@ module zxtres_cmos_store_tb;
         .sd_din(sd_din),
         .mgmt_address(mgmt_address), .mgmt_writedata(mgmt_writedata),
         .mgmt_write(mgmt_write), .mgmt_readdata(mgmt_readdata),
-        .busy(busy), .restored(restored), .save_count(save_count)
+        .pause(1'b0), .scan_idle(), .busy(busy), .restored(restored), .save_count(save_count)
     );
     always @(posedge clk) if (busy) busy_seen <= 1;
 

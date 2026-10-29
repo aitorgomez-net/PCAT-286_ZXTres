@@ -19,3 +19,8 @@ menu.o : menu.c config.h $(CC)
 	@echo "Compiling menu.c (ZXTRES OSD)"
 	@$(CC) $(COPT) $(CFLAGS) -I$(INCDIR) -I$(DEMISTIFYPATH)/firmware -o=menu.asm menu.c
 	@$(AS) >/dev/null $(ASFLAGS) -o menu.o menu.asm
+
+diskimg.o : diskimg.c config.h $(CC)
+	@echo "Compiling diskimg.c (five block devices)"
+	@$(CC) $(COPT) $(CFLAGS) -I$(INCDIR) -I$(DEMISTIFYPATH)/firmware -o=diskimg.asm diskimg.c $(CDEFS)
+	@$(AS) >/dev/null $(ASFLAGS) -o diskimg.o diskimg.asm
