@@ -12,6 +12,10 @@ and replaces only the MiSTer glue:
 - the MiSTer video shell becomes a MiST OSD and a VGA output;
 - MT32-pi, the UARTs and the HPS info notices are left out.
 
+The audio mixer and compressor are kept too (the MT32-pi source is dropped);
+the stereo mix, which the MiSTer framework does after the core, is done here
+and the result goes out on DAC_L/DAC_R.
+
 The kept parts are:
 
 - the status word layout, rebuilt from the 64 MiST status bits;
@@ -19,7 +23,8 @@ The kept parts are:
 - the memory path from the CPU to the SDRAM;
 - the ROM loader;
 - the AT machine;
-- the EGA pipeline into the monochrome converter.
+- the EGA pipeline into the monochrome converter;
+- the audio mixer and compressor.
 
 Each kept block is located by a unique marker line, so a change to the
 MiSTer top that moves or removes one stops the generator rather than
@@ -112,8 +117,16 @@ module pcat286_zxtres_guest (
     output logic        VGA_HS,
     output logic        VGA_VS,
 
+    output logic [19:0] SRAM_A,         // 2 MiB asynchronous SRAM (scan converter)
+    inout  wire  [15:0] SRAM_Q,
+    output logic        SRAM_WE,        // active low
+    output logic        SRAM_OE,
+    output logic        SRAM_UB,
+    output logic        SRAM_LB,
+
     input  logic        PS2K_CLK_IN,    // physical keyboard, blocked while the OSD is open
     input  logic        PS2K_DAT_IN,
+    input  logic        OSD_OPEN,       // the controller is keeping the keyboard
     input  logic        PS2M_CLK_IN,    // physical mouse
     input  logic        PS2M_DAT_IN,
     output logic        PS2M_CLK_OUT,   // open collector: 0 pulls the line low
@@ -131,23 +144,60 @@ module pcat286_zxtres_guest (
     // OSD. Status bits keep the MiSTer core's positions where they fit in
     // the 64 MiST bits; the fields above bit 63 move to free bits and are
     // put back in place in hps_status below.
-    //   0 reset, 14-16 display, 23-27 joysticks, 28-29 220h audio,
-    //   32-33 speaker volume, 42-43 OPL2, 44-45 monitor, 54 joystick swap,
-    //   55 Tandy, 57-59 CPU speed, 30-31 + 53 installed RAM, 5 SB IRQ.
+    //   0 reset, 1-2 Settings page triggers (save, defaults; the firmware
+    //   handles them, the core never sees them set), 14-16 display, 23-27 joysticks, 28-29 220h audio,
+    //   32-33 speaker volume, 36-37 audio boost, 38-39 stereo mix, 42-43 OPL2,
+    //   44-45 monitor, 54 joystick swap,
+    //   55 Tandy, 57-59 CPU speed, 46-48 installed RAM, 5 SB IRQ,
+    //   10 VGA 13h+ TV 60 Hz, 19-20 floppy A/B read only, 60 scandoubler off,
+    //   8-9 splash time, 5, 10, 15 or 0 s (none; MiSTer's bit 7 is unused).
     // Option bits use the MiST digit form the DeMiSTify firmware parses
     // (CONFIG_STATUSWORD_64BIT): 0-9, then A-Z for 10-35, a-z for 36-61,
     // low bit first; it does not read the MiSTer O[high:low] form.
     localparam CONF_STR = {
         "PCAT286;;",
+        "S3,IMGIMAVFD,Floppy A:;",
+        "S4,IMGIMAVFD,Floppy B:;",
+        "S0,VHDIMG,Hard disk 0:;",
+        "S1,VHDIMG,Hard disk 1:;",
+        "L,Machine;",
         "Ovx,CPU Speed,MAX,6 MHz,8 MHz,10 MHz,12.5 MHz,16 MHz,20 MHz,25 MHz;",
-        "Oij,Monitor,5153/CGA,5154/ECD,5151/MDA;",
-        "OEG,Display,Full Color,Green,Amber,B&W,Red,Blue,Fuchsia,Purple;",
-        "Orr,Installed RAM,4MB,1MB;",
-        "OST,Audio 220h,C/MS,Sound Blaster,Disabled;",
-        "Ogh,OPL2,Adlib 388h,SB FM 388h/228h,Disabled;",
-        "Ott,Tandy Sound,Disabled,Enabled;",
-        "ONO,Joystick 1,Analog,Digital,Disabled;",
-        "OPQ,Joystick 2,Analog,Digital,Disabled;",
+        "Okm,Installed RAM,4MB,8MB,16MB,1MB,2MB;",
+        "OJ,Write protect A,Off,On;",
+        "OK,Write protect B,Off,On;",
+        "P1,Video;",
+        "P1L,Picture;",
+        "P1Oij,Monitor,5153/CGA,5154/ECD,5151/MDA;",
+        "P1OEG,Display,Full Color,Green,Amber,B&W,Red,Blue,Fuchsia,Purple;",
+        "P1L,Output;",
+        "P1OA,VGA 13h+ CRT,Native 70Hz,TV 60Hz;",
+        "P1Oyy,Scandoubler,Auto,Off;",
+        "P1Ozz,Scan converter,Auto,Off;",
+        "P1L,Boot splash;",
+        "P1O89,Splash time,5 s,10 s,15 s,0 s;",
+        "P2,Audio;",
+        "P2L,Sound cards;",
+        "P2OST,Audio 220h,C/MS,Sound Blaster,Disabled;",
+        "P2Ogh,OPL2,Adlib 388h,SB FM,Disabled;",
+        "P2Ott,Tandy Sound,Disabled,Enabled;",
+        "P2L,Levels;",
+        "P2OWX,Speaker Volume,1,2,3,4;",
+        "P2Oab,Audio Boost,No,2x,4x;",
+        "P2Ocd,Stereo Mix,none,25%,50%,100%;",
+        "P4,Input;",
+        "P4L,Joysticks;",
+        "P4ONO,Joystick 1,Analog,Digital,Disabled;",
+        "P4OPQ,Joystick 2,Analog,Digital,Disabled;",
+        "P5,BIOS;",
+        "P5SB,ROMBIN,System BIOS:;",
+        "P5SE,ROMBIN,EGA BIOS:;",
+        "P3,Settings;",
+        "P3PQ,Info;",
+        "P3L,Appearance;",
+        "P3OBD,OSD position,Centre,Top left,Top right,Bottom left,Bottom right;",
+        "P3L,Settings file;",
+        "P3T1,Save settings;",
+        "P3T2,Reset to defaults;",
         "T0,Reset;",
         "V,v0.1"
     };
@@ -165,12 +215,14 @@ module pcat286_zxtres_guest (
     logic at_machine_reset = 1'b1;
 
     wire [127:0] hps_status;
-    assign hps_status[63:0] = {status[63:46], monitor_osd, status[43:0]};
+    // 46-48 and 8-9 are MiSTer's CRT H offset and aspect ratio.
+    assign hps_status[63:0] = {status[63:49], 3'b000, monitor_osd, status[43:10],
+                               2'b00, status[7:0]};
     assign hps_status[66:64] = 3'd0;                  // VSync width: auto
     assign hps_status[69:67] = 3'd0;                  // HSync width: auto
     assign hps_status[70] = status[5];                // SB IRQ 5/7
     assign hps_status[71] = 1'b0;
-    assign hps_status[74:72] = status[53] ? 3'd3 : 3'd0;   // 1 MB : 4 MB
+    assign hps_status[74:72] = status[48:46];       // 4, 8, 16, 1, 2 MB as on MiSTer
     assign hps_status[77:75] = status[59:57];
     assign hps_status[127:78] = '0;
     wire [1:0] hps_buttons = 2'b00;
@@ -182,17 +234,26 @@ MIST_IO = r'''
     // ------------------------------------------------------------------
     // MiST interface on the 50 MHz clock.
     /* verilator lint_off PINCONNECTEMPTY */
-    // Block device 2 is the CMOS file (zxtres_cmos_store below); 0 and 1
-    // are kept for the floppy drives.
-    wire [31:0] cmos_sd_lba = 32'd0;
+    // Block devices 0 and 1 are the hard disks (zxtres_ide_store below), 2 is
+    // the CMOS file (zxtres_cmos_store) and 3 and 4 are the floppy drives
+    // (zxtres_fdd_store); zxtres_sd_arb shares the request lines between them.
+    wire [1:0]  ide_sd_rd, ide_sd_wr;
+    wire [31:0] ide_sd_lba;
+    wire [7:0]  ide_sd_din;
     wire        cmos_sd_rd, cmos_sd_wr;
-    wire [2:0]  sd_ack_x;
+    wire [1:0]  fdd_sd_rd, fdd_sd_wr;
+    wire [31:0] fdd_sd_lba;
+    wire [7:0]  fdd_sd_din;
+    wire [4:0]  arb_sd_rd, arb_sd_wr;
+    wire [31:0] arb_sd_lba;
+    wire [7:0]  arb_sd_din;
+    wire [4:0]  sd_ack_x;
     wire [7:0]  sd_dout, cmos_sd_din;
     wire        sd_dout_strobe;
     wire [8:0]  sd_buff_addr;
-    wire [2:0]  img_mounted;
+    wire [4:0]  img_mounted;
     wire [63:0] img_size;
-    user_io #(.STRLEN($size(CONF_STR) >> 3), .PS2DIV(2000), .SD_IMAGES(3)) u_user_io (
+    user_io #(.STRLEN($size(CONF_STR) >> 3), .PS2DIV(2000), .SD_IMAGES(5)) u_user_io (
         .conf_str(CONF_STR), .conf_addr(), .conf_chr(8'h00),
         .clk_sys(CLK_50M), .clk_sd(CLK_50M),
         .SPI_CLK(SPI_SCK), .SPI_SS_IO(CONF_DATA0), .SPI_MISO(SPI_DO), .SPI_MOSI(SPI_DI),
@@ -200,9 +261,9 @@ MIST_IO = r'''
         .joystick_4(), .joystick_analog_0(), .joystick_analog_1(),
         .buttons(), .switches(), .scandoubler_disable(), .ypbpr(), .no_csync(),
         .status(status), .core_mod(), .rtc(),
-        .sd_lba(cmos_sd_lba), .sd_rd({cmos_sd_rd, 2'b00}), .sd_wr({cmos_sd_wr, 2'b00}),
+        .sd_lba(arb_sd_lba), .sd_rd(arb_sd_rd), .sd_wr(arb_sd_wr),
         .sd_ack(), .sd_ack_conf(), .sd_ack_x(sd_ack_x), .sd_conf(1'b0), .sd_sdhc(1'b1),
-        .sd_dout(sd_dout), .sd_dout_strobe(sd_dout_strobe), .sd_din(cmos_sd_din),
+        .sd_dout(sd_dout), .sd_dout_strobe(sd_dout_strobe), .sd_din(arb_sd_din),
         .sd_din_strobe(), .sd_buff_addr(sd_buff_addr),
         .img_mounted(img_mounted), .img_size(img_size),
         .ps2_kbd_clk(), .ps2_kbd_data(), .ps2_kbd_clk_i(1'b1), .ps2_kbd_data_i(1'b1),
@@ -244,22 +305,41 @@ MIST_IO = r'''
         .clk(CLK_50M), .reset(RESET), .ps2_clk(PS2K_CLK_IN), .ps2_data(PS2K_DAT_IN),
         .data(kbd_byte), .strobe(kbd_strobe), .error()
     );
+    // Win+F12 is the OSD's; F12 alone stays with the machine.
     zxtres_ps2_key u_kbd_events (
-        .clk(CLK_50M), .reset(RESET), .byte_valid(kbd_strobe), .byte_in(kbd_byte),
-        .ps2_key(ps2_key)
+        .clk(CLK_50M), .reset(RESET), .osd_open(OSD_OPEN),
+        .byte_valid(kbd_strobe), .byte_in(kbd_byte), .ps2_key(ps2_key)
     );
 
-    // Disks are not ported yet: the MiSTer management bus stays idle, so the
-    // BIOS finds no floppy or hard disk.
-    // The management bus belongs to the CMOS store: it restores and saves
-    // the RTC/CMOS through F400-F47F. Floppy and IDE management, served by
-    // MiSTer's Main, are not used on this board.
+    // The MiSTer management window (the RTC/CMOS at F400-F47F, the IDE disks
+    // at F000-F0FF, the floppies at F2xx) is driven by three masters: the
+    // CMOS store, which scans and saves the CMOS, and the IDE and floppy
+    // stores, which take the window while they serve a request and hold the
+    // CMOS scan meanwhile. The IDE store goes first when both ask at once.
     wire [15:0] at_mgmt_din;
     wire [15:0] at_mgmt_dout;
     wire [15:0] at_mgmt_address;
-    wire        at_mgmt_read = 1'b0;
+    wire        at_mgmt_read;
     wire        at_mgmt_write;
     wire        cmos_busy;
+    wire [15:0] cmos_mgmt_address, cmos_mgmt_dout;
+    wire        cmos_mgmt_write;
+    wire        cmos_scan_idle;
+    wire [15:0] ide_mgmt_address, ide_mgmt_dout;
+    wire        ide_mgmt_write, ide_mgmt_read;
+    wire        ide_bus_req, ide_bus_use;
+    wire [15:0] fdd_mgmt_address, fdd_mgmt_dout;
+    wire        fdd_mgmt_write, fdd_mgmt_read;
+    wire        fdd_bus_req, fdd_bus_use;
+    wire [2:0]  at_ide_request;
+    wire [1:0]  at_floppy_request;
+    assign at_mgmt_address = ide_bus_use ? ide_mgmt_address :
+                             fdd_bus_use ? fdd_mgmt_address : cmos_mgmt_address;
+    assign at_mgmt_dout    = ide_bus_use ? ide_mgmt_dout :
+                             fdd_bus_use ? fdd_mgmt_dout : cmos_mgmt_dout;
+    assign at_mgmt_write   = ide_bus_use ? ide_mgmt_write :
+                             fdd_bus_use ? fdd_mgmt_write : cmos_mgmt_write;
+    assign at_mgmt_read    = (ide_bus_use && ide_mgmt_read) || (fdd_bus_use && fdd_mgmt_read);
 `ifndef ZXTRES_CMOS_QUIET_CYCLES
 `define ZXTRES_CMOS_QUIET_CYCLES 50_000_000
 `endif
@@ -270,14 +350,45 @@ MIST_IO = r'''
         .sd_rd(cmos_sd_rd), .sd_wr(cmos_sd_wr), .sd_ack(sd_ack_x[2]),
         .sd_buff_addr(sd_buff_addr), .sd_dout(sd_dout), .sd_dout_strobe(sd_dout_strobe),
         .sd_din(cmos_sd_din),
-        .mgmt_address(at_mgmt_address), .mgmt_writedata(at_mgmt_dout),
-        .mgmt_write(at_mgmt_write), .mgmt_readdata(at_mgmt_din),
+        .mgmt_address(cmos_mgmt_address), .mgmt_writedata(cmos_mgmt_dout),
+        .mgmt_write(cmos_mgmt_write), .mgmt_readdata(at_mgmt_din),
+        .pause(ide_bus_req || fdd_bus_req), .scan_idle(cmos_scan_idle),
         .busy(cmos_busy), .restored(), .save_count()
+    );
+    zxtres_ide_store u_ide_store (
+        .clk(CLK_50M), .reset(RESET),
+        .img_mounted(img_mounted[1:0]), .img_size(img_size),
+        .sd_rd(ide_sd_rd), .sd_wr(ide_sd_wr), .sd_lba(ide_sd_lba),
+        .sd_ack(sd_ack_x[1:0]), .sd_buff_addr(sd_buff_addr),
+        .sd_dout(sd_dout), .sd_dout_strobe(sd_dout_strobe), .sd_din(ide_sd_din),
+        .bus_req(ide_bus_req), .bus_grant(cmos_scan_idle && !fdd_bus_use), .bus_use(ide_bus_use),
+        .mgmt_address(ide_mgmt_address), .mgmt_writedata(ide_mgmt_dout),
+        .mgmt_write(ide_mgmt_write), .mgmt_read(ide_mgmt_read),
+        .mgmt_readdata(at_mgmt_din), .ide_request(at_ide_request),
+        .command_count()
+    );
+    zxtres_fdd_store u_fdd_store (
+        .clk(CLK_50M), .reset(RESET),
+        .img_mounted(img_mounted[4:3]), .img_size(img_size),
+        .sd_rd(fdd_sd_rd), .sd_wr(fdd_sd_wr), .sd_lba(fdd_sd_lba),
+        .sd_ack(sd_ack_x[4:3]), .sd_buff_addr(sd_buff_addr),
+        .sd_dout(sd_dout), .sd_dout_strobe(sd_dout_strobe), .sd_din(fdd_sd_din),
+        .bus_req(fdd_bus_req), .bus_grant(cmos_scan_idle && !ide_bus_req), .bus_use(fdd_bus_use),
+        .mgmt_address(fdd_mgmt_address), .mgmt_writedata(fdd_mgmt_dout),
+        .mgmt_write(fdd_mgmt_write), .mgmt_read(fdd_mgmt_read),
+        .mgmt_readdata(at_mgmt_din), .floppy_request(at_floppy_request),
+        .sector_count()
+    );
+    zxtres_sd_arb u_sd_arb (
+        .clk(CLK_50M), .reset(RESET),
+        .a_rd(ide_sd_rd), .a_wr(ide_sd_wr), .a_lba(ide_sd_lba), .a_din(ide_sd_din),
+        .b_rd(cmos_sd_rd), .b_wr(cmos_sd_wr), .b_din(cmos_sd_din),
+        .c_rd(fdd_sd_rd), .c_wr(fdd_sd_wr), .c_lba(fdd_sd_lba), .c_din(fdd_sd_din),
+        .sd_ack_x(sd_ack_x),
+        .sd_rd(arb_sd_rd), .sd_wr(arb_sd_wr), .sd_lba(arb_sd_lba), .sd_din(arb_sd_din)
     );
     /* verilator lint_on PINCONNECTEMPTY */
     wire [1:0]  at_floppy_present;
-    wire [1:0]  at_floppy_request;
-    wire [2:0]  at_ide_request;
     wire [1:0]  at_use_mmc_q = 2'b00;
 
     // Serial mouse on COM1 (Microsoft protocol) from the PS/2 mouse port.
@@ -346,10 +457,51 @@ CLOCKS = r'''
                                  !at_video_pll_locked;
 '''
 
+KEYS = r'''    // F12 pauses the running machine and shows the credits, as on MiSTer;
+    // the key itself never reaches the AT keyboard.
+    wire at_splash_boot_hold;
+    wire [10:0] at_ps2_key_machine;
+    wire        at_pause_core;
+    spk286_at_pause_key u_at_pause_key (
+        .clk        (CLK_50M),
+        .reset      (at_boot_reset),
+        .allow      (!at_splash_boot_hold),
+        .ps2_key_in (ps2_key),
+        .ps2_key_out(at_ps2_key_machine),
+        .pause      (at_pause_core)
+    );
+'''
+
 HOLDS = r'''
-    // No boot splash and no HPS info notices on this board.
-    wire at_splashscreen = 1'b0;
-    wire at_splash_boot_hold = 1'b0;
+    // Boot splash: the picture preloaded in the mode 13h framebuffer, shown
+    // after a second of settling for 5, 10 or 15 seconds, or not at all
+    // (OSD Video > Splash time)
+    // with the machine held in reset. As on MiSTer, only loading the core
+    // or a new BIOS starts it again; Reset does not.
+    wire at_splash_reset = RESET | !main_rom_loaded | !at_video_pll_locked;
+    wire at_splashscreen;
+    wire at_splash_fade_out;
+    // F12 on the splash holds it there with the credits, as on MiSTer.
+    wire at_splash_paused;
+    splash_f12_pause u_at_splash_pause (
+        .clock        (CLK_50M),
+        .splash_active(at_splashscreen),
+        .ps2_key      (ps2_key),
+        .paused       (at_splash_paused)
+    );
+    spk286_at_splash_control u_at_splash_control (
+        .clk          (CLK_50M),
+        .reset        (at_splash_reset),
+        .option_off   (status[9:8] == 2'd3),   // 0 s: no splash
+        .second_tick  (second_tick),
+        .paused       (at_splash_paused),
+        .duration     (status[9:8]),
+        .splash_active(at_splashscreen),
+        .fade_out     (at_splash_fade_out),
+        .boot_hold    (at_splash_boot_hold)
+    );
+
+    // No HPS info notices on this board.
     wire at_bios_hold = cmos_busy;     // CMOS being restored from the card
 
     always_ff @(posedge CLK_50M)
@@ -357,18 +509,92 @@ HOLDS = r'''
                             at_bios_required_missing | at_bios_hold;
 '''
 
+AUDIO_STAGE = r'''
+    // The stereo mix the MiSTer framework does after the core: a share of the
+    // other channel, none, 1/8, 1/4 or 1/2 (mono).
+    wire signed [16:0] audio_cross = $signed({audio_pre_r[15], audio_pre_r}) -
+                                      $signed({audio_pre_l[15], audio_pre_l});
+    logic signed [16:0] audio_share_q;
+    always_ff @(posedge CLK_50M)
+        case (hps_status[39:38])
+            2'd0:    audio_share_q <= 17'sd0;
+            2'd1:    audio_share_q <= audio_cross >>> 3;
+            2'd2:    audio_share_q <= audio_cross >>> 2;
+            default: audio_share_q <= audio_cross >>> 1;
+        endcase
+    logic signed [15:0] audio_mix_l_q, audio_mix_r_q;
+    always_ff @(posedge CLK_50M) begin
+        audio_mix_l_q <= audio_pre_l + audio_share_q[15:0];
+        audio_mix_r_q <= audio_pre_r - audio_share_q[15:0];
+    end
+'''
+
 VIDEO_OUT = r'''
     // ------------------------------------------------------------------
-    // DeMiSTify OSD over the EGA/VGA picture, then the VGA connector.
+    // Video out. Two paths to the VGA connector, one of which is chosen per
+    // frame (conv_active, see zxtres_scanconv.sv):
+    //   - the picture as it is, doubled to 31.4 kHz if it has 200 lines
+    //     (zxtres_linedouble.sv; status bit 60 turns that off), OSD over it,
+    //     registered on the 57 MHz pipeline clock;
+    //   - the 350-line pictures, written into the SRAM and read out as
+    //     720x480 at 59.94 Hz on a 27 MHz clock (status bit 61 turns that
+    //     off), OSD over it, registered on that clock.
+    //
+    // The F12 credits scroll over the dimmed picture ahead of both paths, as
+    // on MiSTer (jtframe_credits, text zxtres/credits/msg.bin): while the
+    // splash is held by F12 and while F12 pauses the machine.
+    logic at_credits_show_src_q = 1'b0;
+    always_ff @(posedge CLK_50M)
+        at_credits_show_src_q <= at_pause_core | at_splash_paused;
+    (* ASYNC_REG = "TRUE" *) logic at_credits_show_s1_q = 1'b0, at_credits_show_q = 1'b0;
+    always_ff @(posedge at_video_clk_57) begin
+        at_credits_show_s1_q <= at_credits_show_src_q;
+        at_credits_show_q    <= at_credits_show_s1_q;
+    end
+
+    wire [23:0] cr_rgb;
+    wire        cr_hb, cr_vb;
+    /* verilator lint_off PINCONNECTEMPTY */
+    jtframe_credits #(.PAGES(4), .COLW(8), .BLKPOL(1)) u_at_credits (
+        .rst(at_video_pipe_reset_57), .clk(at_video_clk_57), .pxl_cen(at_video_ce_pipe_q),
+        .HB(at_video_mono_hb), .VB(at_video_mono_vb),
+        .rgb_in({at_video_mono_r, at_video_mono_g, at_video_mono_b}),
+        .vram_din(9'h000), .vram_addr(10'h000), .vram_we(1'b0), .vram_dout(),
+        .enable(at_credits_show_q), .toggle(1'b0), .vram_ctrl(3'b000),
+        .fast_scroll(1'b0), .rotate(2'd0), .border(1'b0),
+        .HB_out(cr_hb), .VB_out(cr_vb), .rgb_out(cr_rgb)
+    );
+    /* verilator lint_on PINCONNECTEMPTY */
+    // The credits block registers colour and blanking once per pixel
+    // enable, shown or not; give the syncs the same register.
+    logic cr_hs, cr_vs;
+    always_ff @(posedge at_video_clk_57)
+        if (at_video_ce_pipe_q) begin
+            cr_hs <= at_video_mono_hs;
+            cr_vs <= at_video_mono_vs;
+        end
+
+    wire [5:0] sd_r, sd_g, sd_b;
+    wire       sd_hb, sd_vb, sd_hs, sd_vs, sd_ce, sd_double, sd_hs_pin, sd_vs_pin;
+    zxtres_linedouble u_linedouble (
+        .clk(at_video_clk_57), .reset(at_video_pipe_reset_57), .ce_in(at_video_ce_pipe_q),
+        .off(status[60]),
+        .r_in(cr_rgb[23:18]), .g_in(cr_rgb[15:10]), .b_in(cr_rgb[7:2]),
+        .hb_in(cr_hb), .vb_in(cr_vb),
+        .hs_in(cr_hs), .vs_in(cr_vs),
+        .r_out(sd_r), .g_out(sd_g), .b_out(sd_b),
+        .hb_out(sd_hb), .vb_out(sd_vb), .hs_out(sd_hs), .vs_out(sd_vs),
+        .ce_out(sd_ce), .double(sd_double), .hs_pin(sd_hs_pin), .vs_pin(sd_vs_pin)
+    );
+
     wire [5:0] osd_r, osd_g, osd_b;
     /* verilator lint_off PINCONNECTEMPTY */
-    osd #(.OSD_AUTO_CE(1'b0), .USE_BLANKS(1'b1), .OUT_COLOR_DEPTH(6)) u_osd (
-        .clk_sys(at_video_clk_57), .ce(at_video_ce_pipe_q),
+    zxtres_osd #(.USE_BLANKS(1'b1), .OUT_COLOR_DEPTH(6)) u_osd (
+        .clk_sys(at_video_clk_57), .ce(sd_ce),
         .SPI_SCK(SPI_SCK), .SPI_SS3(SPI_SS3), .SPI_DI(SPI_DI),
-        .rotate(2'b00),
-        .R_in(at_video_mono_r[7:2]), .G_in(at_video_mono_g[7:2]), .B_in(at_video_mono_b[7:2]),
-        .HBlank(at_video_mono_hb), .VBlank(at_video_mono_vb),
-        .HSync(at_video_mono_hs), .VSync(at_video_mono_vs),
+        .R_in(sd_r), .G_in(sd_g), .B_in(sd_b),
+        .HBlank(sd_hb), .VBlank(sd_vb),
+        .HSync(sd_hs), .VSync(sd_vs),
         .R_out(osd_r), .G_out(osd_g), .B_out(osd_b),
         .osd_enable()
     );
@@ -376,37 +602,154 @@ VIDEO_OUT = r'''
 
     // video_ce/video_de mark the dots of the picture for simulation capture.
     logic video_ce, video_de;
+    logic [7:0] p57_r, p57_g, p57_b;
+    logic       p57_hs, p57_vs;
     always_ff @(posedge at_video_clk_57) begin
         if (at_video_pipe_reset_57) begin
-            {VGA_R, VGA_G, VGA_B} <= '0;
-            VGA_HS <= 1'b1;
-            VGA_VS <= 1'b1;
+            {p57_r, p57_g, p57_b} <= '0;
+            p57_hs <= 1'b1;
+            p57_vs <= 1'b1;
             video_ce <= 1'b0;
             video_de <= 1'b0;
         end else begin
-            VGA_R <= at_video_mono_hb | at_video_mono_vb ? 8'h00 : {osd_r, osd_r[5:4]};
-            VGA_G <= at_video_mono_hb | at_video_mono_vb ? 8'h00 : {osd_g, osd_g[5:4]};
-            VGA_B <= at_video_mono_hb | at_video_mono_vb ? 8'h00 : {osd_b, osd_b[5:4]};
-            VGA_HS <= at_video_mono_hs;
-            VGA_VS <= at_video_mono_vs;
-            video_ce <= at_video_ce_pipe_q;
-            video_de <= !(at_video_mono_hb | at_video_mono_vb);
+            p57_r <= sd_hb | sd_vb ? 8'h00 : {osd_r, osd_r[5:4]};
+            p57_g <= sd_hb | sd_vb ? 8'h00 : {osd_g, osd_g[5:4]};
+            p57_b <= sd_hb | sd_vb ? 8'h00 : {osd_b, osd_b[5:4]};
+            p57_hs <= sd_hs_pin;
+            p57_vs <= sd_vs_pin;
+            video_ce <= sd_ce;
+            video_de <= !(sd_hb | sd_vb);
         end
     end
 
+    // 27 MHz for the 480p output: 50 MHz * 27 / 2 = 675 MHz VCO, / 25.
+    wire clk27, scan_feedback, clk27_mmcm, scan_locked;
+    /* verilator lint_off PINCONNECTEMPTY */
+    MMCME2_BASE #(
+        .CLKIN1_PERIOD(20.0),
+        .DIVCLK_DIVIDE(2),
+        .CLKFBOUT_MULT_F(27.0),
+        .CLKOUT0_DIVIDE_F(25.0),
+        .CLKOUT1_DIVIDE(25)              // unused; keeps the simulation model slow
+    ) u_scan_mmcm (
+        .CLKIN1(CLK_50M), .CLKFBIN(scan_feedback), .CLKFBOUT(scan_feedback),
+        .CLKOUT0(clk27_mmcm),
+        .CLKOUT0B(), .CLKOUT1(), .CLKOUT1B(), .CLKOUT2(), .CLKOUT2B(), .CLKOUT3(), .CLKOUT3B(),
+        .CLKOUT4(), .CLKOUT5(), .CLKOUT6(), .CLKFBOUTB(),
+        .LOCKED(scan_locked), .PWRDWN(1'b0), .RST(1'b0)
+    );
+    /* verilator lint_on PINCONNECTEMPTY */
+    BUFG u_scan_bufg (.I(clk27_mmcm), .O(clk27));
+
+    logic reset27_q1, reset27_q2;
+    wire  reset27_async = at_video_output_reset || !scan_locked;
+    always_ff @(posedge clk27 or posedge reset27_async) begin
+        if (reset27_async) begin
+            reset27_q1 <= 1'b1;
+            reset27_q2 <= 1'b1;
+        end else begin
+            reset27_q1 <= 1'b0;
+            reset27_q2 <= reset27_q1;
+        end
+    end
+
+    wire        conv_active;
+    wire [5:0]  c_r, c_g, c_b;
+    wire        c_hb, c_vb, c_hs, c_vs;
+    wire        sc_wr_req, sc_wr_grant, sc_rd_req, sc_rd_grant, sc_rd_valid;
+    wire [19:0] sc_wr_addr, sc_rd_addr;
+    wire [15:0] sc_wr_data, sc_rd_data;
+    wire [7:0]  sc_lost;
+    zxtres_scanconv u_scanconv (
+        .clk(at_video_clk_57), .reset(at_video_pipe_reset_57), .ce_in(at_video_ce_pipe_q),
+        .off(status[61]),
+        .r_in(cr_rgb[23:18]), .g_in(cr_rgb[15:10]), .b_in(cr_rgb[7:2]),
+        .hb_in(cr_hb), .vb_in(cr_vb),
+        .active(conv_active),
+        .wr_req(sc_wr_req), .wr_addr(sc_wr_addr), .wr_data(sc_wr_data), .wr_grant(sc_wr_grant),
+        .rd_req(sc_rd_req), .rd_addr(sc_rd_addr), .rd_grant(sc_rd_grant),
+        .rd_valid(sc_rd_valid), .rd_data(sc_rd_data),
+        .clk27(clk27), .reset27(reset27_q2),
+        .r_out(c_r), .g_out(c_g), .b_out(c_b),
+        .hb_out(c_hb), .vb_out(c_vb), .hs_out(c_hs), .vs_out(c_vs),
+        .lost(sc_lost)
+    );
+    zxtres_sram_ctrl u_sram (
+        .clk(at_video_clk_57), .reset(at_video_pipe_reset_57),
+        .wr_req(sc_wr_req), .wr_addr(sc_wr_addr), .wr_data(sc_wr_data), .wr_grant(sc_wr_grant),
+        .rd_req(sc_rd_req), .rd_addr(sc_rd_addr), .rd_grant(sc_rd_grant),
+        .rd_valid(sc_rd_valid), .rd_data(sc_rd_data),
+        .SRAM_A(SRAM_A), .SRAM_Q(SRAM_Q), .SRAM_WE(SRAM_WE), .SRAM_OE(SRAM_OE),
+        .SRAM_UB(SRAM_UB), .SRAM_LB(SRAM_LB)
+    );
+
+    wire [5:0] osd27_r, osd27_g, osd27_b;
+    /* verilator lint_off PINCONNECTEMPTY */
+    zxtres_osd #(.USE_BLANKS(1'b1), .OUT_COLOR_DEPTH(6)) u_osd27 (
+        .clk_sys(clk27), .ce(1'b1),
+        .SPI_SCK(SPI_SCK), .SPI_SS3(SPI_SS3), .SPI_DI(SPI_DI),
+        .R_in(c_r), .G_in(c_g), .B_in(c_b),
+        .HBlank(c_hb), .VBlank(c_vb),
+        .HSync(c_hs), .VSync(c_vs),
+        .R_out(osd27_r), .G_out(osd27_g), .B_out(osd27_b),
+        .osd_enable()
+    );
+    /* verilator lint_on PINCONNECTEMPTY */
+
+    logic [7:0] p27_r, p27_g, p27_b;
+    logic       p27_hs, p27_vs;
+    always_ff @(posedge clk27) begin
+        p27_r  <= c_hb | c_vb ? 8'h00 : {osd27_r, osd27_r[5:4]};
+        p27_g  <= c_hb | c_vb ? 8'h00 : {osd27_g, osd27_g[5:4]};
+        p27_b  <= c_hb | c_vb ? 8'h00 : {osd27_b, osd27_b[5:4]};
+        p27_hs <= c_hs;
+        p27_vs <= c_vs;
+    end
+
+    // The select changes at a frame boundary of the picture, and the
+    // monitor sees a new mode then anyway.
+    assign VGA_R  = conv_active ? p27_r  : p57_r;
+    assign VGA_G  = conv_active ? p27_g  : p57_g;
+    assign VGA_B  = conv_active ? p27_b  : p57_b;
+    assign VGA_HS = conv_active ? p27_hs : p57_hs;
+    assign VGA_VS = conv_active ? p27_vs : p57_vs;
+
     assign LED = main_rom_loaded;
-    // Audio output is milestone 4 (zxtres/PORT.md).
-    assign DAC_L = '0;
-    assign DAC_R = '0;
+    // 16-bit signed audio; the board top turns it into the sigma-delta and
+    // I2S outputs.
+    assign DAC_L = audio_mix_l_q;
+    assign DAC_R = audio_mix_r_q;
 
     /* verilator lint_off UNUSEDSIGNAL */
     wire unused = &{1'b0, joystick_0[31:14], joystick_1[31:14], midi_tx, uart2_tx,
                     uart2_rts_n, uart2_dtr_n, at_floppy_present, at_floppy_request,
                     at_ide_request, at_mgmt_din, cpu_fault, machine_protocol_error,
-                    keyboard_event_overflow, at_video_scale_q, at_video_arx_q, at_video_ary_q};
+                    keyboard_event_overflow, at_video_scale_q, at_video_arx_q, at_video_ary_q, sd_double,
+                    sc_lost};
     /* verilator lint_on UNUSEDSIGNAL */
 endmodule
 '''
+
+
+def audio_mixer(lines):
+    """The mixer and compressor of the MiSTer top, without the MT32-pi
+    source, ending in audio_pre_l/r; AUDIO_MIX is done by AUDIO_STAGE."""
+    mixer = '\n'.join(block(lines, 'wire signed [16:0] audio_opl2 =',
+                            'hps_status[37:36] ? audio_cmp_r_q : audio_out_r_q;'))
+    mixer = replace(mixer, '''    wire signed [16:0] audio_mt32_l_ext =
+        {mt32_i2s_l[15], mt32_i2s_l};
+    wire signed [16:0] audio_mt32_r_ext =
+        {mt32_i2s_r[15], mt32_i2s_r};
+    wire signed [16:0] audio_mt32_l = mt32_use ?
+        {audio_mt32_l_ext[16], audio_mt32_l_ext[16:1]} : 17'sd0;
+    wire signed [16:0] audio_mt32_r = mt32_use ?
+        {audio_mt32_r_ext[16], audio_mt32_r_ext[16:1]} : 17'sd0;
+''', '''    wire signed [16:0] audio_mt32_l = 17'sd0;     // no MT32-pi on the board
+    wire signed [16:0] audio_mt32_r = 17'sd0;
+''')
+    mixer = replace(mixer, 'assign AUDIO_L      =', 'assign audio_pre_l =')
+    mixer = replace(mixer, 'assign AUDIO_R      =', 'assign audio_pre_r =')
+    return '    wire [15:0] audio_pre_l, audio_pre_r;\n' + mixer + '\n' + AUDIO_STAGE
 
 
 def generate():
@@ -443,6 +786,7 @@ def generate():
     # Timers and the keyboard controller front end.
     out += block(lines, 'logic counter_clock;', 'wire keyboard_event_overflow;')
     out.append(CLOCKS)
+    out.append(KEYS)
     out += block(lines, 'spk286_at_keyboard u_at_keyboard (', '    );')
     out.append(HOLDS)
     out += block(lines, 'ega_monitor_profile_latch at_monitor_profile_latch (', '    );')
@@ -462,6 +806,7 @@ def generate():
     out += [line for line in regs if line != '    logic       at_video_vb_pipe_q;']
     out += block(lines, 'wire [7:0] at_video_mono_r;', '.VBlank_OUT (at_video_mono_vb)')
     out += ['    );']
+    out.append(audio_mixer(lines))
     out.append(VIDEO_OUT)
     return '\n'.join(out) + '\n'
 

@@ -22,7 +22,17 @@ fi
 
 rm -rf "${out:?}"
 mkdir -p "$out"
-cp "$root/zxtres/firmware/config.h" "$root/zxtres/firmware/overrides.c" "$out/"
-make -C "$out" -f "$demistify/firmware/Makefile" DEMISTIFYPATH="$demistify" \
-  ROMSIZE1=8192 ROMSIZE2=8192 controller_rom_word.vhd
+cp "$root/zxtres/firmware/config.h" "$root/zxtres/firmware/overrides.c" \
+   "$root/zxtres/firmware/osd.c" "$root/zxtres/firmware/font.c" \
+   "$root/zxtres/firmware/overrides.mk" "$out/"
+# DeMiSTify reads the block device number of a request in two bits; the core
+# has five (two hard disks, the CMOS file, two floppy drives).
+grep -q '(SPI(0xff)) & 0x03;' "$demistify/firmware/diskimg.c" || {
+  echo "diskimg.c: unit mask not found" >&2; exit 1; }
+sed 's/(SPI(0xff)) & 0x03;/(SPI(0xff)) \& 0x07;/' "$demistify/firmware/diskimg.c" > "$out/diskimg.c"
+python3 "$root/zxtres/scripts/expand_demistify_osd.py" \
+  "$demistify/firmware/main.c" "$demistify/firmware/menu.c" \
+  "$demistify/firmware/osd.h" "$out"
+make -C "$out" -f "$demistify/firmware/Makefile" -f overrides.mk DEMISTIFYPATH="$demistify" \
+  ROMSIZE1=16384 ROMSIZE2=8192 controller_rom_word.vhd
 ls -l "$out"/controller.bin "$out"/controller_rom1_word.vhd "$out"/controller_rom2_word.vhd

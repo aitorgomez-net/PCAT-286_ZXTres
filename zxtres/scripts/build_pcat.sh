@@ -77,7 +77,7 @@ sv=(
   sys/at_cdc_snapshot.sv
   mist-modules/user_io.v
   mist-modules/data_io.v
-  mist-modules/osd.v
+  zxtres/rtl/zxtres_osd.sv
   DeMiSTify/templates/demistify/common/joydecoder_neptuno.v
   zxtres/rtl/zxtres_ps2_rx.sv
 )
@@ -147,6 +147,7 @@ done
 if [[ $target == pcat ]]; then
   cp rtl/video/splash_ega_320x200.hex rtl/common/font0.hex "$out/"
 fi
+python3 zxtres/scripts/make_mem.py osdfont rtl/common/font0.hex "$out/osd_font.mem"
 printf 'src/%s\n' "${vhdl[@]}" > "$out/vhdl_sources.txt"
 # Vivado reads all Verilog sources as one compilation unit, so a file that
 # ends with `default_nettype none leaks it into the next; Quartus compiles

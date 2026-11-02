@@ -12,6 +12,18 @@
 //                        enter setup (default 76: Esc). E0-prefixed codes use
 //                        the form E0xx.
 //   +SETUP_MS=<ms>       wait after the keys before the setup frame (500)
+//   +DUMP_CMOS           at the end, write the RTC's 128 CMOS bytes to cmos.bin
+//   +PAUSE_TEST          after the POST frame, F12 pauses the machine with the
+//                        credits (pause.ppm) and F12 again resumes it
+//   +F12_ALONE           after the POST frame, press F12 alone and report that
+//                        the OSD stays closed (Win+F12 opens it)
+//   +SPLASH_MS=<ms>      a frame of the boot splash this long after it appears
+//                        (splash.ppm), and the times it appears and goes
+//   +CREDITS_TEST        with +SPLASH_MS: F12 then holds the splash with the
+//                        credits (credits.ppm), F12 again lets it go; then stop
+//   +SEQFILE=<file>      after the SETUP_KEYS, lines "<wait ms> <hex code>" (code 0:
+//                        no key; 01xx: xx with Shift held) pressed in turn, to walk
+//                        through BIOS menus
 //
 // CPU writes to B8000-BFFFF are mirrored into a shadow text buffer, which
 // the prompt search uses and which is printed to the log with each frame
@@ -38,10 +50,19 @@ module zxtres_pcat_bios_tb;
     logic sdram_clk, sdram_cke, sdram_cs_n, sdram_ras_n, sdram_cas_n, sdram_we_n;
     logic sdram_dqml, sdram_dqmh;
 
+    wire  [19:0] sram_a;
+    wire  [15:0] sram_q;
+    wire         sram_we, sram_oe, sram_ub, sram_lb;
+    zxtres_sram_model u_sram (.SRAM_A(sram_a), .SRAM_Q(sram_q), .SRAM_WE(sram_we),
+                              .SRAM_OE(sram_oe), .SRAM_UB(sram_ub), .SRAM_LB(sram_lb));
+
     /* verilator lint_off PINCONNECTEMPTY */
+    wire audio_l_pin, i2s_bclk_pin;
     zxtres_pcat_top dut (
         .CLOCK_50(clock_50), .LED(led),
         .VGA_R(vga_r), .VGA_G(vga_g), .VGA_B(vga_b), .VGA_HS(vga_hs), .VGA_VS(vga_vs),
+        .SRAM_A(sram_a), .SRAM_Q(sram_q), .SRAM_WE(sram_we), .SRAM_OE(sram_oe),
+        .SRAM_UB(sram_ub), .SRAM_LB(sram_lb),
         .SDRAM_A(sdram_a), .SDRAM_DQ(sdram_dq), .SDRAM_DQML(sdram_dqml), .SDRAM_DQMH(sdram_dqmh),
         .SDRAM_nWE(sdram_we_n), .SDRAM_nCAS(sdram_cas_n), .SDRAM_nRAS(sdram_ras_n),
         .SDRAM_nCS(sdram_cs_n), .SDRAM_BA(sdram_ba), .SDRAM_CLK(sdram_clk), .SDRAM_CKE(sdram_cke),
@@ -49,7 +70,7 @@ module zxtres_pcat_bios_tb;
         .PS2_KEYBOARD_CLK(ps2_kbd_clk), .PS2_KEYBOARD_DAT(ps2_kbd_dat),
         .PS2_MOUSE_CLK(ps2_mouse_clk), .PS2_MOUSE_DAT(ps2_mouse_dat),
         .JOY_CLK(), .JOY_LOAD(), .JOY_DATA(1'b1), .JOY_SEL(),
-        .AUDIO_L(), .AUDIO_R(), .I2S_BCK(), .I2S_LRCK(), .I2S_DATA()
+        .AUDIO_L(audio_l_pin), .AUDIO_R(), .I2S_BCK(i2s_bclk_pin), .I2S_LRCK(), .I2S_DATA()
     );
     /* verilator lint_on PINCONNECTEMPTY */
 
@@ -106,11 +127,169 @@ module zxtres_pcat_bios_tb;
         ps2_send(code[7:0]);
         #20ms;
     endtask
+    // The audio path: the guest's DAC output and the codec pins.
+    logic signed [15:0] dac_q = '0;
+    int dac_changes = 0, dac_max_abs = 0, sd_edges = 0, i2s_edges = 0;
+    logic audio_l_q = 1'b0, i2s_bclk_q = 1'b0;
+    always @(posedge dut.guest.CLK_50M) begin
+        dac_q <= dut.guest.DAC_L;
+        if (dut.guest.DAC_L !== dac_q) dac_changes <= dac_changes + 1;
+        if (int'($signed(dut.guest.DAC_L)) > dac_max_abs) dac_max_abs <= int'($signed(dut.guest.DAC_L));
+        if (-int'($signed(dut.guest.DAC_L)) > dac_max_abs) dac_max_abs <= -int'($signed(dut.guest.DAC_L));
+        audio_l_q <= audio_l_pin;
+        i2s_bclk_q <= i2s_bclk_pin;
+        if (audio_l_pin !== audio_l_q) sd_edges <= sd_edges + 1;
+        if (i2s_bclk_pin !== i2s_bclk_q) i2s_edges <= i2s_edges + 1;
+    end
+    // +BEEP_TEST drives the PC speaker as a 1 kHz square wave, to see it
+    // reach the DAC through the mixer.
+    initial if ($test$plusargs("BEEP_TEST")) begin
+        wait (dut.guest.main_rom_loaded === 1'b1);
+        #1_000_000;
+        force dut.guest.at_speaker_active = 1'b1;
+        while (1) begin
+            force dut.guest.at_speaker_level = 1'b1;
+            #500_000;
+            force dut.guest.at_speaker_level = 1'b0;
+            #500_000;
+        end
+    end
     wire osd_open = dut.guest.u_osd.osd_enable;
+    // Win+F12, the OSD key: left Windows held around an F12.
+    task automatic win_f12;
+        ps2_send(8'hE0);
+        ps2_send(8'h1F);
+        #5ms;
+        key(16'h0007);
+        ps2_send(8'hE0);
+        ps2_send(8'hF0);
+        ps2_send(8'h1F);
+        #20ms;
+    endtask
     task automatic set_osd(input bit open);
-        if (osd_open !== open) key(16'h0007);            // F12
+        if (osd_open !== open) win_f12;
         #30ms;
         if (osd_open !== open) $display("[%0t] OSD did not %s", $time, open ? "open" : "close");
+    endtask
+
+    // +OSD_TOUR: with the OSD open at the main menu, walk the pages with the
+    // cursor keys as a person would and save a frame of each (tour_*.ppm).
+    // The frame capture below does not see the guest's picture in this
+    // testbench (0x0), so the OSD's own buffers are saved instead: a line per
+    // row with the inverse bit, 32 characters and 32 colours, which
+    // zxtres_osd_tb.sv draws (+ROWS=<file>).
+    task automatic osd_shot(input string name);
+        int fd;
+        #60ms;
+        fd = $fopen({name, ".osd"}, "w");
+        $fdisplay(fd, "%0d", dut.guest.u_osd.osd_pos);
+        for (int n = 0; n < 18; n++) begin
+            $fwrite(fd, "%0d ", n < 16 ? dut.guest.u_osd.row_attr[n*2] : 1'b0);
+            for (int c = 0; c < 32; c++) $fwrite(fd, "%02x", dut.guest.u_osd.row_buffer[n*33 + 1 + c]);
+            $fwrite(fd, " ");
+            for (int c = 0; c < 32; c++) $fwrite(fd, "%x", dut.guest.u_osd.color_buffer[n*32 + c]);
+            $fdisplay(fd, "");
+        end
+        $fclose(fd);
+    endtask
+    task automatic keys_up(input int n);
+        repeat (n) key(16'hE075);
+    endtask
+    task automatic keys_down(input int n);
+        repeat (n) key(16'hE072);
+    endtask
+    task automatic osd_tour;
+        osd_shot("tour_root");
+        keys_up(3);                                      // BIOS
+        key(16'h005A);
+        osd_shot("tour_bios");
+        keys_up(2);                                      // System BIOS: the files
+        key(16'h005A);
+        osd_shot("tour_bios_files");
+        key(16'h0076);                                   // ESC: back to the main page
+        osd_shot("tour_esc_back");
+        key(16'h0076);                                   // ESC again closes the OSD
+        #30ms;
+        $display("ESC on the main page: OSD %s", osd_open ? "STILL OPEN (wrong)" : "closed");
+        set_osd(1);
+        // Choose ALTBIOS.ROM (a copy of the BIOS on the card's root) as the
+        // system BIOS: the machine is reset and takes it.
+        keys_up(3);
+        key(16'h005A);
+        keys_up(2);
+        key(16'h005A);
+        keys_up(1);
+        key(16'h005A);
+        #700ms;
+        $display("BIOS chosen: OSD %s, ROM %s, machine %s", osd_open ? "OPEN" : "closed",
+                 dut.guest.main_rom_loaded ? "loaded" : "NOT LOADED",
+                 dut.guest.at_machine_reset ? "in reset" : "running");
+        set_osd(1);
+        keys_up(3);
+        key(16'h005A);
+        osd_shot("tour_bios_chosen");
+        key(16'h0076);                                   // ESC: back to the main page
+        keys_up(2);                                      // Settings
+        key(16'h005A);
+        osd_shot("tour_settings");
+        keys_up(4);                                      // Info
+        key(16'h005A);
+        osd_shot("tour_info");
+        key(16'h005A);                                   // Back
+        keys_up(4);                                      // Input
+        key(16'h005A);
+        osd_shot("tour_input");
+        key(16'h005A);
+        keys_up(6);                                      // Video
+        key(16'h005A);
+        osd_shot("tour_video");
+        keys_up(4);                                      // Display
+        key(16'hE074);
+        key(16'hE074);
+        osd_shot("tour_video_option");
+        keys_down(4);
+        key(16'h005A);
+        keys_up(5);                                      // Audio
+        key(16'h005A);
+        osd_shot("tour_audio");
+        key(16'h005A);
+        keys_up(14);                                     // Floppy A
+        key(16'h005A);
+        osd_shot("tour_files");
+        key(16'h005A);                                   // Back
+        keys_up(2);                                      // Settings, Save settings
+        key(16'h005A);
+        keys_up(2);
+        key(16'h005A);
+        osd_shot("tour_confirm");
+        keys_up(2);                                      // Yes
+        key(16'h005A);
+        osd_shot("tour_saved");
+        cfg_report;
+    endtask
+
+    // Find the saved PCAT286.CFG on the card ("PCAT", version 3) and print
+    // the image and BIOS paths it holds.
+    task automatic cfg_report;
+        int unsigned sector, base;
+        int unit, index;
+        string path;
+        string units[6] = '{"disk0", "disk1", "floppy_a", "floppy_b", "bios", "ega"};
+        for (sector = 0; sector < 16384; sector++) begin
+            base = sector * 512;
+            if (u_sd.read_byte(base) == "P" && u_sd.read_byte(base + 1) == "C" &&
+                u_sd.read_byte(base + 2) == "A" && u_sd.read_byte(base + 3) == "T" &&
+                u_sd.read_byte(base + 4) == 8'd3) begin
+                for (unit = 0; unit < 6; unit++) begin
+                    path = "";
+                    for (index = 0; index < 80 && u_sd.read_byte(base + 32 + unit * 80 + index) != 0; index++)
+                        path = {path, string'(u_sd.read_byte(base + 32 + unit * 80 + index))};
+                    $display("CFG_PATH %s=\"%s\"", units[unit], path);
+                end
+                return;
+            end
+        end
+        $display("CFG_PATH none saved");
     endtask
 
     // ------------------------------------------------------------------
@@ -165,6 +344,33 @@ module zxtres_pcat_bios_tb;
         capture_request = 1;
         wait (!capture_request);
     endtask
+
+    initial begin
+        longint splash_ms;
+        if ($value$plusargs("SPLASH_MS=%d", splash_ms)) begin
+            wait (dut.guest.at_splashscreen === 1'b1);
+            $display("[%0t] splash on", $time);
+            #(splash_ms * 1000000);
+            shot("splash");
+            if ($test$plusargs("CREDITS_TEST")) begin
+                // F12 holds the splash with the credits; F12 again lets it go.
+                key(16'h0007);
+                #1500ms;
+                shot("credits");
+                $display("[%0t] F12 on the splash: %s, splash %s", $time,
+                         dut.guest.at_splash_paused ? "held" : "NOT HELD",
+                         dut.guest.at_splashscreen ? "on" : "OFF");
+                key(16'h0007);
+                #100ms;
+                $display("[%0t] F12 again: %s", $time,
+                         dut.guest.at_splash_paused ? "STILL HELD" : "released");
+                $display("ZXTRES_PCAT_CREDITS_TEST_END");
+                $finish;
+            end
+            wait (dut.guest.at_splashscreen === 1'b0);
+            $display("[%0t] splash off", $time);
+        end
+    end
 
     // ------------------------------------------------------------------
     logic download_q = 0;
@@ -261,6 +467,21 @@ module zxtres_pcat_bios_tb;
         end
     end
 
+    // +TRACE_DMA2: print each CPU I/O access to C0h-DFh (DMA2 / Tandy window).
+    bit trace_dma2 = 0;
+    initial trace_dma2 = $test$plusargs("TRACE_DMA2");
+    always @(posedge cpu_clk) if (trace_dma2 && dut.guest.at_cpu_bus_valid &&
+                                  dut.guest.at_cpu_ready &&
+                                  (dut.guest.at_cpu_bus_status == 4'h9 || dut.guest.at_cpu_bus_status == 4'hA ||
+                                   dut.guest.at_cpu_bus_status == 4'h5 || dut.guest.at_cpu_bus_status == 4'h6) &&
+                                  cpu_addr[15:5] == 11'h006) begin
+        $display("[%0t] io %s %04h st=%h dout=%h din=%h tandy=%b st64=%h", $time,
+                 dut.guest.at_cpu_bus_write ? "W" : "R", cpu_addr[15:0],
+                 dut.guest.at_cpu_bus_status, cpu_dout, dut.guest.at_cpu_data_in,
+                 dut.guest.at286ctl_eff_tandy, dut.guest.hps_status);
+        $fflush();
+    end
+
     // +TRACE_BUS=<n>: print the first n CPU bus cycles after the machine
     // starts, and a 100 us heartbeat meanwhile, flushed at once.
     longint trace_left = 0;
@@ -300,7 +521,9 @@ module zxtres_pcat_bios_tb;
         bit found;
         int key_index;
         logic [127:0] keys;
-        string prompt;
+        string prompt, seq_file;
+        int seq_fd, seq_ms;
+        logic [15:0] seq_code;
         if (!$value$plusargs("PROMPT=%s", prompt)) prompt = "Press ESC";
         if (!$value$plusargs("POST_MS=%d", post_ms)) post_ms = 8000;
         if (!$value$plusargs("SETUP_MS=%d", setup_ms)) setup_ms = 500;
@@ -322,13 +545,54 @@ module zxtres_pcat_bios_tb;
         $fflush();
         shot("post");
         dump_screen("post");
+        if ($test$plusargs("PAUSE_TEST")) begin
+            // F12 pauses the machine with the credits; F12 again resumes.
+            // Neither press reaches the AT keyboard.
+            logic [10:0] machine_key;
+            machine_key = dut.guest.at_ps2_key_machine;
+            key(16'h0007);
+            #1500ms;
+            shot("pause");
+            $display("[%0t] F12: machine %s, credits %s", $time,
+                     dut.guest.at_pause_core ? "paused" : "NOT PAUSED",
+                     dut.guest.at_credits_show_q ? "shown" : "NOT SHOWN");
+            key(16'h0007);
+            #100ms;
+            $display("[%0t] F12 again: machine %s, keyboard %s", $time,
+                     dut.guest.at_pause_core ? "STILL PAUSED" : "running",
+                     dut.guest.at_ps2_key_machine === machine_key ? "untouched" : "GOT F12");
+        end
+        if ($test$plusargs("F12_ALONE")) begin
+            // F12 alone belongs to the core: the OSD stays closed.
+            key(16'h0007);
+            #30ms;
+            $display("[%0t] F12 alone: OSD %s", $time, osd_open ? "OPEN (wrong)" : "closed");
+        end
         set_osd(1);
+        $display("[%0t] Win+F12: OSD %s", $time, osd_open ? "open" : "CLOSED (wrong)");
         shot("post_osd");
+        if ($test$plusargs("OSD_TOUR")) begin
+            osd_tour;
+            $display("ZXTRES_PCAT_OSD_TOUR_END");
+            $finish;
+        end
         set_osd(0);
         key_index = 7;
         while (key_index >= 0) begin
             if (keys[key_index*16 +: 16] != 16'h0000) key(keys[key_index*16 +: 16]);
             key_index = key_index - 1;
+        end
+        if ($value$plusargs("SEQFILE=%s", seq_file)) begin
+            seq_fd = $fopen(seq_file, "r");
+            while (seq_fd != 0 && $fscanf(seq_fd, "%d %h", seq_ms, seq_code) == 2) begin
+                #(seq_ms * 1000000);
+                if (seq_code[15:8] == 8'h01) begin       // 01xx: xx with Shift held
+                    ps2_send(8'h12);
+                    key({8'h00, seq_code[7:0]});
+                    ps2_send(8'hF0);
+                    ps2_send(8'h12);
+                end else if (seq_code != 16'h0000) key(seq_code);
+            end
         end
         #(setup_ms * 1000000);
         shot("setup");
@@ -336,6 +600,9 @@ module zxtres_pcat_bios_tb;
         set_osd(1);
         shot("setup_osd");
         if ($test$plusargs("CMOS_TEST")) cmos_test();
+        if ($test$plusargs("DUMP_CMOS")) dump_cmos("cmos.bin");
+        $display("AUDIO_SIM dac_changes=%0d max_abs=%0d sigma_delta_edges=%0d i2s_bclk_edges=%0d",
+                 dac_changes, dac_max_abs, sd_edges, i2s_edges);
         $display("ZXTRES_PCAT_BIOS_SIM_END");
         $finish;
     end
@@ -487,6 +754,22 @@ module zxtres_pcat_bios_tb;
         else
             $display("CMOS_TEST_FAIL: restored=%0d booted=%0d corrupt=%0d",
                      dut.guest.u_cmos_store.restored, booted, corrupt);
+    endtask
+
+    // The RTC's 128 CMOS bytes as a binary file, to seed a CMOS file with
+    // what the BIOS setup stored (see sim/make_cmos_file.py).
+    task automatic dump_cmos(input string name);
+        int fd, index;
+        logic [7:0] rtc_byte;
+        fd = $fopen(name, "wb");
+        for (index = 0; index < 128; index++) begin
+            if (index == 'h2E) rtc_byte = dut.guest.u_at_machine.u_devices.u_rtc.checksum_q[15:8];
+            else if (index == 'h2F) rtc_byte = dut.guest.u_at_machine.u_devices.u_rtc.checksum_q[7:0];
+            else rtc_byte = dut.guest.u_at_machine.u_devices.u_rtc.cmos_q[index];
+            $fwrite(fd, "%c", rtc_byte);
+        end
+        $fclose(fd);
+        $display("CMOS written to %s", name);
     endtask
 
     // 10h-7Fh of the file against the RTC (2Eh/2Fh are its checksum register).

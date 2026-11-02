@@ -36,7 +36,7 @@ Out of scope on this board (no hardware or no equivalent service):
 | 480i/240p 15 kHz framebuffer for 350-line modes (DDR3) | Replaced by the board scan converter (section 5.5). |
 | MiSTer scaler, HDMI, aspect ratio, HQ2x | Replaced by the board video path. |
 | MT32-pi, USER I/O MIDI and COM2 | No user port. Optional later through the edge connector (section 5.9). |
-| Boot splash, HPS info notices | Not needed; the OSD shows missing ROMs. |
+| HPS info notices | Not needed; the OSD shows missing ROMs. |
 | Second SD card as IDE (`2nd SD card`) | The one microSD slot is the controller's. |
 
 ## 2. Platform
@@ -67,9 +67,9 @@ core). The capabilities the port relies on, and the limits that shape it:
 
 | Area | Capability | Limit for PCAT |
 | --- | --- | --- |
-| Controller | Firmware in block RAM, 16 KiB here (`demistify_romspace` 14) | Every firmware feature competes for 16 KiB. Raise the constant if a build needs more. |
+| Controller | Firmware in block RAM, 24 KiB here (`demistify_romspace` 15, chunks of 16 and 8 KiB) | Code, data and stack share it. The OSD, menu and settings code took the 16 KiB of the first builds; raise `demistify_romsize1/2` again if a build needs more. |
 | Files | FAT16/32 reads and writes, 8.3 names, bookmarks | Cannot create files: CMOS and any writable image must already exist. |
-| OSD | Pages (`P`), options (`O`, `T`), file select (`F`), disk mount (`S`); 7 entries per page | Status bits 0-61 only (digits 0-9, A-Z, a-z), so MiSTer bits 62 and up must be moved. No conditional entries (`h`), no `J`, `R`, `V` in the firmware. |
+| OSD | Pages (`P`), options (`O`, `T`), file select (`F`), disk mount (`S`); 15 entries plus a footer per page | Status bits 0-61 only (digits 0-9, A-Z, a-z), so MiSTer bits 62 and up must be moved. No conditional entries (`h`), no `J`, `R`, `V` in the firmware. |
 | Status word | 64 bits with `CONFIG_STATUSWORD_64BIT` | MiSTer uses 128. Reordered in `make_guest.py`. |
 | ROM loading | `data_io` stream by index, from a file chosen in the OSD or loaded by `autoboot()` | No wait signal: the core must take each word as it arrives. |
 | Block devices | `diskimg`: files mounted as sector-addressed units over `user_io sd_*` | At most 4 units in the current firmware and `user_io`. |
@@ -99,9 +99,10 @@ Branch `zxtres-port`. Everything below is Sim or Built. None is Board.
 | Board top: controller, joystick decoders, PS/2 and SD wiring, pin constraints | Built | `rtl/zxtres_pcat_top.sv`, `constraints/zxtres_pcat.xdc` |
 | PC/AT machine: SPK286 CPU, bridge, PIC, DMA, PIT, 8042, RTC/CMOS, EMS/UMB, serial mouse, gameport, EGA, VGA 13h+ | Built, Sim | `rtl/pcat286_zxtres_guest.sv`, generated verbatim from `PCAT-286.sv` by `scripts/make_guest.py` (`--check` guards drift) |
 | AT RAM in the board SDRAM through the MiSTer SDRAM owner, 50 MHz | Built, Sim (pin model) | guest |
-| ROM loading from the card (`PCAT286.ROM`, `EGA.ROM`) with the machine held in reset | Built, Sim | `firmware/overrides.c` |
+| ROM loading from the card with the machine held in reset: `PCAT286.ROM` and `EGA.ROM` (in the folder `PCAT286` or else the root) by default, any other file chosen in the OSD page `BIOS` and kept in `PCAT286.CFG` | Built, Sim | `firmware/overrides.c` |
 | OSD overlay and keyboard path (PS/2 to `ps2_key` events) | Built, Sim | `rtl/zxtres_ps2_rx.sv`, `zxtres_ps2_key.sv` |
-| CMOS kept in `PCAT286.CMS` on the card, restored before the BIOS runs, saved on change | Built, Sim | `rtl/zxtres_cmos_store.sv`, `sim/run_cmos_store_test.sh` |
+| CMOS kept in `PCAT286.CMS` on the card (folder `PCAT286`, or the root without it), restored before the BIOS runs, saved on change | Built, Sim | `rtl/zxtres_cmos_store.sv`, `sim/run_cmos_store_test.sh` |
+| Hard disks: the machine's own IDE device served through its management window by an RTL master, from fixed VHD images chosen in the OSD (any folder; the paths are kept in `PCAT286.CFG`) as `user_io` block devices 0 and 1 | Built, Sim (unit test against the real `ide.v`), Board (2026-10-27: owner reports it works; the second disk, write persistence and read speed were not recorded separately) | `rtl/zxtres_ide_store.sv`, `rtl/zxtres_sd_arb.sv`, `sim/run_ide_store_test.sh` |
 | Whole-board simulation: MR BIOS 1.65 with IBM EGA ROM reaches setup | Sim | `sim/run_bios_sim.sh` |
 | CPU speed profiles (MAX to 25 MHz), monitor type, display tint, joystick mode | Built (OSD entries present) | guest `CONF_STR` |
 
@@ -109,8 +110,10 @@ Build figures *as of 15 October 2026*: 50 MHz closes with WNS +0.063 ns using
 the `ExtraTimingOpt`/`AggressiveExplore` directives, 31.6k LUTs, 31.6k
 registers, 87.5 of 135 block RAM tiles.
 
-Reading of those figures: about 17k of the registers are the MiST `osd.v`
-buffer (PORT.md, milestone 1), so the machine is nearer 15k. The sound
+Reading of those figures: about 17k of the registers were the MiST `osd.v`
+buffer, which `zxtres_osd.sv` has since replaced (5.4): the build of
+25 October 2026 has 24.4k LUTs, 15.0k registers, 88.5 block RAM tiles and
+WNS +0.085 ns. The sound
 devices are probably missing from the count: the guest does not carry the
 audio mixer, so the machine's sound outputs are unconnected and Vivado can
 prune the devices behind them. Re-measure after section 5.3 and section 5.4.
@@ -120,15 +123,12 @@ prune the devices behind them. Re-measure after section 5.3 and section 5.4.
 | Piece | State |
 | --- | --- |
 | Audio devices (OPL2, Sound Blaster, C/MS, Tandy, speaker) | Instantiated in the machine; `DAC_L/R` tied to 0; board pins `AUDIO_*`, `I2S_*` driven low |
-| IDE | Machine IDE (AO486 `ide.v`) present; management window not served; `at_ide_request` unused |
-| Floppy controller | Present; management window not served; `at_floppy_*` unused |
 | Mouse | Serial mouse from the PS/2 port is wired (`MSMouseWrapper`); needs board test only |
-| Firmware for IDE and block devices | Enabled in `config.h` (2 IDE units, 3 `diskimg` units) and calling `OpenHardfile` for `PCAT286A.VHD`/`PCAT286B.VHD`; the guest side is missing |
 
 ### 3.3 Not started
 
 DisplayPort, a video path a VGA monitor can lock to (section 4, finding F1),
-audio output, floppy, hard disk data path, full RAM size choice, the remaining
+audio output, full RAM size choice, the remaining
 OSD settings, I/O timing constraints, return to the Spectrum core, any board
 test.
 
@@ -140,6 +140,8 @@ targets 15 kHz CRTs) and the guest drives `VGA_HS/VS` from the pipeline output
 with no converter. EGA 200-line modes come out at about 15.7 kHz, 350-line
 and MDA modes at about 21.8 and 18.4 kHz. Only the VGA 13h+ profiles
 (31.4 kHz) are VGA rates. Most VGA monitors will not lock to the others.
+Stage 1 (5.5) since doubles the 200-line modes to 31.4 kHz; the 350-line and
+MDA ones stay native until stage 2.
 PORT.md's mapping table used to say VGA at 31 kHz shows those modes natively;
 that was wrong for EGA modes and has been corrected. The comment in the guest that calls the
 5153/CGA monitor profile "31 kHz-capable" looks inconsistent with this: that
@@ -161,9 +163,12 @@ milestone 3 assumes the MiST module replaces it. That changes device
 behaviour the MiSTer core is verified against, and the MiST module is proven
 in the PCXT port with the XT-IDE BIOS, not with AT BIOSes. See 5.1.
 
-**F4. Block-device slots.** `user_io` and the firmware support 4 `diskimg`
-units. Floppy A, floppy B, IDE 0-0 and IDE 0-1 as `diskimg` units, plus the
-CMOS file (unit 2 today), need 5.
+**F4. Block-device slots (resolved).** `user_io` takes any number of units
+(`SD_IMAGES`; its `drive_sel` is four bits wide), but DeMiSTify's
+`diskimg_poll` read the unit of a request in two bits. IDE 0-0 and 0-1, the
+CMOS file and the two floppy drives are five units, so `build_firmware.sh`
+stages `diskimg.c` with a three-bit mask (units 0 and 1 hard disks, 2 CMOS,
+3 and 4 floppies).
 
 **F5. Audio is not in the guest.** `make_guest.py` does not copy the mixer,
 volume and compressor stage (`PCAT-286.sv` from the `audio_sum` lines to the
@@ -174,11 +179,12 @@ wire.
 guest ties the analog inputs to zero, so in the default Analog mode the stick
 reads as fixed. DB9 pads are digital only, so Digital should be the default.
 
-**F7. Installed RAM is limited in the OSD to 4 and 1 MiB.** The MiSTer core
-also offers 2, 8 and 16 MiB, and the board SDRAM (64 MiB) is large enough. The
-EMS backing uses SDRAM `200000h-3FFFFFh`
-and the AT RAM above 2 MiB is translated upward by 2 MiB, so 16 MiB plus EMS
-fits in 64 MiB; to be confirmed against the SDRAM owner's address range.
+**F7. Installed RAM (resolved).** The OSD offers the MiSTer choices, 4, 8,
+16, 1 and 2 MiB in that order (status bits 46-48 into `hps_status[74:72]`).
+The EMS backing uses SDRAM `200000h-3FFFFFh` and the AT RAM above 2 MiB is
+translated upward by 2 MiB, all within the 25-bit (32 MiB) backend address
+of `spk286_at_mister_sdram_owner`, so 16 MiB plus EMS fits the 64 MiB SDRAM.
+A 1 MiB setting saved with the old single bit (53) now reads as 4 MiB.
 
 ## 5. Remaining work
 
@@ -213,28 +219,77 @@ Serve the machine's IDE window from DeMiSTify. Two designs:
 
 Recommendation: **A**. It keeps the verified IDE device and reuses the
 pattern the CMOS store proved, and the same master serves the floppy
-controller (5.2). Resolve F4 first: either lift the 4-unit limit in the
-firmware and `user_io`, or keep CMOS and disk images within 4 units (for
-example one floppy first). If the limit proves hard, fall back to B for IDE
-only.
+controller (5.2). F4 was resolved by widening the firmware's unit number.
 
-Pass condition: DOS boots from `PCAT286A.VHD` and a second disk is visible
+Pass condition: DOS boots from the first disk's image and a second disk is visible
 as drive D; BIOS geometry matches what the firmware reports; writes survive a
 power cycle. Test in simulation with the SD card model before the board.
 
+Board (2026-10-27): DOS boots from `PCAT286A.VHD`, the second disk is
+recognised as D:, the CMOS configuration survives a power cycle, and a file
+created on a disk is still there after one. Read speed is not recorded.
+
 ### 5.2 Floppy drives (P1, M)
 
+Built: `zxtres_fdd_store.sv`, a master on the F2xx window serving 512-byte
+sectors from block devices 3 and 4: geometry from the image size (160K to
+2.88M, IMG/IMA/VFD), media present on mount and absent on eject, write
+protect from the OSD. It shares the window with the CMOS and IDE stores, and
+`zxtres_sd_arb.sv` the card lines. Unit test against `floppy.v`
+(`zxtres/sim/run_fdd_store_test.sh`): mount, read from both drives, write,
+eject. The machine's controller ends a non-DMA transfer only on the last
+head, so the test reads head 1; a BIOS uses DMA.
+
+Board (2026-10-27): works. Speed is not recorded.
+
 - A master on the F2xx window serving 512-byte sectors from `diskimg` units
-  0 and 1: geometry from the image size (160K to 1.44M, IMG/IMA/VFD), media
+  3 and 4: geometry from the image size (160K to 1.44M, IMG/IMA/VFD), media
   change on mount, write protect from the OSD.
 - Check sector latency: a real 1.44M floppy gives a sector about every
   11 ms; SD reads through the firmware with bookmarks must stay well under
   that. Measure rather than assume.
-- OSD: `S0,IMGIMAVFD,Floppy A:;`, `S1,...,Floppy B:;`, write protect option.
+- OSD (root page): `S3,IMGIMAVFD,Floppy A:;`, `S4,...,Floppy B:;`, write
+  protect options (status bits 19 and 20). Choose an image, then Reset to
+  boot from it.
 - Pass condition: boot a DOS 1.44M floppy, copy files both ways, read a 720K
   and a 360K image.
 
 ### 5.3 Audio (P1, M)
+
+Built: `make_guest.py` copies the mixer and compressor of the MiSTer top (the
+MT32-pi source is dropped), does the stereo mix the MiSTer framework did, and
+drives `DAC_L/R`; `zxtres_pcat_top.sv` feeds them to the sigma-delta and I2S
+modules of `zx3w` at 50 MHz. The sound devices of the machine blocks default
+to off (as in the Quartus build), so `build_pcat.sh` and the BIOS sim define
+`ENABLE_OPL2`, `ENABLE_CMS`, `ENABLE_TANDY_AUDIO` and `ENABLE_SB`; a define
+in the guest file reaches only the files compiled after it. The Vivado
+`.bat` splits arguments at `=`, so defines with a value are written
+`NAME:VALUE`. Sim (`+BEEP_TEST`): a forced 1 kHz speaker reaches the DAC at
+the expected amplitude and both codec pins toggle. Vivado: 34858 LUTs (55 %),
+95 block RAMs, WNS +0.217 ns. OSD page Audio: 220h, OPL2, Tandy, speaker
+volume, boost, stereo mix (share of the other channel 1/8, 1/4, 1/2).
+
+Board (2026-10-28): sound is heard on the 3.5 mm jack with the board's sound
+switch in either position (sigma-delta and I2S). Which source was tried
+(speaker, AdLib, Sound Blaster) is not recorded here.
+
+Tandy (2026-11-01, PCAT-286 issue 3): the SN76489 answers at `1E0h–1E3h` as
+well as `C0h–CFh` (the shared machine decode, so MiSTer has it too); SCI1.1's
+`TANDY3V.DRV` writes to `1E0h` on an AT BIOS. The DMA controller decodes
+`C0h–DFh` itself, so it took every C0h write too, and while the chip was busy
+(about 9 us per write) it took the write alone and the note was lost. Music
+sounded garbled (the `tandy64` demo). A first fix withdrew `C0h–CFh` from the
+DMA controller; that broke the POST (test 09 writes and reads back DMA2
+there: board with Tandy on, no video after a reset). Now DMA2 keeps the whole
+block, and a Tandy-window write is held until the device router is idle, so DMA2
+and the chip take it in the same cycle (the CPU waits while the chip is busy). The
+router also offers a request to the sound adapter only while it is idle,
+so a busy chip cannot take one twice. The SN76489 is reset with the CPU's
+warm reset (8042 pulse). Sim: `scripts/test_at_tandy.sh` (chip, machine decode,
+DMA2 read-back of FF/00/AA/55 with the chip on, a burst of 8 writes reaching
+the chip and DMA2 once each in 77 us) and a BIOS run with Tandy on
+(`zxtres/sim/run_bios_sim.sh` now builds the sound devices as the board does;
+before that the sim had Tandy compiled out). Not tried with a game.
 
 - Extend `make_guest.py` to copy the mixer, volume, compressor and mix stage.
 - Drive `AUDIO_L/R` (sigma-delta) and the I2S pins from the 16-bit output,
@@ -250,13 +305,139 @@ power cycle. Test in simulation with the SD card model before the board.
 
 ### 5.4 OSD and settings (P0 for the buffer, P1 for the rest, S to M)
 
-- **P0**: replace `mist-modules/osd.v` with a protocol-compatible block RAM
-  version. It costs about 17k registers and 6k LUTs today; this also eases
-  timing.
-- Restore Installed RAM 1, 2, 4, 8 and 16 MiB (F7), the Joystick default
+- **P0, character-grid OSD done (Sim, Built); 32x16 grid verified in simulation**:
+  `mist-modules/osd.v` is replaced by `rtl/zxtres_osd.sv` on block RAM. The
+  original implementation saves 16.7k registers and 6.2k LUTs. The 32x16
+  grid covers 256x128 dots at 15 kHz (8-dot cells) and 192x256 dots at
+  31 kHz (6-dot cells with each glyph scanline doubled). The firmware sends
+  character codes, not pixels (`firmware/osd.c`, `overrides.mk`); the
+  font is `rtl/common/font0.hex` (jtframe, GPL v3) plus the menu symbols and
+  icons (codes 80h-92h, `make_mem.py`). The centered, fixed cyan
+  `PCAT-286 ZXTres` title, an information line and a help line, and an
+  EGA-style blue corner frame surround the menu. The 31 kHz
+  line doubling, header/frame colors and SPI row addressing pass the OSD
+  testbench.
+  Tuning: glyph width and the 300-line threshold are in `zxtres_osd.sv`.
+- **OSD look (Built, Sim)**: each row carries a colour per character (eight
+  colours, `rtl/zxtres_osd.sv`), the selected row is a blue bar with white
+  text, the panel is the picture dimmed with a blue tint and a shadow, and the
+  box can sit in the centre or a corner (`0x50 | n`). The SPI row is the
+  command, an attribute byte, 32 characters and 32 colour bytes; rows 16 and
+  17 (commands `0x30`, `0x31`) are the information line under the title (CPU
+  speed, RAM, monitor) and the help line at the foot (what Enter does on the
+  row under the cursor). In a label, codes 1-8 select a colour (8 is white)
+  and take no column, and a first character from 88h up is an icon. The look
+  is made by `Menu_DrawRow` and `Menu_DrawExtras` in `firmware/overrides.c`,
+  which tell the row kinds by their actions: an option shows the name, the
+  value in a column of its own, and `<` `>` around it on the row under the
+  cursor, where left and right change it (`Menu_AdjustRow`); a page shows an
+  icon and an arrow; an image shows its name in green. `L,Title;` entries of
+  the configuration string are rules that group rows (`expand_demistify_osd.py`
+  adds the entry type); messages are centred on the last row in green, yellow
+  or red; the file selector shows `NAME.EXT` and the size. `OSD position`
+  (status bits 11-13) is applied by `Menu_DrawExtras`.
+  `sim/run_osd_test.sh` draws three pages at both line counts and four box
+  positions; `sim/run_bios_sim.sh ... +OSD_TOUR` walks the real menu of the
+  firmware with the cursor keys and saves a frame of each page.
+- **Menu layout (Built)**: the root page lists the four drives with the name
+  of the mounted image after each label (`S3`, `S4` floppies; `S0`, `S1` hard
+  disks, extensions VHD and IMG), a `Machine` group with CPU speed, installed
+  RAM and the floppy write protect, then the pages `Video` (Picture: monitor,
+  display; Output: VGA 13h, scandoubler, scan converter; Boot splash: splash
+  time), `Audio` (sound cards,
+  levels), `Input` (joysticks), `BIOS` (the system and EGA BIOS files, below)
+  and `Settings`, and Reset. The name comes from
+  `imagename()` in `firmware/overrides.c`, recorded when `loadimage()` mounts
+  a file, and is shown by a hook that `expand_demistify_osd.py` adds to the
+  file selector entries of `main.c`. Choosing a hard disk needs a Reset for
+  the BIOS to detect it. The same script gives the cursor keys auto-repeat in
+  `menu.c` (first repeat after 400 ms, then every 80 ms) and makes the cursor
+  skip the empty rows and rules, so down from the last entry lands on Back.
+  Pages keep to 14 entries: a page of 15 makes the menu think it can scroll.
+- **ESC (Built, Sim)**: as on MiSTer, ESC backs out of the menu: from a page
+  (or a file list) to the main page, from the main page it closes the OSD.
+  `expand_demistify_osd.py` adds the key to `Menu_Run()` in `menu.c`, which
+  calls `osd_escape()` in `overrides.c`; an ESC pressed while the OSD was
+  hidden belongs to the machine and is dropped by the menu code, not by
+  the machine (the controller already hides the keyboard while the OSD is
+  open).
+- **BIOS files (Built, Sim)**: `P5,BIOS;` holds two file selectors, `SB`
+  (System BIOS, extensions ROM and BIN) and `SE` (EGA BIOS), which are the
+  firmware's units `B` and `E` (`BIOS_UNIT`, `EGA_UNIT`). Choosing a file
+  makes `loadimage()` hold the machine in reset, send the file with the same
+  ROM upload as at start-up (index 0 for the system BIOS, 3 for the EGA, at
+  most 32 KB), and release the reset, so the new BIOS runs from the start;
+  entering the selector leaves the loaded one in place. `PCAT286.ROM` and
+  `EGA.ROM` stay the defaults: `autoboot()` loads them when the CFG names no
+  file, or the named one is gone, and Reset to defaults loads them again.
+  The new page adds a row to the main page, which now fills all 16 rows of
+  the OSD (the tour's `tour_root.osd` shows it); another entry there needs a
+  page of its own.
+- **Settings page (Built)**: `P3,Settings;` holds the `Info` page (core,
+  machine and mounted images, `info_page()`), `OSD position`, and two triggers, `T1` Save
+  settings and `T2` Reset to defaults (status bits 1 and 2, never set: the
+  `toggle()` override in `overrides.c` catches them). Each opens a page of its
+  own (`MENUPAGE_CONFIRM`, hook in `main.c`) that asks Yes/No; Back is the
+  default row. Save writes `PCAT286.CFG` (version 3) in the folder `PCAT286`
+  of the card, or in the root when there is no such folder: the status word
+  and the path from the root of each of the four drives' images and of the
+  two BIOS files (`DISKS/DOS.VHD`, traced back from the directory cluster
+  through the `..` entries; six paths of 80 bytes, one that does not fit is
+  not kept; `sim/make_cfg_file.py` writes one). `autoboot()` reads it, loads
+  the BIOS files it names (else the defaults) and mounts the images; nothing
+  is mounted by default. A version 2 file (four paths of 112 bytes, no BIOS)
+  is still read.
+  Every drive gets a mount event at start-up, empty or not: the IDE store
+  answers the BIOS only after it has seen both units (`all_ready`), so a
+  start-up that skipped an empty disk 1 left disk 0 undetected. The firmware
+  cannot create files, so the folder must hold a 512-byte `PCAT286.CFG`
+  (zeroes, or a version 1 file, mean no settings). Reset to defaults zeroes
+  the status word, blanks the file and pulses the machine reset.
+- **OSD key (Built, Sim)**: Win+F12 opens the OSD, as on MiSTer with
+  `F12KEYMOD`, so F12 alone stays with the machine. The firmware's menu key
+  (`Menu_OsdKey`, added to `menu.c` by `expand_demistify_osd.py`) is F12 with
+  either Windows key down or pressed since the last look; an F12 without one
+  is forgotten, and while the OSD is open F12 alone closes it. The controller
+  hides the keyboard from the core while the OSD is open (`intercept`, the
+  guest's `OSD_OPEN`); `zxtres_ps2_key.sv` gives no event for an F12 pressed
+  with a Windows key down nor for its release, and counts both Windows keys
+  as up when the OSD closes, since their releases may have gone unseen.
+  `sim/run_ps2_key_test.sh` checks the filter; the board testbench opens the
+  OSD with Win+F12, and `+F12_ALONE` checks that F12 alone leaves it closed.
+- **Boot splash (Built, Sim)**: the MiSTer splash with "ZXTres" in place of
+  "MiSTer" beside the title (`zxtres/splash/`, made from
+  `SW/splash_vga_320x200.png` by `scripts/make_splash.py`). As on MiSTer it is
+  the initial content of the 64 KiB mode 13h framebuffer, drawn by the mode
+  13h raster with the 256-colour palette `rtl/video/splash_vga_palette.hex`
+  before the CPU starts, so it takes no block RAM of its own; the build
+  defines `SPK286_AT_BOOT_SPLASH`. `spk286_at_splash_control` holds the
+  machine in reset for a second of settling and then the splash, which fades
+  in and out. One entry, `Video > Splash time` (status bits 8-9), sets it to
+  5, 10 or 15 seconds (the module's `duration` input) or to 0 s, no splash
+  (its `option_off`, MiSTer's Splash Screen No); 5 s is the default and first
+  value, so the list reads 5, 10, 15, 0. Like on MiSTer it shows when the core
+  is loaded, not on Reset, and a program that has drawn in mode 13h leaves it
+  black until the core is loaded again.
+- **Credits (Built, Sim)**: the MiSTer core's F12 credits, `jtframe_credits`
+  scrolling the text over the dimmed picture, placed ahead of the line
+  doubler and the scan converter so both paths carry it. The text is
+  `zxtres/credits/msg`, the MiSTer one with "ZXTRES+" in the subtitle and a
+  line for DeMiSTify and MiST; `msg.bin` is made from it by
+  `credits/msg2hex.cc` (fed without carriage returns) and cut to its first
+  8192 lines, the size of the four-page text memory (Verilator rejects more).
+  F12 on the splash holds it with the credits until F12 again
+  (`splash_f12_pause`, which also stops the splash timer); the board
+  testbench checks it with `+CREDITS_TEST`.
+- **F12 pause (Built, Sim)**: as on MiSTer, F12 (alone, see OSD key) pauses
+  the running machine: `spk286_at_pause_key` takes the key out of the AT
+  keyboard stream and toggles the pause on its release, the CPU is held off
+  the bus, the audio is muted and the credits scroll; F12 again resumes. It
+  does nothing during the splash, which has its own F12 hold. The board
+  testbench checks it with `+PAUSE_TEST`.
+- Restore the Joystick default
   (F6), joystick swap and CPU sync, write protect (5.2) and the ROM selection
   entries (`F`) so a user can pick other BIOS files than `PCAT286.ROM`.
-- Keep options within the firmware's limits: 7 entries per page, status bits
+- Keep options within the firmware's limits: 15 entries plus a footer per page, status bits
   0-61, no conditional entries. The MiSTer pages (System & BIOS, Audio &
   Video, Hardware) map to submenus `P1..P3`.
 - Add "Exit to Spectrum core" (5.9) and a CMOS entry that shows whether
@@ -275,19 +456,52 @@ machine produces. Rasters to handle:
 
 Staged design:
 
-1. **Stage 1, VGA pass-through plus doubler (P0, M).** Use `mist_video`'s
-   scandoubler for the 15.7 kHz modes and the 31.4 kHz profiles unchanged,
-   with the OSD over both. It leaves 350-line and MDA modes on an unusual
-   rate, so those need a display that accepts about 18-22 kHz (CRT
-   multisync, some capture devices).
-2. **Stage 2, scan converter (P0, L).** Capture the machine's 57 MHz
-   pipeline into a 6 bit frame store and read it out as 640x480 at about
-   60 Hz, which is also what DisplayPort needs. The MiSTer core already has
-   a capture and readout pair (`ega_fb_capture.v`, `ega_fb_readout.v`,
-   `ega_ddr_arbiter.v`) for DDR3; back it with block RAM (about 37 RAMB36
-   for 640x350) or the 2 MiB SRAM, which leaves block RAM free. Decide after
-   the resource re-measure in 5.3. Frame-rate conversion between 70 Hz VGA
-   modes and 60 Hz output drops a frame about one in seven.
+1. **Stage 1, VGA pass-through plus doubler (P0, M) - done, Board
+   (2026-10-27): the 200-line CGA modes and VGA 13h in TV 60Hz leave as a
+   480p picture the monitor locks to.** `zxtres/rtl/zxtres_linedouble.sv` doubles pictures of
+   under 300 lines (the 200-line modes, whose 14.318 MHz dot is a fourth of
+   the pipeline clock) to 31.4 kHz with `mist-modules`' `scandoubler_framing`
+   and its own 6 bit line store, and drives the pair as -HSync/
+   -VSync whatever the input polarity, the 640x480 at 59.9 Hz a monitor expects of about 525 lines
+   (it was -HSync/+VSync, which monitors read as a 400-line mode). The OSD
+   entry `VGA 13h+ CRT: Native 70Hz/TV 60Hz` (status bit 10, as on MiSTer)
+   makes the VGA 13h+ modes 15.7 kHz/60 Hz, which the doubler then takes to
+   31.4 kHz/60 Hz; with `Scandoubler: Off` they leave at 15.7 kHz, for a
+   15 kHz display (not tested, and the connector carries no composite sync).
+   350-line, MDA and the 31.4 kHz profiles
+   pass through unchanged, with the OSD over both. The choice is made once
+   per frame from the line count of the undoubled picture; the OSD entry
+   `Scandoubler: Auto/Off` (status bit 60) turns it off. It leaves 350-line
+   and MDA modes on an unusual rate, so those need a display that accepts
+   about 18-22 kHz (CRT multisync, some capture devices) unless stage 2 is on. The
+   core's own doubler in `ega_top.v` stays off: it is shared with the MiSTer
+   build and would need ports through four modules.
+2. **Stage 2, scan converter (P0, L) - done, validated on the
+   board (26 October 2026).** `zxtres/rtl/zxtres_scanconv.sv` takes the pictures stage 1
+   cannot (350 lines at under 26 kHz: the EGA 350-line modes and MDA) and
+   writes them into the 2 MiB SRAM through `zxtres_sram_ctrl.sv`, then reads
+   them out as CEA-861 480p: 720x480 at 59.94 Hz, 27 MHz (own MMCM,
+   `u_scan_mmcm`), 858x525 dots, -HSync -VSync, the picture centred and
+   unscaled. A pixel is stored as {R[5:4], G[5:4], B[5:4]}, two per 16-bit
+   word, which brings EGA's two-bit channels back exactly; the 18 bit VGA
+   pictures (31 kHz already) and the 200-line ones bypass the converter. Three
+   buffers of 400x360 words (432k of the 1M words) make the writer and the
+   reader independent: the writer never takes the buffer being read or the
+   last complete one, so a 70 Hz or 50 Hz source never tears against the 59.94
+   Hz output, a frame is repeated or dropped now and then. The 57 MHz side
+   fills a block-RAM line store (two banks) one line ahead from the SRAM, on a
+   toggle and a level from the 27 MHz side; no frame data crosses clocks
+   except through that line store. The pins carry the converter's output when
+   `conv_active`, else stage 1's, chosen per frame; the OSD has an instance on
+   each path. OSD entry `Scan converter: Auto/Off` (status bit 61). Cost: one
+   more MMCM and RAMB18s for the line store and the second OSD, and none of
+   the block RAM the DDR3-style frame store would have taken (about 37
+   RAMB36). SRAM protocol: read 2 clocks (34.9 ns for a 10 ns part), write 3,
+   one flip-flop-launched pin change per 17.5 ns. The load is about 65 % of
+   the SRAM's slots in the worst case (350 lines at 70 Hz plus the readout).
+   Not verified: the converter on the board (monitor lock, SRAM signal
+   integrity at 57 MHz, tearing); the SRAM pin timing is covered by
+   `set_false_path` and the two-clock protocol, not by Vivado analysis.
 3. **Stage 3, DisplayPort (P2, M).** Take the wrapper's DisplayPort
    transmitter, hot-plug and AUX code and its 640x480 stream generator
    (27 MHz pixel clock from the 81 MHz symbol clock) from `zx3w`, and feed
@@ -335,8 +549,8 @@ needed.
 1. 5.0 first board bring-up. Everything else assumes the build works on the
    board, and it can show problems (SDRAM timing, clocks) that change the
    plan.
-2. 5.4 OSD buffer on block RAM, then 5.1 hard disks and 5.5 stage 1 video
-   (independent; can be developed in parallel).
+2. 5.4 OSD buffer on block RAM (done), 5.5 stage 1 video (done, Board),
+   then 5.1 hard disks (Board 2026-10-27, see 3.1 and 5.1).
 3. 5.3 audio, then re-measure resources.
 4. 5.5 stage 2 scan converter, 5.2 floppy.
 5. 5.6, 5.7, 5.5 stage 3, 5.8, 5.9.

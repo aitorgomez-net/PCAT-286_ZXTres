@@ -6,9 +6,9 @@ use ieee.std_logic_1164.all;
 use ieee.numeric_std.all;
 
 package demistify_config_pkg is
-constant demistify_romspace : integer := 14; -- 16 KiB address space for the controller ROM
-constant demistify_romsize1 : integer := 13; -- 8 KiB first chunk
-constant demistify_romsize2 : integer := 13; -- 8 KiB second chunk
+constant demistify_romspace : integer := 15; -- 32 KiB address space for the controller ROM
+constant demistify_romsize1 : integer := 14; -- 16 KiB first chunk
+constant demistify_romsize2 : integer := 13; -- 8 KiB second chunk, 24 KiB of ROM in all
 
 -- Joystick bitmap: directions in bits 3:0, buttons from bit 4 up.
 constant demistify_joybits : integer := 8;

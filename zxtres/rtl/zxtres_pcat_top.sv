@@ -15,6 +15,13 @@ module zxtres_pcat_top (
     output logic        VGA_HS,
     output logic        VGA_VS,
 
+    output logic [19:0] SRAM_A,
+    inout  wire  [15:0] SRAM_Q,
+    output logic        SRAM_WE,
+    output logic        SRAM_OE,
+    output logic        SRAM_UB,
+    output logic        SRAM_LB,
+
     output logic [12:0] SDRAM_A,
     inout  wire  [15:0] SDRAM_DQ,
     output logic        SDRAM_DQML,
@@ -100,6 +107,12 @@ module zxtres_pcat_top (
 `ifdef ZXTRES_SKELETON
     assign guest_ps2m_clk_out = 1'b1;
     assign guest_ps2m_dat_out = 1'b1;
+    assign SRAM_A  = '0;                 // the skeleton leaves the SRAM idle
+    assign SRAM_Q  = 16'hzzzz;
+    assign SRAM_WE = 1'b1;
+    assign SRAM_OE = 1'b1;
+    assign SRAM_UB = 1'b0;
+    assign SRAM_LB = 1'b0;
     zxtres_skeleton_guest guest (
         .CLOCK_50(clk50), .RESET_N(reset_n), .LED(act_led),
         .SDRAM_A(SDRAM_A), .SDRAM_DQ(SDRAM_DQ), .SDRAM_DQML(SDRAM_DQML), .SDRAM_DQMH(SDRAM_DQMH),
@@ -120,7 +133,10 @@ module zxtres_pcat_top (
         .SPI_DO(spi_fromguest), .SPI_DI(spi_toguest), .SPI_SCK(spi_clk),
         .SPI_SS2(spi_ss2), .SPI_SS3(spi_ss3), .SPI_SS4(spi_ss4), .CONF_DATA0(conf_data0),
         .VGA_R(VGA_R), .VGA_G(VGA_G), .VGA_B(VGA_B), .VGA_HS(VGA_HS), .VGA_VS(VGA_VS),
+        .SRAM_A(SRAM_A), .SRAM_Q(SRAM_Q), .SRAM_WE(SRAM_WE), .SRAM_OE(SRAM_OE),
+        .SRAM_UB(SRAM_UB), .SRAM_LB(SRAM_LB),
         .PS2K_CLK_IN(PS2_KEYBOARD_CLK || intercept), .PS2K_DAT_IN(PS2_KEYBOARD_DAT),
+        .OSD_OPEN(intercept),
         .PS2M_CLK_IN(PS2_MOUSE_CLK), .PS2M_DAT_IN(PS2_MOUSE_DAT),
         .PS2M_CLK_OUT(guest_ps2m_clk_out), .PS2M_DAT_OUT(guest_ps2m_dat_out),
         .DAC_L(dac_l), .DAC_R(dac_r)
@@ -147,12 +163,17 @@ module zxtres_pcat_top (
     /* verilator lint_on PINCONNECTEMPTY */
     assign SD_SCK = spi_clk;
 
-    // Audio is silent in the skeleton.
-    assign AUDIO_L  = 1'b0;
-    assign AUDIO_R  = 1'b0;
-    assign I2S_BCK  = 1'b0;
-    assign I2S_LRCK = 1'b0;
-    assign I2S_DATA = 1'b0;
+    // The 3.5 mm output is sigma-delta, the board's DAC takes I2S; both from
+    // the guest's signed 16-bit audio on the 50 MHz clock. (The skeleton and
+    // demo guests drive zero.)
+    sigma_delta_codec u_sigma_delta (
+        .clk(clk50), .audio_l(dac_l), .audio_r(dac_r),
+        .sd_audio_l(AUDIO_L), .sd_audio_r(AUDIO_R)
+    );
+    i2s_sound #(.CLKMHZ(50)) u_i2s (
+        .clk(clk50), .audio_l(dac_l), .audio_r(dac_r),
+        .i2s_bclk(I2S_BCK), .i2s_lrclk(I2S_LRCK), .i2s_dout(I2S_DATA)
+    );
 
     assign LED = !act_led;
 endmodule
