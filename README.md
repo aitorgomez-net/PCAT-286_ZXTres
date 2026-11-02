@@ -1,10 +1,14 @@
 # PCAT-286 for MiSTer FPGA
 
+![PCAT-286 boot splash](splash.jpg)
+
 PCAT-286 is an Intel 80286-compatible PC/AT implementation for MiSTer, using
 [SPK286](https://github.com/spark2k06/SPK286) and an EGA video subsystem.
 The repository builds one machine profile, `PCAT-286`, for the DE10-Nano's
-Cyclone V `5CSEBA6U23I7`. The AT RAM is the MiSTer SDRAM expansion, or with
-`PCAT286_RAM_DDR3` the DE10-Nano's own HPS DDR3, which needs no SDRAM module.
+Cyclone V `5CSEBA6U23I7`. The supplied configuration (`PCAT286_RAM_DDR3` in
+[config.tcl](config.tcl)) keeps the AT RAM in the DE10-Nano's own HPS DDR3, so
+no SDRAM module is needed; without that macro the AT RAM uses the MiSTer SDRAM
+expansion.
 
 The machine includes real and protected mode execution, a six-byte prefetch
 queue, 24-bit physical addressing, AT interrupt and DMA controllers, PIT,
@@ -12,6 +16,13 @@ queue, 24-bit physical addressing, AT interrupt and DMA controllers, PIT,
 built-in audio. BIOS/DOS, Windows 3.1, OS/2 and games have been reported working
 on MiSTer. These observations do not imply complete chipset, protected-mode
 corner-case or historical timing certification; see [qualification limits](#qualification-limits).
+
+A detailed [technical report](https://spark2k06.github.io/PCAT-286_MiSTer/report/)
+(architecture, memory map, I/O, video, verification and FPGA timing; source in
+[docs/report](docs/report/CORE_REPORT.html)) complements this README, and the
+[BIOS Builder](https://spark2k06.github.io/PCAT-286_MiSTer/BIOS_Builder) prepares
+the firmware the core needs. Both are published at
+[spark2k06.github.io/PCAT-286_MiSTer](https://spark2k06.github.io/PCAT-286_MiSTer/).
 
 ## Build and first boot
 
@@ -29,11 +40,32 @@ The result is `output_files/PCAT-286.rbf`. The source manifests are
 only this checkout, including the vendored CPU and generated microcode.
 
 [config.tcl](config.tcl) enables Sound Blaster, OPL2, C/MS, Tandy audio and
-MIDI. The optional graphical splash is controlled by `SPK286_AT_BOOT_SPLASH`,
-which is commented out in the supplied configuration. Required-ROM detection
-and the preboot video raster remain active without that artwork.
+MIDI. The graphical boot splash is controlled by `SPK286_AT_BOOT_SPLASH`,
+which the supplied configuration enables; comment it out to omit the splash
+and its OSD option. Required-ROM detection and the preboot video raster remain
+active without that artwork.
 
-1. Copy the built RBF to the MiSTer SD card and load it.
+The splash is a 320x200, 256-colour picture drawn by the VGA mode 13h raster,
+at the Native or 15 kHz rate the OSD selects for mode 13h. It fades in over
+about half a second and fades out during its last second; F12 holds it at full
+brightness. Its pixels are
+preloaded into the mode 13h framebuffer and its colours sit in a small palette
+table, so it needs no ROM of its own. Edit
+[SW/splash_vga_320x200.png](SW/splash_vga_320x200.png) (an indexed PNG) and
+run `SW/make_vga_splash_rom.py` (or its `.ps1` equivalent) to regenerate
+`rtl/video/splash_vga_320x200.hex` and `rtl/video/splash_vga_palette.hex`.
+
+**F12** pauses the machine and scrolls the credits over the dimmed picture;
+F12 again resumes. The pause puts the CPU on HOLD and mutes the audio; the key
+never reaches the AT keyboard, and other key presses are ignored while paused.
+F12 on the boot splash holds it with the credits until pressed again. The OSD
+opens with **Win + F12**. The credits text is [credits/msg](credits/msg):
+build `credits/msg2hex.cc`, run it on that file and copy the resulting
+`msg.bin` to `rtl/common/msg.bin`.
+
+1. Copy the built RBF to the MiSTer SD card and load it. Build the two ROMs
+   with the [BIOS Builder](https://spark2k06.github.io/PCAT-286_MiSTer/BIOS_Builder)
+   (see [Firmware](#firmware)).
 2. Open the OSD with **Win + F12**. Select both ROMs under **System & BIOS**:
    **PCAT BIOS** and **EGA BIOS**.
 3. Mount a bootable floppy image at **Floppy A:** or an IDE disk at **IDE 0-0**.
@@ -42,24 +74,32 @@ and the preboot video raster remain active without that artwork.
 4. Select **Hardware → Installed RAM** and **Monitor**, then use
    **Reset & apply settings**. F12 or Esc closes the open OSD.
 
+### Firmware
+
 A system ROM is loaded at `F0000h`; supply a 64 KiB image containing the reset
 entry at offset `FFF0h`. For BIOSes distributed as separate even/odd chips,
-prepare the interleaved CPU-visible image first. The EGA ROM starts at `C0000h`
-and must fit within 32 KiB. The loader rejects an oversized EGA image instead
-of allowing it to overwrite UMB RAM. XT BIOS/XTIDE image builders retained
-under `SW/ROMs/` are not instructions for preparing an AT BIOS.
+the CPU-visible image is the two chips interleaved. The EGA ROM starts at
+`C0000h` and must fit within 32 KiB. The loader rejects an oversized EGA image
+instead of allowing it to overwrite UMB RAM. The tested system BIOSes are
+PhoenixBIOS A286 1.01 and MR BIOS V1.65.
 
 The CPU stays in reset while either required ROM is absent or being replaced.
 A visible notice identifies the missing ROM so the OSD remains usable; loading
 both releases the machine. The system BIOS invokes the EGA option ROM to
-initialize the video registers during POST. There is no separate XTIDE option
-ROM slot: the selected AT BIOS must support the IDE interface.
+initialize the video registers during POST. There is no separate disk option
+ROM slot: the selected AT BIOS must support the standard AT IDE interface at
+`1F0h`/`3F6h`.
 
-The original IBM EGA BIOS is not supplied. The existing helper
-[make_ega_bios_rom.py](SW/ROMs/EGA/make_ega_bios_rom.py) requires Python 3 and
-`requests`; it downloads the 16 KiB IBM 6277356 dump and reverses its byte order
-into `ega_bios.rom` in the current directory. System and video ROMs retain
-their respective owners' terms. Project-owned diagnostics are in
+The original IBM EGA BIOS and the system BIOS images are not supplied. The
+[BIOS Builder](https://spark2k06.github.io/PCAT-286_MiSTer/BIOS_Builder) (source:
+[SW/ROMs/BIOS_Builder.html](SW/ROMs/BIOS_Builder.html), which also runs from a
+local copy) prepares both from reference downloads. It builds `ega_bios.rom`
+(the 16 KiB IBM 6277356 EGA ROM in CPU address order) and a 64 KiB PhoenixBIOS
+A286 1.01 or MR BIOS V1.65 image by interleaving the even/odd chip images, and
+checks every source and output against the images tested with the core. It
+runs entirely in the browser: nothing is uploaded, and a manual file picker
+replaces the automatic download if that is blocked. System and video ROMs
+retain their respective owners' terms. Project-owned diagnostics are in
 [tests/firmware](tests/firmware); they exercise specific boundaries and do not
 replace a general-purpose PC/AT BIOS.
 
@@ -86,7 +126,7 @@ side effects. Its 8042 controls A20 and CPU reset; CPU SHUTDOWN also requests
 the AT reset path used by BIOS protected-mode return services.
 
 The bridge retains a request's address, cycle class, direction, byte lanes and
-payload until completion. Aligned RAM words use the x16 SDRAM path; EGA and
+payload until completion. Aligned RAM words use the x16 RAM path; EGA and
 byte devices preserve individual accesses and their side effects. The CPU
 already splits odd words into physical transfers. READY, LOCK and HOLD/HLDA
 remain functional dependencies in every speed profile. PIC vectors come from
@@ -100,7 +140,7 @@ into an 8088 status encoding. `A0` and active-low `BHE` select the low/high
 byte lanes; retained transfers must complete exactly once even across READY
 stalls, reset cancellation and repeated identical requests.
 
-CPU, bridge and SDRAM service run on a common 50 MHz clock. Code/data read
+CPU, bridge and RAM service run on a common 50 MHz clock. Code/data read
 buffers and a single-entry posted-write buffer reduce memory overhead while
 retaining write ordering, snooping and reset/drain rules. Peripheral clocks,
 video clocks and the MiSTer video/HPS clock crossings remain independent.
@@ -121,7 +161,8 @@ SDRAM.
 
 ## Memory map
 
-Addresses below are CPU-visible, before translation to private SDRAM backing.
+Addresses below are CPU-visible, before translation to the private backing RAM
+(DDR3 or SDRAM).
 The EGA graphics controller selects its active aperture within the reserved
 `A0000h–BFFFFh` region. ROM writes are blocked during CPU execution.
 Unmapped reads return `FFh` per byte and unmapped writes have no effect.
@@ -158,10 +199,10 @@ EMS provides 128 pages of 16 KiB (2 MiB total), selected through
 UMB and the EMS facility have no OSD enable switch. DOS needs a compatible
 memory manager to expose them through DOS/EMS services.
 
-The EMS backing occupies SDRAM `200000h–3FFFFFh`; CPU RAM at and above
-2 MiB is translated upward by 2 MiB to avoid aliasing it. The CPU BIOS alias
-is resolved before this backend boundary and must not be reapplied inside
-the read buffers or SDRAM owner. A20 masking exempts the high BIOS alias so
+The EMS backing occupies backing-RAM `200000h–3FFFFFh` (in the DDR3 window or
+SDRAM alike); CPU RAM at and above 2 MiB is translated upward by 2 MiB to
+avoid aliasing it. The CPU BIOS alias is resolved before this backend boundary
+and must not be reapplied inside the read buffers or the DDR3/SDRAM owner. A20 masking exempts the high BIOS alias so
 reset fetches remain valid when A20 is disabled.
 
 ## I/O, interrupts and audio
@@ -180,6 +221,7 @@ The main register blocks and interrupt assignments are:
 | `0080h–008Fh` | DMA page/diagnostic registers | — |
 | `00A0h–00A1h` | Slave PIC | IRQ8–15 |
 | `00C0h–00DFh` | DMA2, word channels/cascade | Channels 4–7 |
+| `01E0h–01E3h` | Tandy SN76489, second window, when enabled | — |
 | `01F0h–01F7h` | Primary IDE, 16-bit data at `1F0h` | IRQ14 |
 | `0200h–0207h` | Joystick/gameport | — |
 | `0220h` block | C/MS or Sound Blaster Pro DSP/mixer | SB IRQ5/7, DMA channel 1 |
@@ -192,9 +234,12 @@ The main register blocks and interrupt assignments are:
 | `03F8h–03FFh` | COM1 / Microsoft-compatible serial mouse | IRQ4 |
 | `8980h–898Fh` | AT286CTL runtime controls | — |
 
-Tandy SN76489 writes use `C0h–CFh` when enabled. This selection takes that
-range away from DMA2; `D0h–DFh` remains decoded for DMA2. Leave Tandy disabled
-when software needs the complete secondary-DMA register block. C/MS and Sound
+Tandy SN76489 writes use `C0h–CFh` when enabled. DMA2 keeps decoding the
+whole block: the BIOS tests its registers there at POST, so a write to `C0h–CFh`
+reaches both, in the same cycle, and the CPU waits while the chip is busy (about
+9 µs per write, as on a Tandy 1000). The same chip also answers at `1E0h–1E3h`, where the AT-class Tandy 1000 RLX and RSX have it:
+Sierra's SCI1.1 `TANDY3V.DRV` uses that port when the BIOS model byte is `FCh`
+or lower, as it is here. The Tandy DAC at `1E4h–1E7h` is not provided. C/MS and Sound
 Blaster overlap at `220h`, so **Audio 220h** selects one of them or disables
 both. OPL2 and Tandy have independent controls. MPU-401 is UART mode; an
 MT32-pi synthesizer is external hardware connected through USER I/O.
@@ -368,10 +413,12 @@ of `1234h` to `0040:0072`; run the TSR again afterward.
 | `rtl/spk286_timing/` | Instruction scheduling and target handoff |
 | `vendor/spk286/` | Pinned CPU RTL, authoritative microcode, generators and CPU tests |
 | `rtl/video/` | EGA, bounded VGA extension and video testbenches |
-| `rtl/KFPC-XT/` | Retained reusable chipset and SDRAM components |
+| `rtl/KFPC-XT/` | Retained KF8259, KF8254 (KF8253) and KFSDRAM components, plus the EGA VRAM front end, ROM-presence latch and F12 pause key |
 | `rtl/sound/`, `rtl/uart/`, `rtl/common/`, `sys/` | Audio, serial and MiSTer support |
 | `sim/`, `tests/`, `scripts/` | Directed simulations, firmware and verification entrypoints |
-| `SW/`, `hdd/` | DOS utilities, ROM preparation and boot examples |
+| `SW/`, `hdd/` | DOS utilities, the ROM builder (`SW/ROMs/BIOS_Builder.html`), splash artwork and boot examples |
+| `credits/` | Credits text (`msg`) and its `msg2hex` converter |
+| `docs/` | Technical report and the landing page of the GitHub Pages site |
 
 Use Python 3.10+, Bash, Icarus Verilog, Verilator, make and a C++ build
 toolchain on Linux or WSL for the portable regression entrypoint. Machine
@@ -482,12 +529,15 @@ tools measure aggregate work, not native CPU pins, exact cycles or IRQ latency.
 The following limits describe the retained implementation; cleanup of the
 repository does not resolve them or constitute a new full regression.
 
-- **FPGA timing:** the selected October 2026 fit has CPU setup/hold minima
-  of +0.486/+0.120 ns and common 50 MHz-domain minima of +0.164/+0.110 ns.
-  Global hold is positive (+0.027 ns minimum), but the cold HDMI scaler
-  `o_ihsize[3] → o_hacc_next[12]` path still has -0.063 ns setup slack.
-  Placed utilization is 36,701/41,910 ALMs (87.57%). This is not complete
-  timing sign-off; results apply to that recorded fit, not every rebuild.
+- **FPGA timing (as of 17 October 2026):** the selected fit (fitter `SEED 4`,
+  DDR3 AT RAM, boot splash, F12 credits) meets setup, hold, recovery and
+  removal in all four speed/temperature corners. Worst slacks are global
+  setup +0.178 ns, HDMI scaler setup +0.236 ns, global hold +0.078 ns, CPU
+  setup/hold +1.091/+0.104 ns and the common 50 MHz domain +0.477/+0.104 ns.
+  Placed utilization is 32,029/41,910 ALMs (76%) and 465/553 M10K blocks.
+  These figures describe that dated fit, not every later rebuild: the HDMI
+  scaler paths depend on the seed, and on the same sources seed 2 missed
+  them by 0.003 ns.
 - **Current-source validation:** the latest CPU/timing increments have
   directed checks, but their complete current-source regression and a new
   source-bound MiSTer candidate acceptance remain outstanding. An older
@@ -524,9 +574,10 @@ repository does not resolve them or constitute a new full regression.
 - **Historical timing:** instruction estimates, internal EU/IU/BIU overlap,
   prefetch refill, native Ts/Tc/READY phases and board wait/HOLD timing are
   not fully certified. Aggregate 6/12 MHz reference results do not establish
-  cycle or pin accuracy for all profiles. CPU pause is not exposed; an
-  outstanding bus response must not be discarded by treating execution
-  enable as a general clock gate.
+  cycle or pin accuracy for all profiles. The F12 pause holds the CPU off
+  the bus through HOLD/HLDA rather than stopping its clock; an outstanding
+  bus response must not be discarded by treating execution enable as a
+  general clock gate.
 
 ## Sources, credits and licenses
 
@@ -544,7 +595,8 @@ framework contributions, UM6845R video support, Jotego audio cores and ao486
 Sound Blaster DSP work by Aleksander Osman and Alexey Melnikov. EGA and the
 bounded VGA extension were developed using 86Box video behaviour as a
 reference. Earlier PCXT video work included TubeTimeUS/schlae's Graphics
-Gremlin. Splash artwork is by [@mills32](https://github.com/mills32).
+Gremlin. The full list of developers, testers and supporters is in
+[credits/msg](credits/msg), the text the F12 credits scroll.
 The ZXTRES+ port's OSD font (`rtl/common/font0.hex`) comes from jtframe by
 Jose Tejada ([@jotego](https://github.com/jotego), GPL v3), by way of PCXT_MiSTer;
 the OSD around it adapts MiST's `osd.v` (Till Harbaum and others, GPL v3 or later).
@@ -552,7 +604,8 @@ the OSD around it adapts MiST's `osd.v` (Till Harbaum and others, GPL v3 or late
 The inherited root [LICENSE](LICENSE) is GNU GPL version 3. Component-specific
 licenses, copyright headers and redistribution notices remain authoritative
 for their respective files, including bundled utilities and firmware sources.
-The imported SPK286 snapshot did not include a standalone license file; its
-licensing must be resolved explicitly before public distribution. No license
-is inferred from the presence of the vendored copy. Third-party BIOS images
-and external test corpora are separate inputs, not covered by the root license.
+The vendored SPK286 CPU is under the MIT License in
+[vendor/spk286/LICENSE](vendor/spk286/LICENSE). Third-party BIOS images
+and external test corpora are separate inputs, not covered by the root license. The BIOS Builder contains no
+ROM data: it fetches the reference images from the 86Box ROM archive and
+minuszerodegrees.net when the user asks it to.

@@ -494,6 +494,7 @@ module spk286_at_machine #(
     logic [15:0] devices_dma_transfer_data_out;
     logic [7:0]  devices_dma_request;
     logic        devices_cpu_reset_request;
+    logic        devices_router_idle;
     logic        irq6;
     logic        irq8;
     logic        irq14;
@@ -566,6 +567,7 @@ module spk286_at_machine #(
     logic        pic_io_candidate;
     logic        pit_io_candidate;
     logic        dma_io_candidate;
+    logic        tandy_dma_window;
     logic        io_known_target;
     logic        io_unmapped_candidate;
     logic        memory_unmapped_candidate;
@@ -689,7 +691,8 @@ module spk286_at_machine #(
                                   (at_address[3:0] == 4'hB))))) ||
                               ((`ENABLE_TANDY_AUDIO) && at286ctl_eff_tandy &&
                                at_write &&
-                               (at_address[15:4] == 12'h00C)) ||
+                               ((at_address[15:4] == 12'h00C) ||
+                                (at_address[15:2] == 14'h0078))) ||
                               // Admit SB DSP/mixer accesses before the
                               // unmapped-I/O sink can consume them. Match
                               // the device router's direction-aware decode.
@@ -704,12 +707,15 @@ module spk286_at_machine #(
                                   (at_address[3:0] == 4'h5))) ||
                                 (!at_write &&
                                  (at_address[3:0] == 4'h5)))));
-        // Tandy's C0h-CFh decode takes the first half of the AT secondary-DMA
-        // page, just as it does on the source XT profile. Keep D0h-DFh for
-        // the DMA controller when Tandy sound is enabled.
-        dma_io_candidate = at_io && is_dma_port(at_address[15:0]) &&
-                           !((`ENABLE_TANDY_AUDIO) && at286ctl_eff_tandy &&
-                             (at_address[15:4] == 12'h00C));
+        // Tandy's C0h-CFh writes also land on the secondary DMA controller,
+        // which the BIOS tests there at POST (write, read back), so both see
+        // them. The chip is busy for about 9 us after each one: hold the
+        // write until the router is idle, so that the DMA controller and the
+        // chip take it in the same cycle and neither misses it. The second
+        // window, 1E0h-1E3h, overlaps nothing.
+        tandy_dma_window = (`ENABLE_TANDY_AUDIO) && at286ctl_eff_tandy &&
+                           at_write && (at_address[15:4] == 12'h00C);
+        dma_io_candidate = at_io && is_dma_port(at_address[15:0]);
         a5_io_candidate = at_io && is_a5_io_port(at_address[15:0]);
         io_known_target = at_inta || pic_io_candidate || pit_io_candidate ||
                           dma_io_candidate || a5_io_candidate ||
@@ -997,6 +1003,7 @@ module spk286_at_machine #(
         .irq1                   (),
         .a20_enable             (a20_enable),
         .cpu_reset_request      (devices_cpu_reset_request),
+        .router_idle            (devices_router_idle),
         .periodic_tick          (periodic_tick),
         .second_tick            (second_tick),
         .irq8                   (irq8),
@@ -1134,7 +1141,8 @@ module spk286_at_machine #(
     spk286_at_dma u_dma (
         .clk                    (clk),
         .reset                  (reset),
-        .request_valid          (cpu_owner_active && at_io),
+        .request_valid          (cpu_owner_active && at_io &&
+                                 !(tandy_dma_window && !devices_router_idle)),
         .request_command_valid  (at_command_valid),
         .request_write          (at_write),
         .request_io             (at_io),

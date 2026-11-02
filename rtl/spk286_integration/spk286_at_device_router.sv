@@ -99,6 +99,9 @@ module spk286_at_device_router #(
     output logic        irq1,
     output logic        a20_enable,
     output logic        cpu_reset_request,
+    // High while no device transaction is in flight; the machine holds a
+    // write to a window shared with the DMA controller until then.
+    output logic        router_idle,
 
     input  logic        periodic_tick, // 32768 Hz RTC reference enable
     input  logic        second_tick,
@@ -186,6 +189,7 @@ module spk286_at_device_router #(
     localparam logic [3:0] DEVICE_UNMAPPED = 4'd15;
 
     logic [2:0] router_state_q;
+    assign router_idle = (router_state_q == ROUTER_IDLE);
     logic [3:0] target_device_q;
     logic       unmapped_read_q;
     logic [1:0] unmapped_lane_q;
@@ -365,7 +369,8 @@ module spk286_at_device_router #(
                                       (request_address[3:0] == 4'hB))))) ||
                                   ((`ENABLE_TANDY_AUDIO) && at286ctl_eff_tandy &&
                                    request_write &&
-                                   (request_address[15:4] == 12'h00C)) ||
+                                   ((request_address[15:4] == 12'h00C) ||
+                                    (request_address[15:2] == 14'h0078))) ||
                                   ((`ENABLE_SB) && at286ctl_eff_sb &&
                                    (request_address[15:4] == 12'h022) &&
                                    ((request_address[3:0] == 4'h6) ||
@@ -491,7 +496,12 @@ module spk286_at_device_router #(
         .dma_transfer_data_out  (sound_dma_transfer_data_out),
         .dma_request            (sound_dma_request),
         .sb_irq                 (sound_sb_irq),
-        .request_valid          (device_sound_candidate),
+        // Offer the request only while the router can take the accept. If a
+        // request arrives while the adapter is still busy (the SN76489 is
+        // busy for about 9 us), the adapter would otherwise take it in the
+        // cycle it frees up, before the router is idle, and again later.
+        .request_valid          (device_sound_candidate &&
+                                 (router_state_q == ROUTER_IDLE)),
         .request_command_valid  (request_command_valid),
         .request_write          (request_write),
         .request_io             (request_io),

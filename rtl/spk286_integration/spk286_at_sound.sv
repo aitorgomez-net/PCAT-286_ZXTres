@@ -114,10 +114,14 @@ module spk286_at_sound (
                          (!request_write &&
                           ((request_address[3:0] == 4'h4) ||
                            (request_address[3:0] == 4'hB))));
+        // Tandy writes at C0h-CFh, and at 1E0h-1E3h where the AT-class
+        // Tandy 1000 RLX/RSX put the chip; SCI1.1's TANDY3V.DRV uses 1E0h
+        // whenever the BIOS model byte is FCh or lower.
         tandy_candidate = `ENABLE_TANDY_AUDIO && tandy_en && request_valid &&
                           request_command_valid && request_io &&
                           request_write &&
-                          (request_address[15:4] == 12'h00C);
+                          ((request_address[15:4] == 12'h00C) ||
+                           (request_address[15:2] == 14'h0078));
         // The SB Pro occupies DSP ports 226h/22Ah/22Ch/22Eh and mixer ports
         // 224h/225h. C/MS is excluded by the effective audio selector.
         sb_candidate = `ENABLE_SB && sb_en && request_valid &&
@@ -338,7 +342,7 @@ module spk286_at_sound (
 
         if (`ENABLE_TANDY_AUDIO) begin : GEN_TANDY
             jt89 u_sn76489 (
-                .rst    (reset),
+                .rst    (reset | warm_reset),
                 .clk    (clk),
                 .clk_en (clk_en_3579),
                 .wr_n   (tandy_wr_n),

@@ -68,11 +68,13 @@ module spk286_machine_cpu (
             bus_write = write_cycle;
             data_oe = write_cycle;
             bus_valid = 1;
+            // The SN76489 holds READY for 32 of its 3.58 MHz clocks, about
+            // 450 clocks at 50 MHz.
             cycles = 0;
             do begin
                 @(negedge clk);
                 cycles = cycles + 1;
-            end while (!ready && cycles < 256);
+            end while (!ready && cycles < 1024);
             if (!ready) $fatal(1, "CPU I/O timeout at %04h", port);
             result = port[0] ? data_in[15:8] : data_in[7:0];
             // Hold the pins until the edge where the CPU observes READY.
