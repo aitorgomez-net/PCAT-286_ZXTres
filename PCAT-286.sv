@@ -1005,6 +1005,7 @@ module emu_at
         .option_off  (hps_status[7]),
         .second_tick (second_tick),
         .paused      (at_splash_paused),
+        .duration    (2'd0),
         .splash_active(at_splashscreen),
         .fade_out    (at_splash_fade_out),
         .boot_hold   (at_splash_boot_hold)

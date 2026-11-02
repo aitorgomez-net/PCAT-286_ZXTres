@@ -1,0 +1,104 @@
+\W     █████   ████▌  ████  ██████       ▐████▌  ████   ████▄
+\W     ██▀▀██ ▄█▀▀██  █▀▀█  ▀▀██▀▀        ▀▀▀██ ██▀▀██ ██▀▀▀▀
+\W     ██  ██ ██  ██ ██  ██   ██             ██ ██  ██ ██
+\W     ██▄▄██ ██     ██  ██   ██   ▗▄▄▄▖ ▄▄▄▄██ ██▄▄██ ██▄▄▄
+\W     █████▛ ██     ██████   ██   ▐███▌ ██████ ██████ ██████
+\W     ██     ██  ██ ██▀▀██   ██         ██     ██  ██ ██  ██
+\W     ██     ▀█▄▄██ ██  ██   ██         ██▄▄▄▄ ██▄▄██ ██▄▄██
+\W     ██      ████▌ ██  ██   ██         ██████  ████   ████
+
+\B           ▀▀▀▀▀▘ ▀▀  ▝▀▘ ▀▀▀▀▀▀▘
+\B              ▝▀▘ ▝▀▘ ▀▀  ▀▀▀▀▀▀▘
+\B              ▀▀   ▀▀▝▀▘    ▀▀▘   ▀▀▝▀▘ ▝▀▀▀▀  ▝▀▀▀▀
+\B             ▀▀    ▝▀▀▀     ▀▀▘   ▀▀▀▀▘ ▀▀ ▝▀▘ ▀▀
+\B            ▀▀     ▀▀▝▀▘    ▀▀▘   ▀▀▘   ▀▀▀▀▀▘ ▝▀▀▀▘
+\B           ▀▀     ▝▀▘ ▀▀    ▀▀▘   ▀▀    ▀▀        ▀▀
+\B           ▀▀▀▀▀▘ ▀▀  ▝▀▘   ▀▀▘   ▀▀    ▝▀▀▀▀▘ ▀▀▀▀▘
+
+\G           ZXTRES+ * SPK286 CPU * EGA/VGA
+
+\W                                             by \Gspark2k06
+
+                      Aitor Gomez Garcia
+                   https://www.aitorgomez.net
+                  https://ko-fi.com/spark2k06
+
+                          \BPOWERED BY
+
+                     SPK286 CPU * spark2k06
+              https://github.com/spark2k06/SPK286
+
+                     KFPC-XT * kitune-san
+                 https://github.com/kitune-san
+
+                 Based on PCXT-EGA MiSTer core
+       https://github.com/MiSTer-devel/PCXT-EGA_MiSTer
+
+                             \BALSO
+
+                   JTOPL * JT89 * JTCREDITS
+                     Jose Tejada (jotego)
+                 https://www.patreon.com/jotego
+
+              DeMiSTify * MiST user_io and OSD (ZXTRES+)
+                Alastair M. Robinson * Till Harbaum
+              https://github.com/robinsonb5/DeMiSTify
+
+                      MS Mouse PS2 to Serial
+                   Antonio Sanchez (TheSonders)
+                  https://github.com/TheSonders
+
+                    2 Button Analog Joysticks
+                           Flandango
+                  https://github.com/Flandango
+
+                           UART 16750
+                         Sebastian Witt
+            https://opencores.org/users/hasw/profile
+
+        Sound Blaster * C/MS * IDE * Floppy (ao486-based)
+                  Aleksander Osman * Kitrinx
+                   Alexey Melnikov (sorgelig)
+               https://www.patreon.com/FPGAMiSTer
+
+______________________________________________________________
+
+                    \BDEVELOPERS \W& \GCO-WORKERS
+
+                Aitor Gomez Garcia (spark2k06)
+                          kitune-san
+                    Neil Houghton (nizmow)
+                           birdybro
+
+______________________________________________________________
+
+                  \BTESTING \W& \GCOMMUNITY FEEDBACK
+
+                            thorr
+                         AmintaMister
+                            akeley
+                           vanfanel
+                            remax
+                          breiztiger
+                           NthLink
+                            Mills
+
+______________________________________________________________
+
+                       \BSpecial Thanks
+
+            https://86box.net (EGA/VGA reference)
+                            gyurco
+
+______________________________________________________________
+
+             \BThanks for supporting this project!!!
+
+                            thorr
+
+                        masterhand789
+
+______________________________________________________________
+
+                       \RReport issues to
+      https://github.com/MiSTer-devel/PCAT-286_MiSTer/issues

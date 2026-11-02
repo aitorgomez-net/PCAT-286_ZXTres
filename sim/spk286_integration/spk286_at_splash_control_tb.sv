@@ -6,6 +6,7 @@ module spk286_at_splash_control_tb;
     logic option_off = 1'b0;
     logic second_tick = 1'b0;
     logic paused = 1'b0;
+    logic [1:0] duration = 2'd0;
     wire  splash_active;
     wire  boot_hold;
     wire  fade_out;
@@ -22,7 +23,7 @@ module spk286_at_splash_control_tb;
 
     spk286_at_splash_control dut (
         .clk(clk), .reset(reset), .option_off(option_off),
-        .second_tick(second_tick), .paused(paused), .splash_active(splash_active), .fade_out(fade_out),
+        .second_tick(second_tick), .paused(paused), .duration(duration), .splash_active(splash_active), .fade_out(fade_out),
         .boot_hold(boot_hold)
     );
 
@@ -73,6 +74,35 @@ module spk286_at_splash_control_tb;
         end
     endtask
 
+    // The splash lasts five, ten or fifteen seconds after the settling one.
+    task automatic check_duration(input logic [1:0] choice, input int seconds);
+        begin
+            option_off = 1'b0;
+            duration = choice;
+            @(negedge clk);
+            reset = 1'b1;
+            repeat (2) @(negedge clk);
+            reset = 1'b0;
+            pulse_second();
+            #1;
+            if (!splash_active)
+                $fatal(1, "splash did not start (duration %0d)", choice);
+            repeat (seconds - 1) begin
+                pulse_second();
+                #1;
+                if (!splash_active || !boot_hold)
+                    $fatal(1, "splash ended before %0d seconds", seconds);
+            end
+            @(posedge clk) #1;          // fade_out is registered
+            if (!fade_out)
+                $fatal(1, "no fade-out in the last of %0d seconds", seconds);
+            pulse_second();
+            #1;
+            if (splash_active || boot_hold)
+                $fatal(1, "splash did not end after %0d seconds", seconds);
+        end
+    endtask
+
     initial begin
         repeat (2) @(negedge clk);
         reset = 1'b0;
@@ -111,10 +141,11 @@ module spk286_at_splash_control_tb;
                 $fatal(1, "splash released the CPU too soon after the pause");
         end
         // Last second: the picture fades out, unless F12 holds it.
+        @(posedge clk) #1;              // fade_out is registered
         if (!fade_out)
             $fatal(1, "no fade-out request in the last second");
         paused = 1'b1;
-        #1;
+        @(posedge clk) #1;
         if (fade_out)
             $fatal(1, "fade-out requested while F12 holds the splash");
         paused = 1'b0;
@@ -159,6 +190,11 @@ module spk286_at_splash_control_tb;
             $fatal(1, "OSD No did not dismiss the active splash");
         check_first_fetch();
 
+        check_duration(2'd1, 10);
+        check_duration(2'd2, 15);
+        check_duration(2'd0, 5);
+
+        $display("AT_SPLASH_DURATION_PASS seconds=5,10,15");
         $display("AT_SPLASH_RESET_FETCH_PASS address=fffff0 data=12ea");
         $display("AT_SPLASH_PAUSE_PASS held_seconds=8");
         $display("AT_SPLASH_FADE_REQUEST_PASS last_second_only=1");

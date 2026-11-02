@@ -89,24 +89,34 @@ module spk286_at_video_adapter (
     // P05: the splash lifetime is generated at 50 MHz, but selects raster
     // state in the video domain. Only a synchronized level may reach EGA.
     (* altera_attribute = "-name SYNCHRONIZER_IDENTIFICATION FORCED_IF_ASYNCHRONOUS" *)
+    (* ASYNC_REG = "TRUE" *)
     logic splash_video_sync1_q;
     (* altera_attribute = "-name SYNCHRONIZER_IDENTIFICATION FORCED_IF_ASYNCHRONOUS" *)
+    (* ASYNC_REG = "TRUE" *)
     logic splash_video_sync2_q;
     (* altera_attribute = "-name SYNCHRONIZER_IDENTIFICATION FORCED_IF_ASYNCHRONOUS" *)
+    (* ASYNC_REG = "TRUE" *)
     logic prebios_video_sync1_q;
     (* altera_attribute = "-name SYNCHRONIZER_IDENTIFICATION FORCED_IF_ASYNCHRONOUS" *)
+    (* ASYNC_REG = "TRUE" *)
     logic prebios_video_sync2_q;
     (* altera_attribute = "-name SYNCHRONIZER_IDENTIFICATION FORCED_IF_ASYNCHRONOUS" *)
+    (* ASYNC_REG = "TRUE" *)
     logic splash_fade_video_sync1_q;
     (* altera_attribute = "-name SYNCHRONIZER_IDENTIFICATION FORCED_IF_ASYNCHRONOUS" *)
+    (* ASYNC_REG = "TRUE" *)
     logic splash_fade_video_sync2_q;
     (* altera_attribute = "-name SYNCHRONIZER_IDENTIFICATION FORCED_IF_ASYNCHRONOUS" *)
+    (* ASYNC_REG = "TRUE" *)
     logic splash_image_video_sync1_q;
     (* altera_attribute = "-name SYNCHRONIZER_IDENTIFICATION FORCED_IF_ASYNCHRONOUS" *)
+    (* ASYNC_REG = "TRUE" *)
     logic splash_image_video_sync2_q;
     (* altera_attribute = "-name SYNCHRONIZER_IDENTIFICATION FORCED_IF_ASYNCHRONOUS" *)
+    (* ASYNC_REG = "TRUE" *)
     logic vga_mode13_native_video_sync1_q;
     (* altera_attribute = "-name SYNCHRONIZER_IDENTIFICATION FORCED_IF_ASYNCHRONOUS" *)
+    (* ASYNC_REG = "TRUE" *)
     logic vga_mode13_native_video_sync2_q;
     always_ff @(posedge clk_video) begin
         if (video_reset) begin
