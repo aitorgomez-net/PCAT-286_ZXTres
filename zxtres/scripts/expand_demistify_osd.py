@@ -120,10 +120,29 @@ def transform(main_path, menu_path, header_path):
         '__weak const char *imagename(int unit) { return 0; }\n'
         '#define MENUPAGE_CONFIRM 27\n'
         '#define MENUPAGE_INFO 26\n'
+        '#define MENUPAGE_VIDEO 25\n'
         'int confirm_page(struct menu_entry *m);\n'
         'int info_page(struct menu_entry *m);\n'
+        'int video_page(struct menu_entry *m);\n'
         'void fileline(char *dst,DIRENTRY *p,int isdir);',
         'image name hook')
+
+    # The Video info page follows the picture: rebuilt now and then while open.
+    source = replace_once(
+        source,
+        '#ifdef CONFIG_SUPPORTERS\n'
+        '\t\tif((framecounter++&8191)==0) { ',
+        '\t\t{\n'
+        '\t\t\tstatic unsigned int vidtick;\n'
+        '\t\t\tif(menupage==MENUPAGE_VIDEO && (++vidtick&0x3fff)==0)\n'
+        '\t\t\t{\n'
+        '\t\t\t\tbuildmenu(0);\n'
+        '\t\t\t\tMenu_Set(menu);\n'
+        '\t\t\t}\n'
+        '\t\t}\n'
+        '#ifdef CONFIG_SUPPORTERS\n'
+        '\t\tif((framecounter++&8191)==0) { ',
+        'video page refresh')
 
     # Pages of the core's own (overrides.c): "Save settings?" and the like.
     source = sub_once(
@@ -136,6 +155,10 @@ def transform(main_path, menu_path, header_path):
         '\telse if(menupage==MENUPAGE_INFO)\n'
         '\t{\n'
         '\t\tline=info_page(menu);\n'
+        '\t}\n'
+        '\telse if(menupage==MENUPAGE_VIDEO)\n'
+        '\t{\n'
+        '\t\tline=video_page(menu);\n'
         '\t}\n'
         '\telse if(menupage==MENUPAGE_FILE)\n'
         '\t{\n'

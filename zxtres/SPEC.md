@@ -343,7 +343,9 @@ before that the sim had Tandy compiled out). Not tried with a game.
   of the mounted image after each label (`S3`, `S4` floppies; `S0`, `S1` hard
   disks, extensions VHD and IMG), a `Machine` group with CPU speed, installed
   RAM and the floppy write protect, then the pages `Video` (Picture: monitor,
-  display; Output: VGA 13h, scandoubler, scan converter; Boot splash: splash
+  display, CRT H offset 0-15 and CRT V offset 0-7, which centre the picture on a TV
+  as on MiSTer (status bits 49-52 and 53-55, wired to the machine's
+  `crt_h_offset`/`crt_v_offset`; Tandy moved to bit 56); Output: VGA 13h, scandoubler, scan converter; Boot splash: splash
   time), `Audio` (sound cards,
   levels), `Input` (joysticks), `BIOS` (the system and EGA BIOS files, below)
   and `Settings`, and Reset. The name comes from
@@ -373,6 +375,24 @@ before that the sim had Tandy compiled out). Not tried with a game.
   The new page adds a row to the main page, which now fills all 16 rows of
   the OSD (the tour's `tour_root.osd` shows it); another entry there needs a
   page of its own.
+- **Video info page (Built)**: `P1PP,Video info;` at the end of the Video
+  page opens `MENUPAGE_VIDEO` (`video_page()` in `overrides.c`; hook, and a
+  refresh about twice a second while it is open, in `main.c` through
+  `expand_demistify_osd.py`). It shows what the machine draws (size of the
+  picture in dots and lines, and whether it goes through the line doubler, the
+  scan converter or neither) and what really leaves the VGA pins (line and
+  frame frequency, lines per frame, line time, width and polarity of HSync and
+  VSync), as MiSTer's Video info does, to see the raster the BIOS puts out.
+  `rtl/zxtres_vidinfo.sv` measures the pins with the 50 MHz clock and the
+  picture with the video clock, and returns 18 bytes (signature `A5`, flags,
+  line period, HSync high time, frame period, VSync high time, lines per frame,
+  dots and lines of the picture) over the `user_io` "keyboard LED" command
+  (`0x1f`, whose answer was a constant): the firmware sends the command and
+  clocks 18 bytes out; the module counts the bytes itself because user_io only
+  keeps the value of `leds` it is given, and takes a snapshot on every
+  chip-select so that a read is consistent. `sim/run_vidinfo_test.sh` checks the
+  module with a synthetic CGA raster and the real `user_io`; `sim/
+  run_bios_sim.sh ... +OSD_TOUR` (or `+VINFO_ONLY`) saves the page.
 - **Settings page (Built)**: `P3,Settings;` holds the `Info` page (core,
   machine and mounted images, `info_page()`), `OSD position`, and two triggers, `T1` Save
   settings and `T2` Reset to defaults (status bits 1 and 2, never set: the
@@ -467,7 +487,10 @@ Staged design:
    entry `VGA 13h+ CRT: Native 70Hz/TV 60Hz` (status bit 10, as on MiSTer)
    makes the VGA 13h+ modes 15.7 kHz/60 Hz, which the doubler then takes to
    31.4 kHz/60 Hz; with `Scandoubler: Off` they leave at 15.7 kHz, for a
-   15 kHz display (not tested, and the connector carries no composite sync).
+   15 kHz display (the connector carries no composite sync) with +HSync, +VSync whatever the
+   timing of the machine: the 200-line modes come in as +HSync, -VSync, and a 15 kHz TV on a
+   SCART adapter lost the BIOS picture with that, while the credits (+/+) were fine
+   (seen with Video info on hardware).
    350-line, MDA and the 31.4 kHz profiles
    pass through unchanged, with the OSD over both. The choice is made once
    per frame from the line count of the undoubled picture; the OSD entry
@@ -493,7 +516,9 @@ Staged design:
    toggle and a level from the 27 MHz side; no frame data crosses clocks
    except through that line store. The pins carry the converter's output when
    `conv_active`, else stage 1's, chosen per frame; the OSD has an instance on
-   each path. OSD entry `Scan converter: Auto/Off` (status bit 61). Cost: one
+   each path. OSD entry `350-line CRT` (status bits 34-35, as MiSTer's `350-line CRT`):
+   `480p 31 kHz` (the default, above), `Native` (converter off), `480i 15 kHz` and
+   `240p 15 kHz` (below). Cost: one
    more MMCM and RAMB18s for the line store and the second OSD, and none of
    the block RAM the DDR3-style frame store would have taken (about 37
    RAMB36). SRAM protocol: read 2 clocks (34.9 ns for a 10 ns part), write 3,
@@ -502,6 +527,26 @@ Staged design:
    Not verified: the converter on the board (monitor lock, SRAM signal
    integrity at 57 MHz, tearing); the SRAM pin timing is covered by
    `set_false_path` and the two-clock protocol, not by Vivado analysis.
+
+   **15.7 kHz outputs (480i, 240p), for a TV.** The same converter reads the
+   frame store out on a 13.5 MHz dot (the 27 MHz clock halved by a dot
+   enable, which also drives the OSD instance), 858 dots a line, so the
+   picture is the same 720 dots wide as in 480p. `480i`: 525 lines in two
+   fields of 262.5, 240 picture lines each, the image lines 2k+1 in the
+   field that starts with its VSync on a line boundary and 2k in the one whose
+   VSync starts mid-line 262 (that half line is what interlaces); both
+   fields come from one stored frame, so a still picture does not comb and
+   motion updates at 29.97 Hz. `240p`: one field of 262 lines, 224 of them
+   picture, the 350 source lines squeezed into them 25 to 16 (a little over a
+   third dropped), no flicker. Both leave with +HSync (64 dots) and +VSync
+   (3 lines), like the not-doubled pictures of the machine (the 15 kHz TV on
+   an adapter needs that, see above). The OSD `CRT H offset` (4 dots a step
+   from 106 dots after the start of the sync) and `CRT V offset` (a line a
+   step) move the picture against the sync. `sim/run_scanconv_test.sh` checks
+   both from the pins alone: the row of every line follows from the time
+   between the VSync and the HSync in half lines, the VSync of 480i comes
+   every 262.5 lines, and the offsets move the picture by the steps above.
+   Not verified: on a TV.
 3. **Stage 3, DisplayPort (P2, M).** Take the wrapper's DisplayPort
    transmitter, hot-plug and AUX code and its 640x480 stream generator
    (27 MHz pixel clock from the 81 MHz symbol clock) from `zx3w`, and feed

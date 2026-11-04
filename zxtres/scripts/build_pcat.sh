@@ -80,19 +80,26 @@ sv=(
   zxtres/rtl/zxtres_osd.sv
   DeMiSTify/templates/demistify/common/joydecoder_neptuno.v
   zxtres/rtl/zxtres_ps2_rx.sv
+  DeMiSTify/templates/zxtres/zx3w/sigma_delta_codec.v
+  DeMiSTify/templates/zxtres/zx3w/i2s_sound.v
 )
 defines=()
 includes=()
 if [[ $target == pcat ]]; then
   # One block RAM per EGA plane, as in the Quartus build (rtl/video/ega_vram.v).
-  defines=(PCAT_EGA_VRAM_TWO_PORT)
+  # The machine blocks default every sound device to off (the Quartus build
+  # too); a define in the guest file would reach only the files after it.
+  defines=(PCAT_EGA_VRAM_TWO_PORT ENABLE_OPL2:1 ENABLE_CMS:1 ENABLE_TANDY_AUDIO:1 ENABLE_SB:1 ENABLE_MIDI:0
+           SPK286_AT_BOOT_SPLASH)
   mapfile -t machine_vhdl < <(python3 zxtres/scripts/pcat_sources.py vhdl | tr -d '\r')
   mapfile -t machine_sv < <(python3 zxtres/scripts/pcat_sources.py sv | tr -d '\r')
   mapfile -t include_dirs < <(python3 zxtres/scripts/pcat_sources.py includes | tr -d '\r')
   vhdl+=("${machine_vhdl[@]}")
   sv+=(sys/at_cdc_fifo.sv "${machine_sv[@]}"
-       zxtres/rtl/zxtres_dpram.sv zxtres/rtl/zxtres_ps2_key.sv zxtres/rtl/zxtres_cmos_store.sv
-       zxtres/rtl/pcat286_zxtres_guest.sv zxtres/rtl/zxtres_pcat_top.sv)
+       zxtres/rtl/zxtres_dpram.sv zxtres/rtl/zxtres_ps2_key.sv zxtres/rtl/zxtres_cmos_store.sv zxtres/rtl/zxtres_ide_store.sv zxtres/rtl/zxtres_fdd_store.sv zxtres/rtl/zxtres_sd_arb.sv
+       mist-modules/scandoubler/scandoubler_framing.v zxtres/rtl/zxtres_linedouble.sv
+       zxtres/rtl/zxtres_sram_ctrl.sv zxtres/rtl/zxtres_scanconv.sv
+       zxtres/rtl/zxtres_vidinfo.sv zxtres/rtl/pcat286_zxtres_guest.sv zxtres/rtl/zxtres_pcat_top.sv)
   # Every SystemVerilog file the sources may `include, by directory.
   for directory in "${include_dirs[@]}"; do
     for file in "$directory"/*.sv "$directory"/*.svh "$directory"/*.vh "$directory"/*.v; do
@@ -142,10 +149,12 @@ for source in "${vhdl[@]}" "${sv[@]}" "${includes[@]}"; do
   mkdir -p "$out/src/$(dirname "$source")"
   cp "$source" "$out/src/$source"
 done
-# Memory images the PC/AT sources load with $readmemh by bare file name;
-# Vivado resolves those against the run directory.
+# Memory images loaded with $readmemh. Keep the OSD font beside the Vivado
+# script; build_pcat.tcl sets that directory as the working directory.
 if [[ $target == pcat ]]; then
-  cp rtl/video/splash_ega_320x200.hex rtl/common/font0.hex "$out/"
+  cp rtl/video/splash_vga_palette.hex rtl/common/font0.hex "$out/"
+  cp zxtres/splash/splash_vga_320x200.hex "$out/"     # the ZXTres splash picture
+  cp zxtres/credits/msg.bin "$out/"                    # the F12 credits text
 fi
 python3 zxtres/scripts/make_mem.py osdfont rtl/common/font0.hex "$out/osd_font.mem"
 printf 'src/%s\n' "${vhdl[@]}" > "$out/vhdl_sources.txt"

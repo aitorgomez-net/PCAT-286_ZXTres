@@ -148,8 +148,9 @@ module pcat286_zxtres_guest (
     //   handles them, the core never sees them set), 14-16 display, 23-27 joysticks, 28-29 220h audio,
     //   32-33 speaker volume, 36-37 audio boost, 38-39 stereo mix, 42-43 OPL2,
     //   44-45 monitor, 54 joystick swap,
-    //   55 Tandy, 57-59 CPU speed, 46-48 installed RAM, 5 SB IRQ,
+    //   56 Tandy, 49-52 CRT H offset, 53-55 CRT V offset, 57-59 CPU speed, 46-48 installed RAM, 5 SB IRQ,
     //   10 VGA 13h+ TV 60 Hz, 19-20 floppy A/B read only, 60 scandoubler off,
+    //   34-35 350-line CRT: 480p, Native (no conversion), 480i or 240p at 15 kHz,
     //   8-9 splash time, 5, 10, 15 or 0 s (none; MiSTer's bit 7 is unused).
     // Option bits use the MiST digit form the DeMiSTify firmware parses
     // (CONFIG_STATUSWORD_64BIT): 0-9, then A-Z for 10-35, a-z for 36-61,
@@ -169,17 +170,19 @@ module pcat286_zxtres_guest (
         "P1L,Picture;",
         "P1Oij,Monitor,5153/CGA,5154/ECD,5151/MDA;",
         "P1OEG,Display,Full Color,Green,Amber,B&W,Red,Blue,Fuchsia,Purple;",
+        "P1Onq,CRT H offset,0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15;",
+        "P1Ort,CRT V offset,0,1,2,3,4,5,6,7;",
         "P1L,Output;",
         "P1OA,VGA 13h+ CRT,Native 70Hz,TV 60Hz;",
         "P1Oyy,Scandoubler,Auto,Off;",
-        "P1Ozz,Scan converter,Auto,Off;",
+        "P1OYZ,350-line CRT,480p 31 kHz,Native,480i 15 kHz,240p 15 kHz;",
         "P1L,Boot splash;",
         "P1O89,Splash time,5 s,10 s,15 s,0 s;",
         "P2,Audio;",
         "P2L,Sound cards;",
         "P2OST,Audio 220h,C/MS,Sound Blaster,Disabled;",
         "P2Ogh,OPL2,Adlib 388h,SB FM,Disabled;",
-        "P2Ott,Tandy Sound,Disabled,Enabled;",
+        "P2Ouu,Tandy Sound,Disabled,Enabled;",
         "P2L,Levels;",
         "P2OWX,Speaker Volume,1,2,3,4;",
         "P2Oab,Audio Boost,No,2x,4x;",
@@ -193,6 +196,7 @@ module pcat286_zxtres_guest (
         "P5SE,ROMBIN,EGA BIOS:;",
         "P3,Settings;",
         "P3PQ,Info;",
+        "P1PP,Video info;",
         "P3L,Appearance;",
         "P3OBD,OSD position,Centre,Top left,Top right,Bottom left,Bottom right;",
         "P3L,Settings file;",
@@ -215,8 +219,10 @@ module pcat286_zxtres_guest (
     logic at_machine_reset = 1'b1;
 
     wire [127:0] hps_status;
-    // 46-48 and 8-9 are MiSTer's CRT H offset and aspect ratio.
-    assign hps_status[63:0] = {status[63:49], 3'b000, monitor_osd, status[43:10],
+    // 46-48 and 8-9 are MiSTer's CRT H offset and aspect ratio. Bits 49-56 of
+    // MiSTer's word are not passed on: the CRT offsets and Tandy have their
+    // own bits here (status 49-52, 53-55, 56), wired below.
+    assign hps_status[63:0] = {status[63:57], 11'b0, monitor_osd, status[43:10],
                                2'b00, status[7:0]};
     assign hps_status[66:64] = 3'd0;                  // VSync width: auto
     assign hps_status[69:67] = 3'd0;                  // HSync width: auto
@@ -269,7 +275,7 @@ MIST_IO = r'''
         .ps2_kbd_clk(), .ps2_kbd_data(), .ps2_kbd_clk_i(1'b1), .ps2_kbd_data_i(1'b1),
         .ps2_mouse_clk(), .ps2_mouse_data(), .ps2_mouse_clk_i(1'b1), .ps2_mouse_data_i(1'b1),
         .key_pressed(), .key_extended(), .key_code(), .key_strobe(),
-        .kbd_out_data(8'h00), .kbd_out_strobe(1'b0), .leds(8'h00),
+        .kbd_out_data(8'h00), .kbd_out_strobe(1'b0), .leds(vi_leds),
         .mouse_x(), .mouse_y(), .mouse_z(), .mouse_flags(), .mouse_strobe(), .mouse_idx(),
         .i2c_start(), .i2c_read(), .i2c_addr(), .i2c_subaddr(), .i2c_dout(),
         .i2c_din(8'h00), .i2c_ack(1'b0), .i2c_end(1'b0),
@@ -536,9 +542,10 @@ VIDEO_OUT = r'''
     //   - the picture as it is, doubled to 31.4 kHz if it has 200 lines
     //     (zxtres_linedouble.sv; status bit 60 turns that off), OSD over it,
     //     registered on the 57 MHz pipeline clock;
-    //   - the 350-line pictures, written into the SRAM and read out as
-    //     720x480 at 59.94 Hz on a 27 MHz clock (status bit 61 turns that
-    //     off), OSD over it, registered on that clock.
+    //   - the 350-line pictures, written into the SRAM and read out on a 27
+    //     MHz clock as 720x480 at 59.94 Hz, or at 15.7 kHz as 480i or 240p
+    //     (status bits 34-35; Native turns the conversion off), OSD over it,
+    //     registered on that clock.
     //
     // The F12 credits scroll over the dimmed picture ahead of both paths, as
     // on MiSTer (jtframe_credits, text zxtres/credits/msg.bin): while the
@@ -655,14 +662,15 @@ VIDEO_OUT = r'''
 
     wire        conv_active;
     wire [5:0]  c_r, c_g, c_b;
-    wire        c_hb, c_vb, c_hs, c_vs;
+    wire        c_hb, c_vb, c_hs, c_vs, c_ce;
     wire        sc_wr_req, sc_wr_grant, sc_rd_req, sc_rd_grant, sc_rd_valid;
     wire [19:0] sc_wr_addr, sc_rd_addr;
     wire [15:0] sc_wr_data, sc_rd_data;
     wire [7:0]  sc_lost;
     zxtres_scanconv u_scanconv (
         .clk(at_video_clk_57), .reset(at_video_pipe_reset_57), .ce_in(at_video_ce_pipe_q),
-        .off(status[61]),
+        .off(status[35:34] == 2'd1), .mode(status[35:34]),
+        .crt_h(status[52:49]), .crt_v(status[55:53]),
         .r_in(cr_rgb[23:18]), .g_in(cr_rgb[15:10]), .b_in(cr_rgb[7:2]),
         .hb_in(cr_hb), .vb_in(cr_vb),
         .active(conv_active),
@@ -671,7 +679,7 @@ VIDEO_OUT = r'''
         .rd_valid(sc_rd_valid), .rd_data(sc_rd_data),
         .clk27(clk27), .reset27(reset27_q2),
         .r_out(c_r), .g_out(c_g), .b_out(c_b),
-        .hb_out(c_hb), .vb_out(c_vb), .hs_out(c_hs), .vs_out(c_vs),
+        .hb_out(c_hb), .vb_out(c_vb), .hs_out(c_hs), .vs_out(c_vs), .ce_out(c_ce),
         .lost(sc_lost)
     );
     zxtres_sram_ctrl u_sram (
@@ -686,7 +694,7 @@ VIDEO_OUT = r'''
     wire [5:0] osd27_r, osd27_g, osd27_b;
     /* verilator lint_off PINCONNECTEMPTY */
     zxtres_osd #(.USE_BLANKS(1'b1), .OUT_COLOR_DEPTH(6)) u_osd27 (
-        .clk_sys(clk27), .ce(1'b1),
+        .clk_sys(clk27), .ce(c_ce),
         .SPI_SCK(SPI_SCK), .SPI_SS3(SPI_SS3), .SPI_DI(SPI_DI),
         .R_in(c_r), .G_in(c_g), .B_in(c_b),
         .HBlank(c_hb), .VBlank(c_vb),
@@ -714,6 +722,16 @@ VIDEO_OUT = r'''
     assign VGA_HS = conv_active ? p27_hs : p57_hs;
     assign VGA_VS = conv_active ? p27_vs : p57_vs;
 
+    // Read-only measurement of the VGA pins and of the machine picture, for
+    // the OSD Video info page (read back over the user_io LED byte).
+    wire [7:0] vi_leds;
+    zxtres_vidinfo u_vidinfo (
+        .clk(CLK_50M), .hs_pin(VGA_HS), .vs_pin(VGA_VS),
+        .conv_active(conv_active), .doubled(sd_double),
+        .vclk(at_video_clk_57), .vce(at_video_ce_pipe_q), .vhb(cr_hb), .vvb(cr_vb),
+        .spi_sck(SPI_SCK), .spi_ss(CONF_DATA0), .leds(vi_leds)
+    );
+
     assign LED = main_rom_loaded;
     // 16-bit signed audio; the board top turns it into the sigma-delta and
     // I2S outputs.
@@ -724,7 +742,7 @@ VIDEO_OUT = r'''
     wire unused = &{1'b0, joystick_0[31:14], joystick_1[31:14], midi_tx, uart2_tx,
                     uart2_rts_n, uart2_dtr_n, at_floppy_present, at_floppy_request,
                     at_ide_request, at_mgmt_din, cpu_fault, machine_protocol_error,
-                    keyboard_event_overflow, at_video_scale_q, at_video_arx_q, at_video_ary_q, sd_double,
+                    keyboard_event_overflow, at_video_scale_q, at_video_arx_q, at_video_ary_q,
                     sc_lost};
     /* verilator lint_on UNUSEDSIGNAL */
 endmodule
@@ -808,7 +826,12 @@ def generate():
     out += ['    );']
     out.append(audio_mixer(lines))
     out.append(VIDEO_OUT)
-    return '\n'.join(out) + '\n'
+    text = '\n'.join(out) + '\n'
+    # The CRT offsets and Tandy sit in free bits of the 64 MiST status bits.
+    text = replace(text, 'at_crt_h_osd = hps_status[49:46];', 'at_crt_h_osd = status[52:49];')
+    text = replace(text, 'at_crt_v_osd = hps_status[52:50];', 'at_crt_v_osd = status[55:53];')
+    text = replace(text, '.osd_tandy(hps_status[55])', '.osd_tandy(status[56])')
+    return text
 
 
 def main():

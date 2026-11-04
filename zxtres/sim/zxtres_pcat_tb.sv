@@ -26,10 +26,18 @@ module zxtres_pcat_tb;
     pullup (ps2_mouse_dat);
     wire  [15:0] sdram_dq;
 
+    wire  [19:0] sram_a;
+    wire  [15:0] sram_q;
+    wire         sram_we, sram_oe, sram_ub, sram_lb;
+    zxtres_sram_model u_sram (.SRAM_A(sram_a), .SRAM_Q(sram_q), .SRAM_WE(sram_we),
+                              .SRAM_OE(sram_oe), .SRAM_UB(sram_ub), .SRAM_LB(sram_lb));
+
     /* verilator lint_off PINCONNECTEMPTY */
     zxtres_pcat_top dut (
         .CLOCK_50(clock_50), .LED(led),
         .VGA_R(vga_r), .VGA_G(vga_g), .VGA_B(vga_b), .VGA_HS(vga_hs), .VGA_VS(vga_vs),
+        .SRAM_A(sram_a), .SRAM_Q(sram_q), .SRAM_WE(sram_we), .SRAM_OE(sram_oe),
+        .SRAM_UB(sram_ub), .SRAM_LB(sram_lb),
         .SDRAM_A(), .SDRAM_DQ(sdram_dq), .SDRAM_DQML(), .SDRAM_DQMH(), .SDRAM_nWE(),
         .SDRAM_nCAS(), .SDRAM_nRAS(), .SDRAM_nCS(), .SDRAM_BA(), .SDRAM_CLK(), .SDRAM_CKE(),
         .SD_CS(sd_cs), .SD_SCK(sd_sck), .SD_MOSI(sd_mosi), .SD_MISO(sd_miso),

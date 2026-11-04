@@ -3,6 +3,10 @@
 # vhdl_sources.txt, sv_sources.txt, include_dirs.txt, the .mem images and
 # the constraints. Arguments: PART TOP [DEFINE...].
 lassign $argv part top
+# Resolve $readmemh inputs from this build directory, regardless of the caller's
+# working directory, and fail before synthesis if the OSD font was not staged.
+cd [file dirname [file normalize [info script]]]
+if {![file isfile osd_font.mem]} { error "missing OSD font: [file join [pwd] osd_font.mem]" }
 # Optional extra arguments: Verilog defines (e.g. ZXTRES_SKELETON).
 set defines {}
 foreach define [lrange $argv 2 end] { lappend defines -verilog_define $define }

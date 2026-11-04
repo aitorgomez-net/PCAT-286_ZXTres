@@ -200,6 +200,28 @@ module zxtres_pcat_bios_tb;
     endtask
     task automatic osd_tour;
         osd_shot("tour_root");
+        if ($test$plusargs("CRT_ONLY")) begin             // CRT H/V offset options
+            keys_up(6);                                  // Video
+            key(16'h005A);
+            keys_up(7);                                  // CRT H offset
+            repeat (3) key(16'hE074);
+            keys_down(1);                                // CRT V offset
+            repeat (2) key(16'hE074);
+            #100ms;
+            $display("CRT offsets: status=%h eff_h=%0d eff_v=%0d", dut.guest.status, dut.guest.at286ctl_eff_crt_h, dut.guest.at286ctl_eff_crt_v);
+            osd_shot("tour_crt");
+            return;
+        end
+        if ($test$plusargs("VINFO_ONLY")) begin           // just the Video info page
+            keys_up(6);                                  // Video
+            key(16'h005A);
+            keys_up(1);                                  // Video info
+            key(16'h005A);
+            osd_shot("tour_vinfo");
+            #400ms;                                      // it refreshes while open
+            osd_shot("tour_vinfo2");
+            return;
+        end
         keys_up(3);                                      // BIOS
         key(16'h005A);
         osd_shot("tour_bios");
@@ -243,11 +265,17 @@ module zxtres_pcat_bios_tb;
         keys_up(6);                                      // Video
         key(16'h005A);
         osd_shot("tour_video");
-        keys_up(4);                                      // Display
+        keys_up(1);                                      // Video info
+        key(16'h005A);
+        osd_shot("tour_vinfo");
+        key(16'h005A);                                   // Back to the main page
+        keys_up(6);                                      // Video again
+        key(16'h005A);
+        keys_up(8);                                      // Display
         key(16'hE074);
         key(16'hE074);
         osd_shot("tour_video_option");
-        keys_down(4);
+        keys_down(8);
         key(16'h005A);
         keys_up(5);                                      // Audio
         key(16'h005A);
@@ -337,6 +365,36 @@ module zxtres_pcat_bios_tb;
                 height++;
                 line_width = 0;
             end
+        end
+    end
+    // +PIN_TIMING: the raster on the connector, one line per 20 frames, from
+    // VGA_HS/VGA_VS alone (57 MHz clocks of 17.46 ns; 0 is a level never seen).
+    bit pin_timing;
+    initial pin_timing = $test$plusargs("PIN_TIMING");
+    longint pin_clk = 0, hs_fall_at = 0, hs_rise_at = 0, vs_fall_at = 0, vs_rise_at = 0;
+    longint hs_period = 0, hs_low = 0, hs_high = 0, vs_period = 0, vs_low = 0, vs_high = 0;
+    int pin_lines = 0, pin_frames = 0;
+    logic hs_p = 1'b1, vs_p = 1'b1;
+    always @(posedge clk_video) if (pin_timing) begin
+        pin_clk++;
+        hs_p <= vga_hs;
+        vs_p <= vga_vs;
+        if (hs_p && !vga_hs) begin
+            hs_period = pin_clk - hs_fall_at; hs_fall_at = pin_clk;
+            hs_high = pin_clk - hs_rise_at; pin_lines++;
+        end
+        if (!hs_p && vga_hs) begin hs_low = pin_clk - hs_fall_at; hs_rise_at = pin_clk; end
+        if (!vs_p && vga_vs) begin vs_low = pin_clk - vs_fall_at; vs_rise_at = pin_clk; end
+        if (vs_p && !vga_vs) begin
+            vs_period = pin_clk - vs_fall_at; vs_fall_at = pin_clk;
+            vs_high = pin_clk - vs_rise_at;
+            pin_frames++;
+            if (pin_frames % 20 == 1)
+                $display("[%0t] PIN frame %0d: %0d lines; HS period %0d clk (%0d.%02d us), low %0d high %0d; VS period %0d clk, low %0d high %0d; dbl=%b conv=%b",
+                         $time, pin_frames, pin_lines, hs_period, hs_period * 1746 / 100000, (hs_period * 1746 / 1000) % 100,
+                         hs_low, hs_high, vs_period, vs_low, vs_high,
+                         dut.guest.sd_double, dut.guest.conv_active);
+            pin_lines = 0;
         end
     end
     task automatic shot(input string name);

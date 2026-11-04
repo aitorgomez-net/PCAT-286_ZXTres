@@ -44,6 +44,8 @@
 #include "menu.h"
 #include "osd.h"
 #include "timer.h"
+#include "spi.h"
+#include "user_io.h"
 
 int LoadROM(const char *fn);
 
@@ -630,6 +632,7 @@ void toggle(int row)
 #define OPT_MONITOR 44
 
 #define MENUPAGE_INFO 26        /* the same value as in main.c */
+#define MENUPAGE_VIDEO 25       /* likewise */
 
 extern int menu_message;
 void submenu(int row);
@@ -722,7 +725,7 @@ static void draw_page(const char *l, int page)
 {
 	pc(C_LBLUE);
 	pc(page == 1 ? ICON_MONITOR : page == 2 ? ICON_SPEAKER : page == 3 ? ICON_GEAR
-		: page == 4 ? ICON_JOYSTICK : page == MENUPAGE_INFO ? ICON_INFO : ICON_FOLDER);
+		: page == 4 ? ICON_JOYSTICK : (page == MENUPAGE_INFO || page == MENUPAGE_VIDEO) ? ICON_INFO : ICON_FOLDER);
 	while(*l && !(l[0] == ' ' && (unsigned char)l[1] == ICON_RIGHT))
 		pc(*l++);
 	pad(31);
@@ -1119,5 +1122,163 @@ int info_page(struct menu_entry *m)
 	inforow(m, i++, "Disk 1", image[0] == '(' ? C_GREY : C_GREEN, image);
 	inforow(m, i++, "Settings", cfg_state == 2 ? C_GREEN : cfg_state ? C_GREY : C_RED,
 		cfg_state == 2 ? "saved on the card" : cfg_state ? "none saved" : "PCAT286.CFG missing");
+	return(i);
+}
+
+/* The Video info page: what the machine draws and what really leaves the
+   VGA pins, measured in the FPGA (zxtres_vidinfo.sv) and read back over the
+   user_io "keyboard LED" command. It is rebuilt about twice a second while
+   it is open (see expand_demistify_osd.py), so it follows the BIOS boot. */
+static unsigned int udivmod(unsigned int n, unsigned int d, unsigned int *rem)
+{
+	unsigned int q = 0, r = 0;
+	int i;
+
+	if(!d)
+	{
+		if(rem)
+			*rem = 0;
+		return(0);
+	}
+	for(i = 31; i >= 0; --i)
+	{
+		r = (r << 1) | ((n >> i) & 1);
+		if(r >= d)
+		{
+			r -= d;
+			q |= 1u << i;
+		}
+	}
+	if(rem)
+		*rem = r;
+	return(q);
+}
+
+static char *put_uint(char *d, unsigned int v)
+{
+	char t[11];
+	int n = 0;
+
+	do
+	{
+		unsigned int r;
+		v = udivmod(v, 10, &r);
+		t[n++] = '0' + r;
+	}
+	while(v);
+	while(n)
+		*d++ = t[--n];
+	return(d);
+}
+
+/* tenths: 157 -> "15.7" */
+static char *put_tenths(char *d, unsigned int tenths)
+{
+	unsigned int r;
+
+	d = put_uint(d, udivmod(tenths, 10, &r));
+	*d++ = '.';
+	*d++ = '0' + r;
+	return(d);
+}
+
+/* hundredths: 1569 -> "15.69" */
+static char *put_hundredths(char *d, unsigned int h)
+{
+	unsigned int r, t;
+
+	d = put_uint(d, udivmod(h, 100, &r));
+	*d++ = '.';
+	t = udivmod(r, 10, &r);
+	*d++ = '0' + t;
+	*d++ = '0' + r;
+	return(d);
+}
+
+/* A time given in 50 MHz clocks, as microseconds or milliseconds. */
+static char *put_time(char *d, unsigned int clocks)
+{
+	if(clocks >= 50000)
+	{
+		d = put_tenths(d, udivmod(clocks, 5000, 0));
+		*d++ = ' ';
+		*d++ = 'm';
+	}
+	else
+	{
+		d = put_tenths(d, udivmod(clocks, 5, 0));
+		*d++ = ' ';
+		*d++ = 'u';
+	}
+	*d++ = 's';
+	return(d);
+}
+
+/* "<width>, positive|negative" for a sync that is high for `high` of `period`. */
+static void put_sync(char *d, unsigned int period, unsigned int high)
+{
+	int positive = high * 2 < period;
+
+	d = put_time(d, positive ? high : period - high);
+	strcpy(d, positive ? " +" : " -");
+}
+
+int video_page(struct menu_entry *m)
+{
+	unsigned char a[18];
+	char v[24];
+	char *d;
+	unsigned int hp, hh, vp, vh, lines, dots, srclines, hz;
+	int i = 0, k;
+
+	spi_uio_cmd_cont(UIO_GET_KBD_LED);
+	for(k = 0; k < 18; ++k)
+		a[k] = SPI(0xff);
+	DisableIO();
+
+	if(a[0] != 0xA5)
+	{
+		inforow(m, i++, "Video", C_RED, "core without info");
+		return(i);
+	}
+	hp = (a[2] << 8) | a[3];
+	hh = (a[4] << 8) | a[5];
+	vp = ((unsigned int)a[6] << 16) | (a[7] << 8) | a[8];
+	vh = ((unsigned int)a[9] << 16) | (a[10] << 8) | a[11];
+	lines = (a[12] << 8) | a[13];
+	dots = (a[14] << 8) | a[15];
+	srclines = (a[16] << 8) | a[17];
+
+	inforule(m, i++, "Machine picture");
+	d = put_uint(v, dots);
+	strcpy(d, " x ");
+	d = put_uint(d + 3, srclines);
+	*d = 0;
+	inforow(m, i++, "Size", C_CYAN, v);
+	inforow(m, i++, "Path", C_CYAN, (a[1] & 1) ? "scan converter" : (a[1] & 2) ? "line doubled" : "as is, no scaler");
+
+	inforule(m, i++, "VGA pins");
+	if(!hp || !vp)
+	{
+		inforow(m, i++, "Sync", C_RED, "none");
+		return(i);
+	}
+	hz = udivmod(50000000u, hp, 0);
+	d = put_hundredths(v, udivmod(hz, 10, 0));
+	strcpy(d, " kHz");
+	inforow(m, i++, "H freq", C_WHITE, v);
+	d = put_tenths(v, udivmod(500000000u, vp, 0));
+	strcpy(d, " Hz");
+	inforow(m, i++, "V freq", C_WHITE, v);
+	d = put_uint(v, lines);
+	strcpy(d, " lines");
+	inforow(m, i++, "Frame", C_WHITE, v);
+	d = put_time(v, hp);
+	*d = 0;
+	inforow(m, i++, "Line", C_WHITE, v);
+	put_sync(v, hp, hh);
+	inforow(m, i++, "HSync", C_WHITE, v);
+	put_sync(v, vp, vh);
+	inforow(m, i++, "VSync", C_WHITE, v);
 	return(i);
 }
