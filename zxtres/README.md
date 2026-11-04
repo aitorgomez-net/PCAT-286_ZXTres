@@ -1,83 +1,191 @@
-# SPK286 bring-up demo for the ZXTRES+
+# PCAT-286 for ZXTRES+
 
-A first hardware test of the SPK286 CPU on the ZXTRES+ (Xilinx Artix-7
-XC7A100T). It is not the PC/AT machine: it has no chipset, disk, keyboard or
-OSD. The CPU, in the same `spk286_machine_cpu` wrapper and MAX profile the
-MiSTer core uses, runs a self-checking x86 program from block RAM and shows
-the results on VGA.
+![PCAT-286 boot splash](splash/splash_vga_320x200.png)
 
-## What the program does
+PCAT-286 for the ZXTRES+ is an Intel 80286-compatible PC/AT for the board's
+Xilinx Artix-7 XC7A100T. The machine is the one of the MiSTer core: the
+[SPK286](https://github.com/spark2k06/SPK286) CPU, the AT interrupt, DMA and
+timer controllers, the 8042 keyboard controller, CMOS, floppy and IDE storage,
+a serial mouse, a gameport, an EGA video subsystem with the VGA 13h+
+extension, and the Sound Blaster, OPL2, C/MS and Tandy audio devices. Only
+the logic around the machine is specific to this board: the DeMiSTify
+controller and OSD, the SDRAM, the SD card, the video output and the audio
+output. A fix in the machine reaches both builds.
 
-`demo/demo.asm` (NASM) starts at the 80286 reset vector and does the
-following:
+The core is loaded from the microSD card as a `.ZX3` file, with the NMI
+browser of the ZX Spectrum core. It does not replace the installed cores.
 
-1. It measures the CPU clock against the VGA frame rate.
-2. It runs 17 instruction tests in real mode, including the CPU checks that
-   tell an 80286 from an 8086 or an 80386.
-3. It runs the BYTE sieve benchmark (8191 flags, ten passes) timed with the
-   hardware cycle counter. It must find 1899 primes.
-4. It enters protected mode (LGDT, LIDT, LMSW and a far jump to a selector).
-5. It tests protected mode:
-   - 24-bit addressing of the RAM above 1 MiB;
-   - LAR, LSL, VERR and VERW;
-   - a #GP fault on a bad selector.
-6. It stays in protected mode, updating an uptime counter, the VGA frame
-   number and a spinner.
+The machine description, the memory map, the I/O ports and the CPU
+documentation are in the [main README](../README.md), which applies here as
+well, except where the table [below](#what-the-board-does-not-have) says
+otherwise.
 
-A failing check shows `[FAIL]` and the ROM offset of the check. `demo.lst`,
-written by the build, maps that offset to the source line. An unexpected
-exception prints its vector and stack on the bottom text row and halts.
+## What works
 
-## Hardware
+Evidence levels: **Board** means it was observed on a ZXTRES+, **Sim** means
+it passes in the board simulation in `sim/`, **Built** means it meets timing
+in Vivado. The dates are those of the observation in [SPEC.md](SPEC.md).
 
-`rtl/zxtres_demo_system.sv` holds the CPU and the following memory and
-devices:
+| Feature | State |
+| --- | --- |
+| BIOS boot from `PCAT286.ROM` and `EGA.ROM` on the card, or any two BIOS files chosen in the OSD | Built, Sim |
+| Hard disks 0 and 1 from `VHD`/`IMG` images | Board (27 October 2026): DOS boots, the second disk is D:, files survive a power cycle. Read speed not recorded. |
+| Floppy drives A and B from `IMG`/`IMA`/`VFD` images, 160K to 2.88M, with write protect | Board (27 October 2026). Speed not recorded. |
+| CMOS kept in `PCAT286.CMS` on the card | Board (27 October 2026): the configuration survives a power cycle |
+| Video: 200-line CGA/EGA modes and VGA 13h doubled to 31 kHz 480p | Board (27 October 2026) |
+| Video: 350-line EGA and MDA converted to 720x480 at 59.94 Hz | Board (26 October 2026) |
+| Video: 480i and 240p at 15.7 kHz for a TV, CRT H and V offsets | Built, Sim. Not verified on a TV. |
+| Audio on the 3.5 mm jack (sigma-delta and I2S): speaker, OPL2, Sound Blaster, C/MS, Tandy | Board (28 October 2026). The source tried was not recorded. |
+| PS/2 keyboard, with the OSD opened and closed | Built, Sim |
+| PS/2 mouse as a Microsoft serial mouse on COM1 (3F8h, IRQ4) | Built, Sim. Not tested on a board. |
+| DB9 joysticks on the gameport (digital mode) | Built. Not tested on a board. |
+| Installed RAM 1, 2, 4, 8 or 16 MB in the board SDRAM | Built, Sim |
+| CPU speed profiles, MAX to 25 MHz (MAX runs at 50 MHz and closes timing) | Built. Only MAX was run on a board. |
+| Boot splash, F12 pause and credits | Built, Sim |
+| OSD with settings saved to the card | Built, Sim |
 
-- 64 KiB of RAM at 0;
-- 64 KiB of RAM at 1 MiB;
-- a 64 KiB ROM at F0000h, mirrored at FF0000h;
-- an 80x25 text screen at B8000h, shown on VGA at 640x480 60 Hz;
-- a cycle counter, the CPU clock and a VGA frame counter on I/O ports.
+Neither this list nor the main README certifies the machine as a complete
+AT chipset or its timing as historical; see the qualification limits in the
+main README. Nothing here has been reported from games or from protected-mode
+software on the board beyond the rows above.
 
-The CPU clock is 40 MHz by default. Below the 25 text rows, a status line
-drawn in hardware shows:
+## What the board does not have
 
-- the last POST code;
-- the CPU's CS:IP;
-- HLT, SHUTDOWN and FAULT;
-- the VGA frame counter.
+| MiSTer feature | On the ZXTRES+ |
+| --- | --- |
+| AT RAM in the HPS DDR3 | The 64 MiB SDRAM holds the AT RAM. There is no HPS. |
+| MiSTer scaler, HDMI, aspect ratio, HQ2x | VGA output at 480p, or at 15.7 kHz; the OSD offers the options in the Video page. DisplayPort is not implemented yet. |
+| COM2, MIDI and MT32-pi on the user port | The board has no user port, so there is no COM2 or MIDI. |
+| Second SD card as an IDE disk | The one microSD slot belongs to the controller. |
+| Real-time clock from the HPS | The board has none. Set the time in DOS or in the BIOS setup; the CMOS file keeps the rest. |
+| Analog joysticks | The DB9 ports give directions and buttons only. |
+| Return to the Spectrum core from the OSD | Power cycle the board. |
+| Image files created by the core | The controller can write a file but not create one: `PCAT286.CMS` and `PCAT286.CFG` must exist, see below. |
 
-That line works even if the program never runs. While the CPU has not written
-to the screen, the screen shows "The CPU has not written to the screen yet".
+## Preparing the microSD card
 
-The two LEDs:
+The core looks for its files in a folder `PCAT286` at the root of the card,
+or in the root when there is no such folder.
 
-- **led[0]** blinks from the 50 MHz oscillator, which shows the core is
-  loaded.
-- **led[1]** blinks once per second when every check passed, and stays lit
-  if any failed.
+| File | What it is |
+| --- | --- |
+| `PCAT286.ROM` | The system BIOS, at most 32 KiB. The [BIOS Builder](https://spark2k06.github.io/PCAT-286_MiSTer/BIOS_Builder) prepares it, and the EGA ROM. |
+| `EGA.ROM` | The EGA BIOS, at most 32 KiB. |
+| `PCAT286.CMS` | 512 bytes of zeroes, made once. The core fills it with the CMOS contents. |
+| `PCAT286.CFG` | 512 bytes of zeroes, made once. Written by *Save settings* in the OSD; zeroes mean default settings. |
+| Disk and floppy images | Anywhere on the card, chosen in the OSD. Hard disks are `.VHD` or `.IMG`, floppies `.IMG`, `.IMA` or `.VFD`. |
+
+[tools/pcat286_cfg_generator.html](tools/pcat286_cfg_generator.html) is a
+stand-alone page that writes `PCAT286.CFG` (and a blank `PCAT286.CMS`) from a
+form, with the purpose of each option, so the first start can already have the
+images and settings you want.
+
+`PCAT286.CFG` keeps the OSD settings, the path of each of the four images
+and the two BIOS files, so the next start mounts them again. Without it,
+nothing is mounted and the defaults apply. After choosing a hard disk, use
+*Reset* in the OSD so the BIOS detects it.
+
+## Loading the core
+
+1. Copy `PCAT286.ZX3` to the card, with the files above.
+2. In the ZX Spectrum core, press F5 for the NMI browser, select the file and
+   load it. The core goes to a temporary flash slot.
+3. To go back to the Spectrum core, power cycle the board.
+
+Connect a VGA monitor, or a 15 kHz TV through a suitable adapter. Plug the
+PS/2 mouse in before the core starts, or before a reset from the OSD, because
+the converter handshakes with it at that point.
+
+The `.ZX3` file is built from source, see below. No release is published.
+
+## Keys and the OSD
+
+| Key | Action |
+| --- | --- |
+| Win+F12 | Open the OSD |
+| Cursor keys, Enter | Move in the menu, change an option or open a page |
+| Esc | Back out of a page; from the main page, close the OSD |
+| F12 | Pause the machine and scroll the credits; F12 again resumes |
+
+The keyboard does not reach the machine while the OSD is open. F12 alone
+stays with the machine and, on the splash, holds it.
+
+The main page lists the four drives with the name of the image in each, a
+Machine group (CPU speed, installed RAM, floppy write protect), and the pages
+*Video* (monitor, display tint, CRT offsets, VGA 13h+ CRT rate, scandoubler,
+350-line CRT output, splash time, video info), *Audio* (sound cards, levels),
+*Input* (joysticks), *BIOS* (the two BIOS files) and *Settings* (info, OSD
+position, save settings, reset to defaults), then Reset.
+
+The *Video info* page shows the raster that leaves the VGA pins: lines per
+frame, line and frame frequency, and the width and polarity of the sync
+pulses. It is the quickest way to see what a monitor or TV is being given.
+
+## Video outputs
+
+| Source | Output |
+| --- | --- |
+| 200-line CGA/EGA modes | Doubled to 31.4 kHz, 640x480 at about 60 Hz |
+| VGA 13h+ | `Native 70Hz` leaves as it is; `TV 60Hz` is 60 Hz and gets doubled |
+| 350-line EGA and MDA | `350-line CRT`: *480p 31 kHz* (720x480 at 59.94 Hz, the default), *Native* (the original rate, for monitors that accept it), *480i 15 kHz* or *240p 15 kHz* |
+| 15 kHz output | *Scandoubler: Off* leaves the 200-line modes at 15.7 kHz; the connector carries no composite sync, so the TV needs separate syncs, which leave as +HSync and +VSync |
+
+The 350-line pictures go through a scan converter that uses the board's
+2 MiB SRAM as a frame store. The OSD overlay sits between the converter and
+the pins, so the menu looks the same in every mode.
 
 ## Building
 
+The build needs Vivado 2025.2 (the part is `xc7a100tfgg484-2`), Python 3, and
+`nasm`, `gcc` and `make` for the controller firmware and the demo ROM (from
+WSL if the host is Windows). Run the scripts from the repository root, from
+Git Bash on Windows or from Linux:
+
 ```sh
-zxtres/scripts/build.sh [40|50]      # Vivado 2025.2, xc7a100tfgg484-2
-zxtres/sim/run_sim.sh                # Verilator simulation, from WSL/Linux
+zxtres/scripts/build_firmware.sh    # EightThirtyTwo toolchain and firmware
+zxtres/scripts/build_pcat.sh        # Vivado, to a .ZX3 file
 ```
 
-`build.sh` writes `build/zxtres-demo/<MHz>mhz/SPK286DEMO.ZX3`, the `.bit`
-file and the timing and utilization reports. `run_sim.sh` simulates the same
-system and writes the following to `build/zxtres-demo/sim`:
+The result is `build/zxtres-pcat/vivado-pcat/PCAT286.ZX3`, next to the
+`.bit` file and the timing and utilization reports. The DeMiSTify and
+`mist-modules` submodules must be checked out.
 
-- the text screen (`zxtres_demo_screen.txt`);
-- two VGA frames captured from the sync and colour outputs, as PNG;
-- the POST log.
+`rtl/pcat286_zxtres_guest.sv` is generated from `PCAT-286.sv` by
+`scripts/make_guest.py`, which copies the machine blocks as they are and adds
+the board glue. `build_pcat.sh` checks that the committed file is not stale.
 
-## Loading it on the ZXTRES+
+## Simulation
 
-It needs a VGA monitor; this core has no DisplayPort output.
+The board simulation runs under WSL or Linux, with Verilator, GHDL and Icarus
+Verilog. The main scripts in `sim/`:
 
-1. Copy `SPK286DEMO.ZX3` to the microSD card.
-2. In the ZX Spectrum core, press F5 for the NMI browser, select the file
-   and load it. The core goes to a temporary flash slot, so the installed
-   cores are not changed.
-3. To return to the ZX Spectrum core, power cycle the board.
+| Script | What it checks |
+| --- | --- |
+| `run_bios_sim.sh BIOS_ROM EGA_ROM` | The whole board: real firmware, an SD card model, an SDRAM pin model and a PS/2 keyboard boot a real BIOS to its setup screen |
+| `run_ide_store_test.sh`, `run_fdd_store_test.sh`, `run_cmos_store_test.sh` | The hard disk, floppy and CMOS stores against the machine's own devices |
+| `run_linedouble_test.sh`, `run_scanconv_test.sh`, `run_vidinfo_test.sh` | The doubler, the scan converter and the video info, from the pins |
+| `run_osd_test.sh`, `run_ps2_key_test.sh` | The OSD renderer and the keyboard filter |
+| `run_mouse_test.sh` | The PS/2 mouse handshake and the serial packets, against a model of a real mouse |
+
+## More documentation
+
+- [SPEC.md](SPEC.md) states what the port must do, what is done at each
+  evidence level and what remains.
+- [PORT.md](PORT.md) records how the port was built and what each milestone
+  verified.
+- [demo/README.md](demo/README.md) describes the CPU-only bring-up demo, the
+  first board test of the SPK286 on this board.
+- The [main README](../README.md) and the
+  [technical report](https://spark2k06.github.io/PCAT-286_MiSTer/report/)
+  describe the machine.
+
+## Credits and licenses
+
+The ZXTRES+ port builds on [DeMiSTify](https://github.com/robinsonb5/DeMiSTify)
+by Alastair M. Robinson, on the MiST core modules (`mist-modules`) and on the
+PCXT port to this board, which showed the way. The OSD font is from jtframe by
+Jose Tejada ([@jotego](https://github.com/jotego), GPL v3), by way of
+PCXT_MiSTer. The machine blocks and their authors are credited in the main
+README and in [credits/msg](credits/msg), the text of the F12 credits. The
+inherited [LICENSE](../LICENSE) is GNU GPL version 3; component licenses and
+headers stay authoritative for their files.

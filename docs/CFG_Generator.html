@@ -1,0 +1,772 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PCAT-286 ZXTRES+ Config Generator</title>
+<style>
+:root {
+  --bg: #eef1f7; --panel: #ffffff; --ink: #18202f; --muted: #5b667b; --line: #dde2ec;
+  --accent: #1f5fd0; --accent-2: #12a4c4; --accent-ink: #ffffff; --soft: #e6eefc; --soft-2: #e2f6fa;
+  --warn: #9a5200; --warn-bg: #fff1d9; --ok: #17803d; --ok-bg: #e3f5e9;
+  --code: #eef1f6; --shadow: 0 1px 2px rgba(20,32,60,.06), 0 6px 18px rgba(20,32,60,.06);
+  --hero-a: #0a1c4a; --hero-b: #1f5fd0; --hero-c: #14b3d4; --chip-on: #1f5fd0; --chip-on-ink: #fff;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0f131b; --panel: #171c26; --ink: #e8ecf4; --muted: #9aa5ba; --line: #2a3140;
+    --accent: #6ea4f4; --accent-2: #4cc9e3; --accent-ink: #0b1424; --soft: #1d2940; --soft-2: #16303a;
+    --warn: #f0b45c; --warn-bg: #392b14; --ok: #66c985; --ok-bg: #16301f;
+    --code: #222836; --shadow: 0 1px 2px rgba(0,0,0,.4), 0 8px 24px rgba(0,0,0,.25);
+    --hero-a: #08122d; --hero-b: #173f8f; --hero-c: #0c7f99; --chip-on: #6ea4f4; --chip-on-ink: #0b1424;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0f131b; --panel: #171c26; --ink: #e8ecf4; --muted: #9aa5ba; --line: #2a3140;
+  --accent: #6ea4f4; --accent-2: #4cc9e3; --accent-ink: #0b1424; --soft: #1d2940; --soft-2: #16303a;
+  --warn: #f0b45c; --warn-bg: #392b14; --ok: #66c985; --ok-bg: #16301f;
+  --code: #222836; --shadow: 0 1px 2px rgba(0,0,0,.4), 0 8px 24px rgba(0,0,0,.25);
+  --hero-a: #08122d; --hero-b: #173f8f; --hero-c: #0c7f99; --chip-on: #6ea4f4; --chip-on-ink: #0b1424;
+}
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; scroll-padding-top: 76px; }
+body { margin: 0; background: var(--bg); color: var(--ink);
+  font: 15px/1.55 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+svg.i { width: 1.15em; height: 1.15em; stroke: currentColor; fill: none; stroke-width: 2;
+  stroke-linecap: round; stroke-linejoin: round; flex: none; vertical-align: -0.2em; }
+
+/* ---- hero ---- */
+.hero { color: #fff; background:
+  radial-gradient(900px 300px at 85% -20%, color-mix(in srgb, var(--hero-c) 70%, transparent), transparent 70%),
+  linear-gradient(135deg, var(--hero-a), var(--hero-b)); }
+.hero-in { max-width: 1180px; margin: 0 auto; padding: 30px 16px 26px; display: flex; gap: 22px; align-items: center; }
+.logo { width: 72px; height: 72px; border-radius: 16px; background: rgba(255,255,255,.12);
+  border: 1px solid rgba(255,255,255,.25); display: grid; place-items: center; flex: none; }
+.logo svg { width: 40px; height: 40px; stroke-width: 1.7; }
+.hero h1 { margin: 0; font-size: 28px; line-height: 1.15; letter-spacing: -.01em; }
+.hero h1 small { display: block; font-size: 14px; font-weight: 500; opacity: .85; letter-spacing: .08em;
+  text-transform: uppercase; margin-bottom: 4px; }
+.hero p { margin: 8px 0 0; max-width: 72ch; opacity: .92; }
+.theme { margin-left: auto; align-self: flex-start; background: rgba(255,255,255,.14); color: #fff;
+  border: 1px solid rgba(255,255,255,.3); border-radius: 999px; padding: 7px 10px; cursor: pointer; }
+.theme:hover { background: rgba(255,255,255,.24); }
+@media (max-width: 640px) { .logo { display: none; } .hero h1 { font-size: 23px; } }
+
+/* ---- steps ---- */
+.steps { max-width: 1180px; margin: -18px auto 0; padding: 0 16px; display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+.step { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 10px 14px;
+  box-shadow: var(--shadow); display: flex; gap: 10px; align-items: center; font-size: 14px; }
+.step b { display: grid; place-items: center; width: 26px; height: 26px; border-radius: 50%; flex: none;
+  background: var(--soft); color: var(--accent); font-size: 13px; }
+@media (max-width: 760px) { .steps { grid-template-columns: 1fr; margin-top: 12px; } }
+
+/* ---- nav ---- */
+.nav { position: sticky; top: 0; z-index: 5; background: color-mix(in srgb, var(--bg) 88%, transparent);
+  backdrop-filter: blur(8px); border-bottom: 1px solid var(--line); margin-top: 16px; }
+.nav-in { max-width: 1180px; margin: 0 auto; padding: 8px 16px; display: flex; gap: 6px; overflow-x: auto; }
+.nav a { display: flex; align-items: center; gap: 7px; white-space: nowrap; text-decoration: none; color: var(--muted);
+  padding: 7px 12px; border-radius: 999px; font-weight: 600; font-size: 14px; border: 1px solid transparent; }
+.nav a:hover { color: var(--ink); background: var(--soft); }
+.nav a.on { color: var(--accent); background: var(--soft); border-color: color-mix(in srgb, var(--accent) 30%, transparent); }
+
+/* ---- layout ---- */
+.layout { max-width: 1180px; margin: 0 auto; padding: 18px 16px 50px; display: grid;
+  grid-template-columns: minmax(0, 1fr) 330px; gap: 22px; align-items: start; }
+@media (max-width: 920px) { .layout { grid-template-columns: 1fr; } }
+section.group { margin-bottom: 26px; }
+.ghead { display: flex; align-items: center; gap: 12px; margin: 4px 0 4px; }
+.gicon { width: 40px; height: 40px; border-radius: 12px; display: grid; place-items: center; flex: none;
+  color: #fff; background: linear-gradient(135deg, var(--hero-b), var(--accent-2)); }
+.gicon svg { width: 22px; height: 22px; }
+.ghead h2 { margin: 0; font-size: 20px; letter-spacing: -.01em; }
+.lead { margin: 2px 0 12px 52px; color: var(--muted); font-size: 14px; max-width: 78ch; }
+@media (max-width: 640px) { .lead { margin-left: 0; } }
+
+/* ---- option cards ---- */
+.opt { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 14px 16px;
+  margin-bottom: 10px; box-shadow: var(--shadow); display: grid; grid-template-columns: 40px minmax(0, 1fr); gap: 0 14px;
+  position: relative; transition: border-color .15s, box-shadow .15s; }
+.opt.changed { border-color: color-mix(in srgb, var(--accent) 55%, var(--line)); }
+.opt.changed::before { content: ""; position: absolute; left: 0; top: 14px; bottom: 14px; width: 4px;
+  border-radius: 0 4px 4px 0; background: var(--accent); }
+.oicon { width: 40px; height: 40px; border-radius: 11px; background: var(--soft); color: var(--accent);
+  display: grid; place-items: center; }
+.oicon svg { width: 21px; height: 21px; }
+.otop { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; margin-bottom: 8px; min-height: 40px; }
+.otop .name { font-weight: 700; font-size: 16px; }
+.badge { font-size: 11.5px; font-weight: 700; border-radius: 999px; padding: 2px 9px; letter-spacing: .02em; }
+.badge.file { background: var(--warn-bg); color: var(--warn); }
+.badge.chg { background: var(--soft); color: var(--accent); display: none; }
+.opt.changed .badge.chg { display: inline-block; }
+.odesc { margin: 10px 0 0; font-size: 14px; }
+.opurpose { margin: 8px 0 0; font-size: 13.5px; color: var(--muted); background: var(--soft-2);
+  border-radius: 10px; padding: 7px 10px 7px 10px; display: flex; gap: 8px; align-items: flex-start; }
+.opurpose svg { color: var(--accent-2); margin-top: 3px; }
+.opurpose b { color: var(--ink); }
+.body { grid-column: 2; }
+.oicon { grid-row: 1 / span 2; }
+
+/* segmented control */
+.seg { display: flex; flex-wrap: wrap; gap: 6px; }
+.seg button { font: inherit; font-size: 14px; cursor: pointer; border: 1px solid var(--line); background: var(--bg);
+  color: var(--ink); border-radius: 999px; padding: 5px 13px; transition: background .12s, border-color .12s; }
+.seg button:hover { border-color: var(--accent); }
+.seg button[aria-checked="true"] { background: var(--chip-on); color: var(--chip-on-ink); border-color: var(--chip-on); font-weight: 600; }
+.seg button .def { font-size: 11px; opacity: .75; margin-left: 5px; }
+.range { display: flex; align-items: center; gap: 12px; max-width: 420px; }
+.range input { flex: 1; accent-color: var(--accent); }
+.range output { min-width: 3ch; text-align: center; font-weight: 700; color: var(--accent); background: var(--soft);
+  border-radius: 8px; padding: 2px 8px; font-variant-numeric: tabular-nums; }
+
+/* path inputs */
+.pathrow { position: relative; }
+.pathrow input { width: 100%; font: 14px ui-monospace, Consolas, monospace; color: var(--ink); background: var(--bg);
+  border: 1px solid var(--line); border-radius: 10px; padding: 9px 38px 9px 12px; }
+.pathrow input:focus { outline: 2px solid var(--accent); outline-offset: 1px; border-color: transparent; }
+.pathrow .state { position: absolute; right: 11px; top: 50%; transform: translateY(-50%); display: none; }
+.pathrow.ok .state.ok { display: block; color: var(--ok); }
+.pathrow.bad .state.bad { display: block; color: var(--warn); }
+.pathrow.bad input { border-color: var(--warn); }
+.warn { margin: 8px 0 0; font-size: 13px; color: var(--warn); background: var(--warn-bg); border-radius: 8px;
+  padding: 5px 10px; display: none; }
+.warn.on { display: block; }
+.tip { margin: 0 0 12px 52px; font-size: 13.5px; background: var(--soft); border-radius: 10px; padding: 8px 12px;
+  display: flex; gap: 9px; color: var(--ink); max-width: 78ch; }
+.tip svg { color: var(--accent); margin-top: 3px; }
+@media (max-width: 640px) { .tip { margin-left: 0; } }
+
+/* ---- aside ---- */
+aside { position: sticky; top: 64px; display: flex; flex-direction: column; gap: 14px; }
+@media (max-width: 920px) { aside { position: static; } }
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 15px 16px; box-shadow: var(--shadow); }
+.card h3 { margin: 0 0 10px; font-size: 15px; display: flex; gap: 8px; align-items: center; }
+.card h3 svg { color: var(--accent); }
+.btn { font: inherit; font-weight: 600; cursor: pointer; display: flex; width: 100%; align-items: center; justify-content: center;
+  gap: 8px; border-radius: 10px; border: 1px solid var(--line); background: var(--bg); color: var(--ink);
+  padding: 10px 12px; margin-bottom: 8px; transition: transform .08s, background .12s; }
+.btn:hover { border-color: var(--accent); }
+.btn:active { transform: translateY(1px); }
+.btn.primary { background: linear-gradient(135deg, var(--hero-b), var(--accent-2)); border: 0; color: #fff; padding: 12px; font-size: 15.5px; }
+.btn.primary:hover { filter: brightness(1.08); }
+.btn.sm { font-weight: 500; font-size: 14px; padding: 7px 10px; }
+.btn:focus-visible, .seg button:focus-visible, .nav a:focus-visible, .theme:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.presets { display: grid; gap: 6px; }
+.preset { text-align: left; font: inherit; cursor: pointer; border: 1px solid var(--line); background: var(--bg); color: var(--ink);
+  border-radius: 10px; padding: 8px 10px; display: flex; gap: 10px; align-items: flex-start; }
+.preset:hover { border-color: var(--accent); background: var(--soft); }
+.preset svg { color: var(--accent); margin-top: 3px; }
+.preset span b { display: block; font-size: 14px; }
+.preset span small { color: var(--muted); font-size: 12.5px; line-height: 1.35; display: block; }
+.kv { display: grid; grid-template-columns: auto 1fr; gap: 3px 12px; font-size: 13.5px; }
+.kv span:nth-child(odd) { color: var(--muted); }
+.kv .mono { word-break: break-all; }
+.mono, code, pre { font-family: ui-monospace, Consolas, monospace; }
+code { background: var(--code); border-radius: 5px; padding: 1px 5px; font-size: .92em; }
+pre { background: var(--code); border-radius: 8px; padding: 9px; font-size: 11.5px; overflow-x: auto; margin: 8px 0 0; line-height: 1.45; }
+details summary { cursor: pointer; font-weight: 600; font-size: 14px; margin-top: 10px; }
+.small { font-size: 13.5px; color: var(--muted); }
+.small ol { margin: 4px 0 8px; padding-left: 20px; }
+.small li { margin-bottom: 4px; }
+.small li::marker { color: var(--accent); font-weight: 700; }
+.file { position: relative; }
+.file input { width: 100%; font-size: 13px; color: var(--muted); }
+.file input::file-selector-button { font: inherit; font-size: 13px; cursor: pointer; border: 1px solid var(--line);
+  background: var(--bg); color: var(--ink); border-radius: 8px; padding: 6px 10px; margin-right: 8px; }
+#msg { font-size: 13.5px; margin: 8px 0 0; min-height: 1.3em; display: flex; gap: 6px; align-items: flex-start; }
+#msg.err { color: var(--warn); } #msg.ok { color: var(--ok); }
+.meter { height: 8px; border-radius: 99px; background: var(--soft); overflow: hidden; margin: 8px 0 4px; }
+.meter i { display: block; height: 100%; width: 0; background: linear-gradient(90deg, var(--hero-b), var(--accent-2)); transition: width .25s; }
+footer { text-align: center; color: var(--muted); font-size: 13px; padding: 0 16px 36px; }
+</style>
+</head>
+<body>
+
+<header class="hero">
+  <div class="hero-in">
+    <div class="logo" id="logo"></div>
+    <div>
+      <h1><small>PCAT-286 &middot; ZXTRES+</small>Initial configuration</h1>
+      <p>Choose how the core starts &mdash; the machine, video, sound, input, and the images to mount &mdash; and download the
+         <code style="background:rgba(255,255,255,.18);color:#fff">PCAT286.CFG</code> file for your microSD card.
+         Everything runs in this page; nothing is uploaded.</p>
+    </div>
+    <button class="theme" id="theme" type="button" title="Switch light / dark" aria-label="Switch light or dark theme"></button>
+  </div>
+</header>
+
+<div class="steps">
+  <div class="step"><b>1</b><span>Pick your settings and the files to mount</span></div>
+  <div class="step"><b>2</b><span>Download <code>PCAT286.CFG</code></span></div>
+  <div class="step"><b>3</b><span>Copy it to the <code>PCAT286</code> folder on the card</span></div>
+</div>
+
+<nav class="nav"><div class="nav-in" id="nav"></div></nav>
+
+<div class="layout">
+<main id="groups"></main>
+
+<aside>
+  <div class="card">
+    <h3 id="h-get"></h3>
+    <button class="btn primary" id="dl-cfg" type="button"></button>
+    <button class="btn" id="dl-cms" type="button"></button>
+    <div class="small" style="margin:6px 0 4px">Already have a <code>PCAT286.CFG</code>? Open it to edit it:</div>
+    <div class="file"><input type="file" id="load" accept=".cfg,.CFG,application/octet-stream" aria-label="Open an existing PCAT286.CFG"></div>
+    <div id="msg" role="status"></div>
+  </div>
+
+  <div class="card">
+    <h3 id="h-presets"></h3>
+    <div class="presets" id="presets"></div>
+    <button class="btn sm" id="reset" type="button" style="margin:10px 0 0"></button>
+  </div>
+
+  <div class="card">
+    <h3 id="h-sum"></h3>
+    <div class="meter" aria-hidden="true"><i id="bar"></i></div>
+    <div class="kv">
+      <span>Changed</span><span id="nch">0 settings</span>
+      <span>Images / BIOS</span><span id="np">0 of 6 set</span>
+      <span>Status word</span><span class="mono" id="sw">0x0000000000000000</span>
+      <span>Format</span><span>version 3, 512 bytes</span>
+    </div>
+    <details><summary>Hex dump</summary><pre id="hex"></pre></details>
+  </div>
+
+  <div class="card small">
+    <h3 id="h-how"></h3>
+    <ol>
+      <li>Copy <code>PCAT286.CFG</code> to the folder <code>PCAT286</code> on the card, or to the root if there is no such folder, replacing the one that is there.</li>
+      <li>Copy <code>PCAT286.CMS</code> the same way only if it does not exist yet. It holds the CMOS: 512 bytes of zeroes at first.</li>
+      <li>Load the core. The settings apply at start-up and the images are mounted before the BIOS runs.</li>
+    </ol>
+    The controller can write these files but cannot create them, so both must already be on the card. Later, <em>Settings &rarr; Save settings</em> in the OSD overwrites <code>PCAT286.CFG</code> with the current choices.
+  </div>
+</aside>
+</div>
+<footer>PCAT-286 for ZXTRES+ &middot; the file is version 3 of <code>PCAT286.CFG</code>, 512 bytes.</footer>
+
+<script>
+"use strict";
+
+/* ---- Icons (Feather-style strokes, inline so the page has no dependencies) ---- */
+const ICONS = {
+  cpu: '<rect x="4" y="4" width="16" height="16" rx="2"/><rect x="9" y="9" width="6" height="6"/><path d="M9 1v3M15 1v3M9 20v3M15 20v3M20 9h3M20 14h3M1 9h3M1 14h3"/>',
+  hdd: '<path d="M22 12H2"/><path d="M5.45 5.11L2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/><path d="M6 16h.01M10 16h.01"/>',
+  floppy: '<path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><path d="M17 21v-8H7v8M7 3v5h8"/>',
+  monitor: '<rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/>',
+  tv: '<rect x="2" y="7" width="20" height="15" rx="2"/><path d="M17 2l-5 5-5-5"/>',
+  vol: '<path d="M11 5L6 9H2v6h4l5 4V5z"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"/>',
+  music: '<path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/>',
+  sliders: '<path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1 14h6M9 8h6M17 16h6"/>',
+  down: '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/>',
+  up: '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12"/>',
+  undo: '<path d="M1 4v6h6"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/>',
+  info: '<circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/>',
+  bulb: '<path d="M9 18h6M10 22h4"/><path d="M12 2a7 7 0 0 0-4 12.74V17h8v-2.26A7 7 0 0 0 12 2z"/>',
+  check: '<path d="M20 6L9 17l-5-5"/>',
+  alert: '<path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0zM12 9v4M12 17h.01"/>',
+  file: '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M16 13H8M16 17H8M10 9H8"/>',
+  db: '<ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/>',
+  layers: '<path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5M2 12l10 5 10-5"/>',
+  lock: '<rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>',
+  palette: '<circle cx="13.5" cy="6.5" r="1"/><circle cx="17.5" cy="10.5" r="1"/><circle cx="8.5" cy="7.5" r="1"/><circle cx="6.5" cy="12.5" r="1"/><path d="M12 2a10 10 0 1 0 0 20c1.1 0 2-.9 2-2 0-.5-.2-1-.5-1.3-.3-.4-.5-.8-.5-1.3 0-1.1.9-2 2-2h2.4A4.6 4.6 0 0 0 22 10.8C22 5.9 17.5 2 12 2z"/>',
+  move: '<path d="M5 9l-3 3 3 3M9 5l3-3 3 3M15 19l-3 3-3-3M19 9l3 3-3 3M2 12h20M12 2v20"/>',
+  clock: '<circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/>',
+  grid: '<rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/>',
+  gamepad: '<rect x="2" y="6" width="20" height="12" rx="6"/><path d="M6 12h4M8 10v4M15 13h.01M18 11h.01"/>',
+  layout: '<rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 21V9"/>',
+  zap: '<path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/>',
+  sun: '<circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/>',
+  moon: '<path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>',
+  box: '<path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><path d="M3.27 6.96L12 12.01l8.73-5.05M12 22.08V12"/>',
+  wave: '<path d="M2 12h3l3-8 4 16 3-8h7"/>',
+  star: '<path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/>'
+};
+function icon(name) {
+  const s = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  s.setAttribute("viewBox", "0 0 24 24"); s.setAttribute("class", "i"); s.setAttribute("aria-hidden", "true");
+  s.innerHTML = ICONS[name] || "";
+  return s;
+}
+function setIcon(node, name, text) { node.textContent = ""; node.append(icon(name)); if (text) node.append(document.createTextNode(" " + text)); }
+
+/* ---- Option model ---------------------------------------------------------
+   Each field is a range of bits of the 64-bit OSD status word (positions of
+   the PCAT-286 ZXTRES+ OSD string, low bit first). Value 0 is the default. */
+const GROUPS = [
+  {
+    id: "drives", title: "Drives and BIOS files", icon: "hdd",
+    lead: "The images and ROM files the core mounts at start-up, so it boots without opening the OSD.",
+    tip: "Write paths from the root of the card, folders separated by \"/\" (for example DISKS/DOS622.VHD). The controller reads 8.3 names, so each folder and file must fit NAME.EXT (8 + 3 characters), up to 6 folders deep and 79 characters in all. Leave a field empty to mount nothing.",
+    paths: [
+      { id: "disk0", label: "Hard disk 0", icon: "hdd", ph: "DISKS/DOS622.VHD",
+        desc: "Image file (VHD or IMG) mounted as the first IDE hard disk, the primary master. It is the disk the BIOS boots from and shows as drive C:.",
+        purpose: "Boot an operating system straight away. The BIOS only detects a disk that is mounted before it starts, which is why it has to be in this file." },
+      { id: "disk1", label: "Hard disk 1", icon: "hdd", ph: "DISKS/GAMES.VHD",
+        desc: "Image file (VHD or IMG) mounted as the second IDE hard disk, the primary slave. It takes the drive letter after the first disk's partitions (D: if the first disk holds a single partition).",
+        purpose: "Keep games, data or a second system on a separate disk image." },
+      { id: "floppyA", label: "Floppy A:", icon: "floppy", ph: "FLOPPY/DISK1.IMG",
+        desc: "Floppy image (IMG, IMA or VFD, from 160K to 2.88M; the geometry comes from the file size) inserted in drive A: when the core starts.",
+        purpose: "Boot from a setup or utility disk without browsing for it. Leave it empty to start with an empty drive." },
+      { id: "floppyB", label: "Floppy B:", icon: "floppy", ph: "FLOPPY/DISK2.IMG",
+        desc: "Floppy image (IMG, IMA or VFD) inserted in drive B: when the core starts.",
+        purpose: "Have a second disk ready, for example to copy files between two images." },
+      { id: "bios", label: "System BIOS", icon: "cpu", ph: "BIOS/MRBIOS.ROM",
+        desc: "ROM file of the PC/AT system BIOS (at most 32 KB). When empty, or when the file is not found, the core loads PCAT286.ROM from the card.",
+        purpose: "Switch between BIOS builds (for example one with a different setup or hard disk table) without renaming files on the card." },
+      { id: "ega", label: "EGA BIOS", icon: "monitor", ph: "BIOS/IBMEGA.ROM",
+        desc: "ROM file of the video BIOS of the EGA card (at most 32 KB). When empty, or when the file is not found, the core loads EGA.ROM from the card.",
+        purpose: "Use a different EGA video ROM than the default one." }
+    ]
+  },
+  {
+    id: "machine", title: "Machine", icon: "cpu",
+    lead: "The processor and the memory of the emulated PC/AT.",
+    fields: [
+      { id: "cpu", label: "CPU speed", icon: "zap", lo: 57, hi: 59,
+        choices: ["MAX", "6 MHz", "8 MHz", "10 MHz", "12.5 MHz", "16 MHz", "20 MHz", "25 MHz"],
+        desc: "Clock speed of the emulated 80286. MAX runs the CPU as fast as this core can; the other values hold it to the speed of a real AT-class machine (6 MHz is the original IBM PC/AT).",
+        purpose: "Slow down games and timing-loop software that run too fast on a quick CPU, or keep MAX for the best performance." },
+      { id: "ram", label: "Installed RAM", icon: "layers", lo: 46, hi: 48,
+        choices: ["4 MB", "8 MB", "16 MB", "1 MB", "2 MB"],
+        desc: "Amount of AT RAM the BIOS finds. It is taken from the board's 64 MiB SDRAM.",
+        purpose: "Match the memory a program expects. Some old software misbehaves with a large amount of memory, and 1 or 2 MB leaves nothing above what that software can use." },
+      { id: "wpA", label: "Write protect A:", icon: "lock", lo: 19, hi: 19, choices: ["Off", "On"],
+        desc: "Makes the image in floppy drive A: read-only, as if the write-protect notch of the disk were closed.",
+        purpose: "Protect a master or boot disk image from viruses, installers or accidental writes." },
+      { id: "wpB", label: "Write protect B:", icon: "lock", lo: 20, hi: 20, choices: ["Off", "On"],
+        desc: "Makes the image in floppy drive B: read-only.",
+        purpose: "Same as for A:, for the second drive." }
+    ]
+  },
+  {
+    id: "video", title: "Video", icon: "monitor",
+    lead: "What kind of picture the core draws and the rate it leaves the VGA connector at.",
+    fields: [
+      { id: "monitor", label: "Monitor", icon: "monitor", lo: 44, hi: 45,
+        choices: ["5153 / CGA", "5154 / ECD", "5151 / MDA"],
+        desc: "Type of monitor attached to the emulated EGA card, which is the setting the card's switches report to the BIOS. 5153/CGA is a colour monitor at 200 lines, 5154/ECD is the enhanced colour monitor that allows the 350-line EGA modes, and 5151/MDA is the monochrome text monitor.",
+        purpose: "Pick the one the software expects. The BIOS reads it at start-up, so a change in the OSD needs a reset to take effect." },
+      { id: "tint", label: "Display tint", icon: "palette", lo: 14, hi: 16,
+        choices: ["Full color", "Green", "Amber", "B&W", "Red", "Blue", "Fuchsia", "Purple"],
+        desc: "Colours the picture the way a monochrome phosphor monitor would, or leaves it in full colour.",
+        purpose: "Get the look of a green, amber or black-and-white monitor, mostly useful together with the MDA monitor type." },
+      { id: "hoff", label: "CRT H offset", icon: "move", lo: 49, hi: 52,
+        choices: Array.from({ length: 16 }, (_, i) => String(i)),
+        desc: "Moves the picture sideways in steps of 4 dots on the 15 kHz outputs, by delaying it against the horizontal sync.",
+        purpose: "Centre the picture on a CRT television. Leave it at 0 on a VGA monitor." },
+      { id: "voff", label: "CRT V offset", icon: "move", lo: 53, hi: 55,
+        choices: Array.from({ length: 8 }, (_, i) => String(i)),
+        desc: "Moves the picture vertically in steps of one line on the 15 kHz outputs, by delaying it against the vertical sync.",
+        purpose: "Centre the picture on a CRT television. Leave it at 0 on a VGA monitor." },
+      { id: "vga13", label: "VGA 13h+ CRT", icon: "clock", lo: 10, hi: 10,
+        choices: ["Native 70Hz", "TV 60Hz"],
+        desc: "Refresh rate of the VGA 13h+ modes (320x200, 256 colours and the extended modes). Native keeps the 70 Hz of real VGA; TV 60Hz makes them 60 Hz.",
+        purpose: "Use TV 60Hz when the monitor or TV does not lock to 70 Hz, or to match a 60 Hz capture device." },
+      { id: "scand", label: "Scandoubler", icon: "grid", lo: 60, hi: 60,
+        choices: ["Auto", "Off"],
+        desc: "Doubles the 200-line, 15.7 kHz pictures to 31.4 kHz so a VGA monitor can show them. Auto doubles them; Off sends them at their own 15.7 kHz rate, with +HSync and +VSync.",
+        purpose: "Leave it on Auto for a VGA monitor. Choose Off for a 15 kHz television or monitor on an adapter." },
+      { id: "crt350", label: "350-line CRT", icon: "tv", lo: 34, hi: 35,
+        choices: ["480p 31 kHz", "Native", "480i 15 kHz", "240p 15 kHz"],
+        desc: "Output for the 350-line EGA modes and for MDA text, which a VGA monitor cannot show at their own rate. 480p converts them to 720x480 at 59.94 Hz (31 kHz), Native leaves them as they are, 480i and 240p output a 15.7 kHz picture for a television.",
+        purpose: "480p suits VGA monitors. Pick 480i or 240p for a CRT television; Native only for a multisync monitor that accepts 18 to 22 kHz." },
+      { id: "splash", label: "Splash time", icon: "star", lo: 8, hi: 9,
+        choices: ["5 s", "10 s", "15 s", "0 s (none)"],
+        desc: "How long the PCAT-286 boot splash picture stays on screen before the BIOS starts.",
+        purpose: "Shorten the wait, or skip the splash and go straight to the BIOS with 0 s." }
+    ]
+  },
+  {
+    id: "audio", title: "Audio", icon: "vol",
+    lead: "Sound devices of the machine and the mix that reaches the 3.5 mm jack and the I2S output.",
+    fields: [
+      { id: "a220", label: "Audio 220h", icon: "box", lo: 28, hi: 29,
+        choices: ["C/MS", "Sound Blaster", "Disabled"],
+        desc: "Chooses the card that answers at I/O address 220h. The C/MS (Creative Music System) and the Sound Blaster Pro share that address, so only one can be present.",
+        purpose: "Select the card the software is set up for. Sound Blaster is the usual choice for DOS games; C/MS is for software that supports only that card." },
+      { id: "opl2", label: "OPL2", icon: "music", lo: 42, hi: 43,
+        choices: ["Adlib 388h", "SB FM", "Disabled"],
+        desc: "FM synthesizer (Yamaha OPL2). Adlib answers at 388h as an AdLib card does; SB FM puts it on the Sound Blaster's FM ports (388h and 228h).",
+        purpose: "Music for software that supports AdLib or Sound Blaster FM. Disable it if a game detects it wrongly." },
+      { id: "tandy", label: "Tandy sound", icon: "music", lo: 56, hi: 56,
+        choices: ["Disabled", "Enabled"],
+        desc: "Tandy 1000 sound chip (SN76489, three voices and noise). It answers at C0h to CFh and at 1E0h to 1E3h.",
+        purpose: "Music and sound effects for games that support Tandy sound. It shares its ports with the second DMA controller, so enable it only when needed." },
+      { id: "vol", label: "Speaker volume", icon: "vol", lo: 32, hi: 33,
+        choices: ["1", "2", "3", "4"],
+        desc: "Level of the PC speaker (the beeper) in the mix, from 1 (quiet) to 4 (loud).",
+        purpose: "Balance the speaker against the other sound sources." },
+      { id: "boost", label: "Audio boost", icon: "wave", lo: 36, hi: 37,
+        choices: ["No", "2x", "4x"],
+        desc: "Raises the overall level of the mix, with a compressor so that loud passages do not distort.",
+        purpose: "Use 2x or 4x when the output is too quiet for the amplifier or speakers." },
+      { id: "mix", label: "Stereo mix", icon: "sliders", lo: 38, hi: 39,
+        choices: ["none", "25%", "50%", "100%"],
+        desc: "Share of each channel that is also sent to the other one. None keeps the channels fully separate; 100% makes the output mono.",
+        purpose: "Soften the hard left/right panning of some FM music, which is tiring on headphones." },
+      { id: "sbirq", label: "Sound Blaster IRQ", icon: "zap", lo: 5, hi: 5,
+        choices: ["IRQ 5", "IRQ 7"], cfgOnly: true,
+        desc: "Interrupt line of the Sound Blaster. This option has no entry in the ZXTRES+ OSD: it can only be set in this file.",
+        purpose: "Use IRQ 7 when a program or driver is configured for it, or when IRQ 5 clashes with another device." }
+    ]
+  },
+  {
+    id: "input", title: "Input", icon: "gamepad",
+    lead: "The two DB9 joystick ports feed the machine's gameport.",
+    fields: [
+      { id: "joy1", label: "Joystick 1", icon: "gamepad", lo: 23, hi: 24,
+        choices: ["Analog", "Digital", "Disabled"],
+        desc: "How the first DB9 pad is presented to the gameport. Analog gives the pad's directions as a stick's analog axes, Digital as a switch pad (the gameport's buttons and directions read as on/off), and Disabled hides the port.",
+        purpose: "Use the mode the game is set up for, or disable it when a game misreads the gameport or a pad is not connected." },
+      { id: "joy2", label: "Joystick 2", icon: "gamepad", lo: 25, hi: 26,
+        choices: ["Analog", "Digital", "Disabled"],
+        desc: "Same as Joystick 1, for the second DB9 port.",
+        purpose: "Two-player games and games that read a second stick." },
+      { id: "joysync", label: "Sync joystick to CPU speed", icon: "clock", lo: 27, hi: 27,
+        choices: ["No", "Yes"], cfgOnly: true,
+        desc: "Ties the gameport's axis timing to the CPU speed setting. This option has no entry in the ZXTRES+ OSD: it can only be set in this file.",
+        purpose: "Helps games that time the gameport with a software loop and read the stick wrongly at a reduced CPU speed." }
+    ]
+  },
+  {
+    id: "look", title: "Appearance", icon: "layout",
+    lead: "How the OSD itself looks.",
+    fields: [
+      { id: "osdpos", label: "OSD position", icon: "layout", lo: 11, hi: 13,
+        choices: ["Centre", "Top left", "Top right", "Bottom left", "Bottom right"],
+        desc: "Where the settings menu box appears on the screen.",
+        purpose: "Keep the menu from covering the part of the picture you want to see while changing a setting, or fit it to a 15 kHz picture." }
+    ]
+  }
+];
+
+/* Quick starts: only settings, never the paths. They start from the defaults. */
+const PRESETS = [
+  { icon: "cpu", title: "Original PC/AT", note: "6 MHz CPU and the 5154 enhanced colour monitor, as an IBM PC/AT with an EGA card.",
+    set: { cpu: 1, monitor: 1 } },
+  { icon: "tv", title: "15 kHz CRT television", note: "Scandoubler off, 240p for the 350-line modes and 60 Hz for VGA 13h+, for a TV on a SCART adapter.",
+    set: { scand: 1, crt350: 3, vga13: 1 } },
+  { icon: "music", title: "DOS gaming sound", note: "Sound Blaster with AdLib-compatible FM, and both joysticks in digital mode.",
+    set: { a220: 1, opl2: 0, joy1: 1, joy2: 1 } }
+];
+
+const PATH_SIZE = 80, PATH_BASE = 32, CFG_SIZE = 512, MAX_PATH = 79;
+const PATH_IDS = ["disk0", "disk1", "floppyA", "floppyB", "bios", "ega"];
+
+/* ---- Build the page ---------------------------------------------------- */
+const fields = {};      // id -> field (with .sel, .card, .pills)
+const pathInputs = {};
+const pathRows = {};
+
+function el(tag, attrs, ...kids) {
+  const e = document.createElement(tag);
+  for (const k in (attrs || {})) {
+    if (k === "class") e.className = attrs[k]; else if (k === "text") e.textContent = attrs[k]; else e.setAttribute(k, attrs[k]);
+  }
+  for (const kid of kids) if (kid) e.append(kid);
+  return e;
+}
+
+function card(o, control, extra) {
+  const c = el("div", { class: "opt" });
+  c.append(el("div", { class: "oicon" }, icon(o.icon)));
+  const name = el("span", { class: "name", text: o.label });
+  const top = el("div", { class: "otop" }, name);
+  if (o.cfgOnly) top.append(el("span", { class: "badge file", text: "file only" }));
+  top.append(el("span", { class: "badge chg", text: "changed" }));
+  const body = el("div", { class: "body" }, top, control);
+  body.append(el("p", { class: "odesc", text: o.desc }));
+  const pur = el("div", { class: "opurpose" }, icon("bulb"),
+    el("span", {}, el("b", { text: "Purpose: " }), document.createTextNode(o.purpose)));
+  body.append(pur);
+  if (extra) body.append(extra);
+  c.append(body);
+  return c;
+}
+
+const root = document.getElementById("groups");
+const nav = document.getElementById("nav");
+
+for (const g of GROUPS) {
+  const sec = el("section", { class: "group", id: "g-" + g.id });
+  sec.append(el("div", { class: "ghead" }, el("div", { class: "gicon" }, icon(g.icon)), el("h2", { text: g.title })));
+  sec.append(el("p", { class: "lead", text: g.lead }));
+  if (g.tip) sec.append(el("div", { class: "tip" }, icon("info"), el("span", { text: g.tip })));
+
+  const link = el("a", { href: "#g-" + g.id, "data-g": g.id }, icon(g.icon), document.createTextNode(g.title));
+  nav.append(link);
+
+  for (const f of (g.fields || [])) {
+    const sel = el("select", { id: "f-" + f.id, hidden: "" });
+    f.choices.forEach((c, i) => sel.append(el("option", { value: i, text: c })));
+    f.sel = sel;
+    fields[f.id] = f;
+    let control;
+    if (f.choices.length > 8) {            // long list: a slider with its value
+      const rng = el("input", { type: "range", min: "0", max: String(f.choices.length - 1), step: "1", "aria-label": f.label });
+      const out = el("output", { text: "0" });
+      rng.addEventListener("input", () => { sel.value = rng.value; update(); });
+      f.rng = rng; f.out = out;
+      control = el("div", { class: "range" }, rng, out);
+    } else {
+      const seg = el("div", { class: "seg", role: "radiogroup", "aria-label": f.label });
+      f.pills = f.choices.map((c, i) => {
+        const b = el("button", { type: "button", role: "radio", "aria-checked": "false" }, document.createTextNode(c));
+        if (i === 0) b.append(el("span", { class: "def", text: "default" }));
+        b.addEventListener("click", () => { sel.value = i; update(); });
+        seg.append(b);
+        return b;
+      });
+      f.seg = seg;
+      control = seg;
+    }
+    f.card = card(f, control);
+    f.card.append(sel);
+    sec.append(f.card);
+  }
+
+  for (const p of (g.paths || [])) {
+    const inp = el("input", { type: "text", id: "p-" + p.id, placeholder: p.ph, spellcheck: "false", autocomplete: "off", "aria-label": p.label });
+    inp.addEventListener("input", update);
+    const row = el("div", { class: "pathrow" }, inp);
+    const okI = icon("check"); okI.setAttribute("class", "i state ok");
+    const badI = icon("alert"); badI.setAttribute("class", "i state bad");
+    row.append(okI, badI);
+    const warn = el("div", { class: "warn", id: "w-" + p.id });
+    pathInputs[p.id] = inp; pathRows[p.id] = row;
+    const c = card(p, row, warn);
+    c.querySelector(".badge.chg").textContent = "set";
+    p.card = c;
+    sec.append(c);
+  }
+  root.append(sec);
+}
+
+/* ---- Encode / decode --------------------------------------------------- */
+function normPath(raw) {
+  return raw.trim().replace(/\\/g, "/").replace(/\/+/g, "/").replace(/^\//, "").toUpperCase();
+}
+
+function pathProblem(p) {
+  if (!p) return "";
+  if (!/^[\x20-\x7e]*$/.test(p)) return "Only plain ASCII characters are accepted.";
+  if (p.length > MAX_PATH) return "Longer than " + MAX_PATH + " characters: the controller would not keep it.";
+  const parts = p.split("/");
+  if (parts.length > 7) return "More than 6 folders deep.";
+  for (const part of parts) {
+    if (!part) return "Empty folder name.";
+    const m = part.match(/^([^.]*)(?:\.([^.]*))?$/);
+    if (!m || m[1].length > 8 || (m[2] || "").length > 3 || /[\\:*?"<>|]/.test(part))
+      return "\"" + part + "\" is not an 8.3 name (up to 8 characters, a dot, up to 3).";
+  }
+  return "";
+}
+
+function fieldValue(f) { return parseInt(f.sel.value, 10) || 0; }
+
+function build() {
+  let sw = 0n;
+  for (const id in fields) {
+    const f = fields[id];
+    const width = f.hi - f.lo + 1;
+    sw |= (BigInt(fieldValue(f)) & ((1n << BigInt(width)) - 1n)) << BigInt(f.lo);
+  }
+  const buf = new Uint8Array(CFG_SIZE);
+  buf.set([0x50, 0x43, 0x41, 0x54], 0);        // "PCAT"
+  buf[4] = 3;                                  // version 3
+  const dv = new DataView(buf.buffer);
+  dv.setUint32(8, Number(sw & 0xFFFFFFFFn), true);
+  dv.setUint32(12, Number((sw >> 32n) & 0xFFFFFFFFn), true);
+  const paths = PATH_IDS.map(id => normPath(pathInputs[id].value));
+  let set = 0;
+  paths.forEach((p, i) => {
+    if (!p || pathProblem(p)) return;
+    set++;
+    for (let k = 0; k < p.length; k++) buf[PATH_BASE + i * PATH_SIZE + k] = p.charCodeAt(k);
+  });
+  return { buf, sw, set, paths };
+}
+
+function hexdump(buf) {
+  const lines = [];
+  for (let off = 0; off < CFG_SIZE; off += 16) {
+    const row = buf.subarray(off, off + 16);
+    if (off >= 32 && row.every(b => b === 0)) continue;
+    const hex = Array.from(row, b => b.toString(16).padStart(2, "0")).join(" ");
+    const asc = Array.from(row, b => (b >= 32 && b < 127 ? String.fromCharCode(b) : ".")).join("");
+    lines.push(off.toString(16).padStart(3, "0") + "  " + hex + "  " + asc);
+  }
+  return lines.join("\n") + "\n(all-zero rows after 0x20 are not shown)";
+}
+
+function syncControls() {
+  let changed = 0;
+  for (const id in fields) {
+    const f = fields[id];
+    const v = fieldValue(f);
+    if (f.pills) {
+      f.pills.forEach((b, i) => b.setAttribute("aria-checked", String(i === v)));
+      let extra = f.seg.querySelector("[data-extra]");
+      if (v >= f.choices.length) {
+        if (!extra) { extra = el("button", { type: "button", role: "radio", "data-extra": "1" }); f.seg.append(extra); }
+        extra.textContent = "Value " + v + " (not in the OSD list)";
+        extra.setAttribute("aria-checked", "true");
+      } else if (extra) extra.remove();
+    } else {
+      f.rng.value = String(v);
+      f.out.textContent = v < f.choices.length ? f.choices[v] : "Value " + v;
+    }
+    const isChanged = v !== 0;
+    f.card.classList.toggle("changed", isChanged);
+    if (isChanged) changed++;
+  }
+  return changed;
+}
+
+function update() {
+  const changed = syncControls();
+  const r = build();
+  document.getElementById("sw").textContent = "0x" + r.sw.toString(16).padStart(16, "0");
+  document.getElementById("nch").textContent = changed + (changed === 1 ? " setting" : " settings");
+  document.getElementById("np").textContent = r.set + " of 6 set";
+  document.getElementById("hex").textContent = hexdump(r.buf);
+  document.getElementById("bar").style.width = Math.min(100, Math.round((changed + r.set) / (Object.keys(fields).length + 6) * 100 * 2)) + "%";
+  GROUPS.forEach(g => (g.paths || []).forEach(p => {
+    const i = PATH_IDS.indexOf(p.id);
+    const text = r.paths[i];
+    const problem = pathProblem(text);
+    const w = document.getElementById("w-" + p.id);
+    w.textContent = problem ? problem + " It will not be written." : "";
+    w.classList.toggle("on", !!problem);
+    pathRows[p.id].classList.toggle("bad", !!problem);
+    pathRows[p.id].classList.toggle("ok", !!text && !problem);
+    p.card.classList.toggle("changed", !!text && !problem);
+  }));
+  return r;
+}
+
+/* ---- Messages, downloads, loading -------------------------------------- */
+function setMsg(text, cls) {
+  const m = document.getElementById("msg");
+  m.textContent = "";
+  if (text) { m.append(icon(cls === "err" ? "alert" : "check"), document.createTextNode(text)); }
+  m.className = cls || "";
+}
+
+function download(name, bytes) {
+  const url = URL.createObjectURL(new Blob([bytes], { type: "application/octet-stream" }));
+  const a = el("a", { href: url, download: name });
+  document.body.append(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 2000);
+}
+
+document.getElementById("dl-cfg").addEventListener("click", () => {
+  const r = update();
+  const bad = r.paths.filter(p => pathProblem(p)).length;
+  if (bad) setMsg(bad + " path(s) have problems and were left out of the file.", "err");
+  else setMsg("PCAT286.CFG downloaded (512 bytes).", "ok");
+  download("PCAT286.CFG", r.buf);
+});
+document.getElementById("dl-cms").addEventListener("click", () => {
+  download("PCAT286.CMS", new Uint8Array(CFG_SIZE));
+  setMsg("Blank PCAT286.CMS downloaded (512 bytes of zeroes).", "ok");
+});
+
+function resetSettings() { for (const id in fields) fields[id].sel.value = "0"; }
+function resetForm() { resetSettings(); for (const id in pathInputs) pathInputs[id].value = ""; update(); }
+
+document.getElementById("reset").addEventListener("click", () => { resetForm(); setMsg("Everything is back to the defaults.", "ok"); });
+
+const presetBox = document.getElementById("presets");
+for (const p of PRESETS) {
+  const b = el("button", { type: "button", class: "preset" }, icon(p.icon),
+    el("span", {}, el("b", { text: p.title }), el("small", { text: p.note })));
+  b.addEventListener("click", () => {
+    resetSettings();
+    for (const id in p.set) fields[id].sel.value = String(p.set[id]);
+    update();
+    setMsg("\"" + p.title + "\" applied to the settings. The paths are untouched.", "ok");
+  });
+  presetBox.append(b);
+}
+
+document.getElementById("load").addEventListener("change", async ev => {
+  const file = ev.target.files[0];
+  ev.target.value = "";
+  if (!file) return;
+  const buf = new Uint8Array(await file.arrayBuffer());
+  if (buf.length < CFG_SIZE) { setMsg("That file is " + buf.length + " bytes; a PCAT286.CFG has 512.", "err"); return; }
+  const magic = String.fromCharCode(...buf.subarray(0, 4));
+  if (magic !== "PCAT") {
+    if (buf.every(b => b === 0)) { resetForm(); setMsg("Blank file (all zeroes): the form is back to the defaults.", "ok"); }
+    else setMsg("Not a PCAT286.CFG: it does not start with \"PCAT\".", "err");
+    return;
+  }
+  if (buf[4] !== 3) { setMsg("This file is version " + buf[4] + "; only version 3 can be edited here.", "err"); return; }
+  const dv = new DataView(buf.buffer, buf.byteOffset);
+  const sw = BigInt(dv.getUint32(8, true)) | (BigInt(dv.getUint32(12, true)) << 32n);
+  let extra = 0;
+  for (const id in fields) {
+    const f = fields[id];
+    const width = f.hi - f.lo + 1;
+    const v = Number((sw >> BigInt(f.lo)) & ((1n << BigInt(width)) - 1n));
+    if (v >= f.choices.length) {
+      extra++;
+      let o = Array.from(f.sel.options).find(x => x.dataset.custom);
+      if (!o) { o = el("option", { "data-custom": "1" }); f.sel.append(o); }
+      o.value = v; o.textContent = "Value " + v;
+    }
+    f.sel.value = String(v);
+  }
+  PATH_IDS.forEach((id, i) => {
+    let s = "";
+    for (let k = 0; k < PATH_SIZE - 1; k++) {
+      const c = buf[PATH_BASE + i * PATH_SIZE + k];
+      if (!c) break;
+      s += String.fromCharCode(c);
+    }
+    pathInputs[id].value = s;
+  });
+  update();
+  setMsg("Opened " + file.name + (extra ? " (" + extra + " field(s) hold values outside the OSD list)" : "") + ".", "ok");
+});
+
+/* ---- Chrome: icons in static markup, theme, nav highlight --------------- */
+const logo = document.getElementById("logo"); logo.append(icon("cpu"));
+setIcon(document.getElementById("h-get"), "file", "Your file");
+setIcon(document.getElementById("h-presets"), "star", "Quick starts");
+setIcon(document.getElementById("h-sum"), "info", "Summary");
+setIcon(document.getElementById("h-how"), "box", "Putting it on the card");
+setIcon(document.getElementById("dl-cfg"), "down", "Download PCAT286.CFG");
+setIcon(document.getElementById("dl-cms"), "down", "Download blank PCAT286.CMS");
+setIcon(document.getElementById("reset"), "undo", "Reset everything to defaults");
+
+const themeBtn = document.getElementById("theme");
+function applyTheme(t) {
+  if (t) document.documentElement.setAttribute("data-theme", t); else document.documentElement.removeAttribute("data-theme");
+  const dark = (t || (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light")) === "dark";
+  themeBtn.textContent = ""; themeBtn.append(icon(dark ? "sun" : "moon"));
+}
+let theme = null;
+applyTheme(theme);
+themeBtn.addEventListener("click", () => {
+  const dark = document.documentElement.getAttribute("data-theme") === "dark" ||
+    (!document.documentElement.hasAttribute("data-theme") && matchMedia("(prefers-color-scheme: dark)").matches);
+  theme = dark ? "light" : "dark"; applyTheme(theme);
+});
+
+const links = Array.from(nav.querySelectorAll("a"));
+const spy = new IntersectionObserver(entries => {
+  for (const e of entries) if (e.isIntersecting) {
+    links.forEach(a => a.classList.toggle("on", a.dataset.g === e.target.id.slice(2)));
+  }
+}, { rootMargin: "-30% 0px -60% 0px" });
+document.querySelectorAll("section.group").forEach(s => spy.observe(s));
+links[0].classList.add("on");
+
+update();
+</script>
+</body>
+</html>

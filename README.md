@@ -17,6 +17,10 @@ built-in audio. BIOS/DOS, Windows 3.1, OS/2 and games have been reported working
 on MiSTer. These observations do not imply complete chipset, protected-mode
 corner-case or historical timing certification; see [qualification limits](#qualification-limits).
 
+This branch also builds the machine for the ZXTRES+ (Xilinx Artix-7); its
+README, with the card layout, the OSD and the build, is
+[zxtres/README.md](zxtres/README.md).
+
 A detailed [technical report](https://spark2k06.github.io/PCAT-286_MiSTer/report/)
 (architecture, memory map, I/O, video, verification and FPGA timing; source in
 [docs/report](docs/report/CORE_REPORT.html)) complements this README, and the

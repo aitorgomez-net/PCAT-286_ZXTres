@@ -9,9 +9,9 @@ Evidence levels used below:
 
 - **Sim**: passes in the Verilator/GHDL board simulation in `sim/`.
 - **Built**: synthesizes and meets timing in Vivado.
-- **Board**: observed on a ZXTRES+. Nothing is at this level yet. The
-  CPU-only demo (`README.md`) is the first board test and has not been
-  reported back.
+- **Board**: observed on a ZXTRES+, with the date of the observation. Hard
+  disks, floppies, the CMOS file, the 480p video paths and the audio jack
+  have it; the rows that lack it say so.
 
 Figures marked *as of 15 October 2026* are the build recorded in PORT.md on
 that date. They change with every rebuild.
@@ -89,7 +89,8 @@ Xilinx notes list the keyboard as buggy. Floppy here is therefore new ground.
 
 ## 3. Current state
 
-Branch `zxtres-port`. Everything below is Sim or Built. None is Board.
+Branch `zxtres-port`. Each row below gives its evidence level; a row with no
+Board entry has not been observed on a board.
 
 ### 3.1 Built and simulated
 
@@ -121,16 +122,14 @@ prune the devices behind them. Re-measure after section 5.3 and section 5.4.
 
 ### 3.2 Present in RTL, not connected
 
-| Piece | State |
-| --- | --- |
-| Audio devices (OPL2, Sound Blaster, C/MS, Tandy, speaker) | Instantiated in the machine; `DAC_L/R` tied to 0; board pins `AUDIO_*`, `I2S_*` driven low |
+Nothing: the audio devices reach the jack (section 5.3) and the mouse reaches
+COM1 (section 3.1).
 
 ### 3.3 Not started
 
-DisplayPort, a video path a VGA monitor can lock to (section 4, finding F1),
-audio output, full RAM size choice, the remaining
-OSD settings, I/O timing constraints, return to the Spectrum core, any board
-test.
+DisplayPort, I/O timing constraints, return to the Spectrum core from the
+OSD. Board tests still to do: the mouse, the joysticks, the CPU speed
+profiles below MAX, and the 480i and 240p outputs on a TV.
 
 ## 4. Findings that change the plan
 
