@@ -104,6 +104,7 @@ Branch `zxtres-port`. Everything below is Sim or Built. None is Board.
 | CMOS kept in `PCAT286.CMS` on the card (folder `PCAT286`, or the root without it), restored before the BIOS runs, saved on change | Built, Sim | `rtl/zxtres_cmos_store.sv`, `sim/run_cmos_store_test.sh` |
 | Hard disks: the machine's own IDE device served through its management window by an RTL master, from fixed VHD images chosen in the OSD (any folder; the paths are kept in `PCAT286.CFG`) as `user_io` block devices 0 and 1 | Built, Sim (unit test against the real `ide.v`), Board (2026-10-27: owner reports it works; the second disk, write persistence and read speed were not recorded separately) | `rtl/zxtres_ide_store.sv`, `rtl/zxtres_sd_arb.sv`, `sim/run_ide_store_test.sh` |
 | Whole-board simulation: MR BIOS 1.65 with IBM EGA ROM reaches setup | Sim | `sim/run_bios_sim.sh` |
+| Serial mouse: the PS/2 mouse port (pins P4 and N5, the same as DeMiSTify's ZXTRES template, with pull-ups) to the machine's COM1 (3F8h, IRQ4) through `MSMouseWrapper`, which is a PS/2 host for the mouse (reset, stream mode) and relays Microsoft serial packets; the firmware's own PS/2 mouse code stays off (`config.h`) so the two never answer the same device. COM2 and MIDI have no pins on the board | Built, Sim (a model of a real PS/2 mouse completes the reset and stream handshake on the open-collector bus, and the movement and the RTS identification come out on the serial line), Board: not tested | `rtl/zxtres_pcat_top.sv`, `rtl/pcat286_zxtres_guest.sv`, `sim/run_mouse_test.sh` |
 | CPU speed profiles (MAX to 25 MHz), monitor type, display tint, joystick mode | Built (OSD entries present) | guest `CONF_STR` |
 
 Build figures *as of 15 October 2026*: 50 MHz closes with WNS +0.063 ns using
@@ -123,7 +124,6 @@ prune the devices behind them. Re-measure after section 5.3 and section 5.4.
 | Piece | State |
 | --- | --- |
 | Audio devices (OPL2, Sound Blaster, C/MS, Tandy, speaker) | Instantiated in the machine; `DAC_L/R` tied to 0; board pins `AUDIO_*`, `I2S_*` driven low |
-| Mouse | Serial mouse from the PS/2 port is wired (`MSMouseWrapper`); needs board test only |
 
 ### 3.3 Not started
 
@@ -560,7 +560,12 @@ decision to make with the converter, not a CRTC change.
 
 ### 5.6 Mouse, keyboard, joysticks (P1, S)
 
-- Board-test the PS/2 serial mouse path with CuteMouse (`/S14 /Y`).
+- Board-test the PS/2 serial mouse path with CuteMouse (`/S14 /Y`). The path
+  is complete in the design (section 3.1) and `sim/run_mouse_test.sh` checks
+  the PS/2 handshake and the serial packets against a model of a real mouse,
+  so what is left is a real mouse on the board. It must be a PS/2 mouse (a
+  USB one on a passive adapter works only if it speaks PS/2), plugged in
+  before the core starts or before a reset of the machine from the OSD.
 - Check keyboard behaviour with the OSD toggling; PCXT's port reports typing
   bugs on Xilinx.
 - Joysticks: DB9 pads reach the gameport in digital mode (F6). Map Mega Drive
