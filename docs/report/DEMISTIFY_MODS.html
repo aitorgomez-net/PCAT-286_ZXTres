@@ -1,0 +1,242 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Changes made to DeMiSTify for PCAT-286 on the ZXTRES+, and how other ZXTres projects can reuse them">
+  <title>PCAT-286 · DeMiSTify changes</title>
+  <style>
+    :root {
+      color-scheme: dark light;
+      --bg: #080b10; --panel: #131c28; --soft: #151e2b; --line: rgba(169,195,218,.22);
+      --text: #f0f5f8; --muted: #a8b7c5; --cyan: #55d6e8; --amber: #ffbf47;
+    }
+    @media (prefers-color-scheme: light) {
+      :root { --bg:#edf1f4; --panel:#fff; --soft:#f4f7f9; --line:rgba(28,49,67,.16);
+              --text:#12202b; --muted:#506575; --cyan:#0b8a9c; --amber:#b8780a; }
+    }
+    * { box-sizing: border-box; }
+    body { margin:0; background:var(--bg); color:var(--text);
+           font:16px/1.65 Inter, ui-sans-serif, system-ui, "Segoe UI", sans-serif; }
+    main { width:min(940px, calc(100% - 32px)); margin:0 auto; padding:48px 0 72px; }
+    a { color:var(--cyan); }
+    .kicker { margin:0 0 8px; color:var(--cyan); font:700 .78rem/1.2 "Cascadia Code",Consolas,monospace;
+              letter-spacing:.14em; text-transform:uppercase; }
+    h1 { margin:0 0 12px; font-size:clamp(2rem,6vw,3.2rem); line-height:1.08; letter-spacing:-.03em; }
+    h1 span { color:var(--amber); }
+    h2 { margin:44px 0 10px; padding-top:8px; font-size:1.5rem; border-top:1px solid var(--line); }
+    h3 { margin:26px 0 6px; font-size:1.1rem; color:var(--amber); }
+    p, li { color:var(--muted); }
+    strong { color:var(--text); }
+    code { padding:.1rem .32rem; border:1px solid var(--line); border-radius:6px; background:var(--soft);
+           font:.88em "Cascadia Code",Consolas,monospace; overflow-wrap:anywhere; }
+    pre { overflow-x:auto; margin:1rem 0; padding:1rem; border:1px solid var(--line);
+          border-radius:10px; background:var(--soft); line-height:1.5; }
+    pre code { padding:0; border:0; background:none; color:var(--text); }
+    table { width:100%; border-collapse:collapse; margin:1rem 0; font-size:.93rem; }
+    th, td { padding:8px 10px; border:1px solid var(--line); text-align:left; vertical-align:top; color:var(--muted); }
+    th { background:var(--panel); color:var(--text); }
+    .sw { display:inline-block; width:.9em; height:.9em; border-radius:3px; margin-right:6px;
+          vertical-align:-1px; border:1px solid var(--line); }
+    .note { padding:12px 16px; border:1px solid var(--line); border-left:4px solid var(--cyan);
+            border-radius:8px; background:var(--panel); }
+    nav ul { columns:2; padding-left:1.2rem; }
+    @media (max-width:640px) { nav ul { columns:1; } }
+  </style>
+</head>
+<body>
+<main>
+  <p class="kicker">ZXTRES+ · DeMiSTify</p>
+  <h1>DeMiSTify <span>changes</span></h1>
+  <p>
+    PCAT-286 runs on the stock <a href="https://github.com/robinsonb5/DeMiSTify">DeMiSTify</a>
+    controller (an EightThirtyTwo soft CPU that speaks the MiST SPI protocol), but it changes a
+    good part of it: a coloured character-grid on-screen display, a longer menu, more disk units,
+    a larger firmware ROM, keyboard handling and a configuration file. This page lists every
+    change, where it lives, and which parts another ZXTres project can take as is.
+    Nothing here is specific to the 80286: the PCAT-specific part is only the list of options in
+    the core's <code>CONF_STR</code> and the image names in <code>overrides.c</code>.
+  </p>
+
+  <nav class="note">
+    <strong>Contents</strong>
+    <ul>
+      <li><a href="#approach">How the changes are applied</a></li>
+      <li><a href="#files">What is where</a></li>
+      <li><a href="#osd-protocol">The OSD protocol</a></li>
+      <li><a href="#colours">Colours and icons</a></li>
+      <li><a href="#theme">Changing the theme</a></li>
+      <li><a href="#menu">Menu behaviour</a></li>
+      <li><a href="#keys">Keyboard</a></li>
+      <li><a href="#disks">Disk images, file selector, CFG file</a></li>
+      <li><a href="#config">Build configuration and ROM size</a></li>
+      <li><a href="#reuse">Reusing it in another core</a></li>
+    </ul>
+  </nav>
+
+  <h2 id="approach">How the changes are applied</h2>
+  <p>
+    DeMiSTify is not forked. It is a submodule, and <code>zxtres/scripts/build_firmware.sh</code>
+    builds the firmware in a staging directory under <code>build/zxtres-pcat/</code>:
+  </p>
+  <ol>
+    <li>copies <code>config.h</code>, <code>overrides.c</code>, <code>osd.c</code>, <code>font.c</code> and <code>overrides.mk</code> from <code>zxtres/firmware/</code> over the upstream ones;</li>
+    <li>patches <code>diskimg.c</code> with <code>sed</code> (unit mask, see <a href="#disks">disks</a>);</li>
+    <li>runs <code>zxtres/scripts/expand_demistify_osd.py</code>, which rewrites upstream <code>main.c</code>, <code>menu.c</code> and <code>osd.h</code> by exact string replacement. Every replacement asserts that it matches <strong>once</strong>, so a different upstream revision fails loudly instead of building a subtly different menu;</li>
+    <li>builds with the EightThirtyTwo toolchain and writes <code>controller_rom1_word.vhd</code>, <code>controller_rom2_word.vhd</code> and <code>controller.map</code>.</li>
+  </ol>
+  <p>
+    The patched upstream files are never committed: the repository holds only the replacement
+    files and the patch script, which makes updating DeMiSTify a matter of re-running the build
+    and fixing the replacements that no longer match.
+  </p>
+
+  <h2 id="files">What is where</h2>
+  <table>
+    <tr><th>File</th><th>Role</th><th>Reusable?</th></tr>
+    <tr><td><code>zxtres/firmware/osd.c</code></td><td>Replaces DeMiSTify's <code>osd.c</code>: sends rows of characters and colours instead of pixels.</td><td>Yes, as is</td></tr>
+    <tr><td><code>zxtres/firmware/font.c</code></td><td>Empty: the font is in the core.</td><td>Yes</td></tr>
+    <tr><td><code>zxtres/rtl/zxtres_osd.sv</code></td><td>Character-grid OSD in hardware: glyph ROM, palette, panel, bar, shadow, position.</td><td>Yes (pins <code>SPI_SS3</code> channel and video in/out)</td></tr>
+    <tr><td><code>zxtres/firmware/overrides.c</code></td><td>Menu look (icons, colours, value column, help lines), pages, file lines, CFG file, autoboot.</td><td>Mostly: the first half is generic, the image names and option numbers are PCAT</td></tr>
+    <tr><td><code>zxtres/scripts/expand_demistify_osd.py</code></td><td>Patches upstream <code>main.c</code>, <code>menu.c</code>, <code>osd.h</code> to call the hooks above.</td><td>Yes</td></tr>
+    <tr><td><code>zxtres/firmware/config.h</code></td><td>DeMiSTify feature switches.</td><td>Adapt</td></tr>
+    <tr><td><code>zxtres/demistify/demistify_config_pkg.vhd</code></td><td>Controller ROM sizes, joystick bits, buttons.</td><td>Adapt</td></tr>
+    <tr><td><code>zxtres/rtl/zxtres_ps2_key.sv</code></td><td>PS/2 set 2 to <code>ps2_key</code> events; keeps <kbd>Win</kbd>+<kbd>F12</kbd> away from the core.</td><td>Yes</td></tr>
+  </table>
+
+  <h2 id="osd-protocol">The OSD protocol</h2>
+  <p>
+    The stock MiST OSD receives a 1-bit pixel buffer on SPI channel SS3. That needs a large
+    register array in the FPGA (Vivado built it from about 17 thousand registers) and the
+    resulting text is small. This version keeps the same SPI channel and the same
+    enable/disable commands but sends <strong>characters</strong>; the core owns the font and
+    the palette.
+  </p>
+  <table>
+    <tr><th>Command</th><th>Meaning</th></tr>
+    <tr><td><code>0x20 | row</code></td><td>Write menu row 0-15. Payload: attribute byte (bit 0 inverse = selected row, bit 1 stipple = greyed), then one character code per column, then one colour byte per column. A row that stops short keeps the colours it had.</td></tr>
+    <tr><td><code>0x30</code></td><td>Write the info row, between title and menu (same payload).</td></tr>
+    <tr><td><code>0x31</code></td><td>Write the help row, below the menu.</td></tr>
+    <tr><td><code>0x40</code> / <code>0x41</code></td><td>Disable / enable the OSD.</td></tr>
+    <tr><td><code>0x50 | n</code></td><td>Box position: 0 centre, 1 top-left, 2 top-right, 3 bottom-left, 4 bottom-right.</td></tr>
+  </table>
+  <p>
+    In firmware this is <code>OsdWriteStart(row, inverse, stipple)</code>, <code>OsdPutChar(c)</code>,
+    <code>OsdWriteEnd()</code> and <code>OsdSetPosition(pos)</code> (<code>osd.c</code>).
+    The grid is 32 columns by 16 menu rows plus the two extra rows. Glyphs are 8 lines high and 6 dots wide
+    (8 on pictures under 300 lines, such as 15 kHz); at 31 kHz each line is doubled so the menu keeps the same
+    on-screen height. The panel is the picture at an eighth of its brightness with a blue tint, the selected
+    row is a blue bar with white text, and the box casts a shadow to the right and below.
+  </p>
+
+  <h2 id="colours">Colours and icons</h2>
+  <p>
+    Inside any string, a byte of <code>1</code>-<code>8</code> selects the colour of what follows and
+    <strong>takes no column</strong>. The palette lives in <code>zxtres_osd.sv</code> (6 bits per channel, scaled
+    to the output depth):
+  </p>
+  <table>
+    <tr><th>Code</th><th>Name</th><th>RGB (0-63)</th><th>Palette index</th></tr>
+    <tr><td>1</td><td><span class="sw" style="background:#0ff"></span>cyan</td><td>0, 63, 63</td><td>1</td></tr>
+    <tr><td>2</td><td><span class="sw" style="background:#ff0"></span>yellow</td><td>63, 63, 0</td><td>2</td></tr>
+    <tr><td>3</td><td><span class="sw" style="background:#40ff40"></span>green</td><td>16, 63, 16</td><td>3</td></tr>
+    <tr><td>4</td><td><span class="sw" style="background:#ff4040"></span>red</td><td>63, 16, 16</td><td>4</td></tr>
+    <tr><td>5</td><td><span class="sw" style="background:#ff9a00"></span>orange</td><td>63, 40, 0</td><td>5</td></tr>
+    <tr><td>6</td><td><span class="sw" style="background:#9a9aaa"></span>grey</td><td>40, 40, 44</td><td>6</td></tr>
+    <tr><td>7</td><td><span class="sw" style="background:#5f9aff"></span>light blue</td><td>24, 40, 63</td><td>7</td></tr>
+    <tr><td>8</td><td><span class="sw" style="background:#fff"></span>white</td><td>63, 63, 63</td><td>0</td></tr>
+  </table>
+  <p>The firmware names them <code>C_CYAN</code> to <code>C_WHITE</code>; code 8 maps to palette index 0, the other codes to themselves (3 bits per column are sent).</p>
+
+  <p>Codes <code>0x20-0x7F</code> are ASCII. Codes <code>0x80-0x92</code> are menu symbols drawn for this OSD:</p>
+  <table>
+    <tr><th>Code</th><th>Symbol</th><th>Code</th><th>Symbol</th><th>Code</th><th>Symbol</th></tr>
+    <tr><td>0x80</td><td>left arrow</td><td>0x88</td><td>rule</td><td>0x8F</td><td>gear</td></tr>
+    <tr><td>0x81</td><td>right arrow</td><td>0x89</td><td>floppy</td><td>0x90</td><td>info</td></tr>
+    <tr><td>0x84</td><td>check</td><td>0x8A</td><td>disk</td><td>0x91</td><td>folder</td></tr>
+    <tr><td>0x85</td><td>cross</td><td>0x8B</td><td>speaker</td><td>0x92</td><td>file</td></tr>
+    <tr><td>0x87</td><td>ellipsis</td><td>0x8C</td><td>monitor</td><td></td><td></td></tr>
+    <tr><td></td><td></td><td>0x8D</td><td>joystick</td><td></td><td></td></tr>
+  </table>
+  <p>
+    A menu label that starts with a code of <code>0x88</code> or more starts with an icon. Menu
+    columns: 0 icon or blank, 1-15 name, 16 left arrow on the row under the cursor, 17-30 value, then
+    the right arrow. The font is built by <code>zxtres/scripts/make_mem.py osdfont</code> from the
+    ASCII glyphs of <code>font0.hex</code> plus the symbol bitmaps.
+  </p>
+
+  <h2 id="theme">Changing the theme</h2>
+  <ul>
+    <li><strong>Palette</strong>: edit the <code>case (color3)</code> table in <code>zxtres_osd.sv</code>. No firmware change is needed, since the firmware only sends indices.</li>
+    <li><strong>Panel, bar, frame, shadow</strong>: the block that follows the palette (<code>bg_r/g/b</code>, <code>shadow3</code>, <code>frame3</code>, the bar colour) in the same file.</li>
+    <li><strong>Which rows get which colour</strong>: the <code>draw_*</code> functions and <code>Menu_DrawRow</code> in <code>overrides.c</code> (options, triggers, pages, images, rules, footer) and the text of the info and help lines in <code>Menu_DrawExtras</code>.</li>
+    <li><strong>Per-item colours</strong>: put <code>\001</code>-<code>\010</code> inside the <code>CONF_STR</code> label or in firmware strings.</li>
+    <li><strong>Glyphs</strong>: change the symbol bitmaps in <code>make_mem.py</code> and regenerate <code>osd_font.mem</code>.</li>
+    <li><strong>Size and grid</strong>: <code>OSD_ROWS</code>/<code>OSD_COLS</code> in the RTL and <code>OSDNLINE</code> and <code>OSDLINELEN</code> in the patched <code>osd.h</code> must agree.</li>
+  </ul>
+  <p class="note">
+    The core can also pick the box position at run time: the firmware stores it in status bits 11-13 (<code>OPT_POSITION</code>)
+    and sends <code>0x50 | pos</code> every time the menu is drawn.
+  </p>
+
+  <h2 id="menu">Menu behaviour</h2>
+  <p>All implemented by <code>expand_demistify_osd.py</code> and the hooks in <code>overrides.c</code> (<code>Menu_DrawRow</code>, <code>Menu_DrawExtras</code>, <code>Menu_AdjustRow</code>):</p>
+  <ul>
+    <li>16 menu rows (upstream has 8) with an info line and a help line; the help line changes with the row kind (option, trigger, page, file selector).</li>
+    <li><code>L,Title;</code> entries in <code>CONF_STR</code> draw a separator row with a title, and the cursor skips empty rows (<code>Menu_NextRow</code>).</li>
+    <li><kbd>Left</kbd>/<kbd>Right</kbd> change the option under the cursor (<code>Menu_AdjustRow</code>); <kbd>Enter</kbd> cycles forward.</li>
+    <li><kbd>Esc</kbd> backs out of a page, then closes the OSD (<code>osd_escape()</code>).</li>
+    <li>Key auto-repeat: 400 ms before the first repeat, then every 80 ms (<code>KEY_REPEATFIRST</code>, <code>KEY_REPEATRATE</code>).</li>
+    <li>The name of the mounted image follows a file-selector label (weak <code>imagename()</code> hook).</li>
+    <li>Pages: <strong>Confirm</strong> (27) before saving settings or loading defaults, <strong>Info</strong> (26), and <strong>Video info</strong> (25), which refreshes itself while shown from the signals <code>zxtres_vidinfo.sv</code> measures. The numbers are in the patch script, next to <code>MENUPAGE_*</code>.</li>
+    <li><code>CONFIG_AUTOCLOSE_OSD</code> closes the menu after an image is loaded.</li>
+  </ul>
+
+  <h2 id="keys">Keyboard</h2>
+  <ul>
+    <li><kbd>Win</kbd>+<kbd>F12</kbd> opens the OSD. Plain <kbd>F12</kbd> stays available to the core, as MiSTer's F12KEYMOD does. <code>zxtres_ps2_key.sv</code> drops an F12 pressed with a Windows key (and its release) so the core never sees it.</li>
+    <li>While the OSD is open the keyboard is hidden from the core (<code>osd_open</code>); when it closes the Windows keys count as up.</li>
+    <li>The module converts PS/2 set 2 bytes into MiSTer-style <code>ps2_key</code> events (bit 10 toggles per event, bit 9 make/break, bit 8 E0 prefix, bits 7:0 code) and swallows the Pause E1 sequence and keyboard replies (BAT, ACK, echo, resend).</li>
+  </ul>
+
+  <h2 id="disks">Disk images, file selector, CFG file</h2>
+  <ul>
+    <li><strong>Units</strong>: <code>CONFIG_DISKIMG_UNITS 5</code>, and the <code>sed</code> patch raises the <code>diskimg.c</code> unit mask from <code>0x03</code> to <code>0x07</code> (two hard disks, the CMOS file, two floppies; adapt the count to your core).</li>
+    <li><strong>File lines</strong>: <code>fileline()</code> draws icon, <code>NAME.EXT</code> and size in the right columns; names are 8.3 (FAT without LFN), so the selector rows hold 40 characters (<code>romfilenames[OSDNLINE-1][40]</code>).</li>
+    <li><strong>Settings file</strong>: <code>PCAT286.CFG</code> is a fixed 512-byte file (version 3) with status bits and 80-byte image paths, folders counted from the root. DeMiSTify's firmware cannot create files, so the file must already exist on the card (see <code>zxtres/README.md</code> for how it is made).</li>
+    <li><strong>Autoboot</strong>: <code>autoboot()</code> loads the ROM images from a named folder when the core starts.</li>
+    <li><code>CONFIG_FILEBOOKMARKS 16</code> is enabled in <code>config.h</code> (DeMiSTify's folder bookmarks for the file selector).</li>
+  </ul>
+
+  <h2 id="config">Build configuration and ROM size</h2>
+  <table>
+    <tr><th>Setting</th><th>Value</th><th>Why</th></tr>
+    <tr><td><code>CONFIG_STATUSWORD_64BIT</code></td><td>on</td><td>The core has more than 32 options; <code>statusword_get(shift, mask)</code> in <code>overrides.c</code> reads fields from the 64-bit word.</td></tr>
+    <tr><td><code>demistify_romspace / romsize1 / romsize2</code></td><td>15 / 14 / 13</td><td>The controller ROM grows from 16 to 24 KiB (two block RAMs of 16 and 8 KiB). The extra menu code does not fit in the default.</td></tr>
+    <tr><td><code>CONFIG_IDE</code></td><td>undefined</td><td>The core provides its own disk interface.</td></tr>
+    <tr><td><code>CONFIG_RTC</code>, <code>CONFIG_SETTINGS</code>, <code>PS2_MOUSE</code>, set-1 keyboard</td><td>undefined</td><td>Not needed; saves ROM.</td></tr>
+    <tr><td><code>CONFIG_EXTJOYSTICK</code></td><td>on</td><td>Extra joystick buttons are read through the controller.</td></tr>
+  </table>
+  <p>If your build fails with the ROM full, raise the three package constants together and check <code>controller.map</code>.</p>
+
+  <h2 id="reuse">Reusing it in another core</h2>
+  <ol>
+    <li>Copy <code>zxtres/firmware/{osd.c,font.c,overrides.mk}</code>, <code>zxtres/scripts/{expand_demistify_osd.py,build_firmware.sh,make_mem.py}</code> and <code>zxtres/rtl/zxtres_osd.sv</code>.</li>
+    <li>In your top level instantiate <code>zxtres_osd</code> between the core's video and the VGA output, with the controller's SS3 SPI lines and <code>FONT_FILE</code> pointing to the generated font memory (<code>make_mem.py osdfont</code>). Check <code>zxtres_pcat_top.sv</code> for the connections used here.</li>
+    <li>Start from <code>overrides.c</code>: keep the "look of the menu" section (colour/icon defines, <code>draw_*</code>, <code>Menu_DrawRow</code>, <code>Menu_AdjustRow</code>, <code>Menu_DrawExtras</code>, <code>fileline</code>) and replace the PCAT-specific parts: image names and slots, <code>OPT_CPU</code>, <code>OPT_RAM</code>, <code>OPT_MONITOR</code> (the options shown on the info line), CFG layout and <code>autoboot()</code>. If you do not want the info line, change <code>Menu_DrawExtras</code>.</li>
+    <li>Set your own <code>CONF_STR</code> using <code>L,Title;</code> separators and colour codes, and your own option numbers.</li>
+    <li>Adjust <code>config.h</code> and the ROM-size package to your feature set, then build firmware before the bitstream.</li>
+    <li>Pick a theme (<a href="#theme">above</a>): only <code>zxtres_osd.sv</code> and the font change for a pure re-skin.</li>
+  </ol>
+  <p class="note">
+    Licensing: <code>zxtres_osd.sv</code> derives from <code>mist-modules/osd.v</code> (Till Harbaum and others,
+    GPL v3 or later) and its glyphs from jtframe's <code>font0.hex</code> (Jose Tejada, GPL v3). DeMiSTify and
+    mist-modules keep their own licences; keep their notices when reusing these files.
+  </p>
+
+  <p><a href="../">Back to the documentation</a> ·
+     <a href="CORE_REPORT.html">Technical report</a> ·
+     <a href="https://github.com/aitorgomez-net/PCAT-286_ZXTres">Source</a></p>
+</main>
+</body>
+</html>
