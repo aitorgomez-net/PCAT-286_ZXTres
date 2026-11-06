@@ -1,6 +1,6 @@
 # PCAT-286 for ZXTRES+
 
-![PCAT-286 boot splash](splash/splash_vga_320x200.png)
+![PCAT-286 boot splash](../splash.jpg)
 
 PCAT-286 for the ZXTRES+ is an Intel 80286-compatible PC/AT for the board's
 Xilinx Artix-7 XC7A100T. The machine is the one of the MiSTer core: the
@@ -69,7 +69,7 @@ or in the root when there is no such folder.
 
 | File | What it is |
 | --- | --- |
-| `PCAT286.ROM` | The system BIOS, at most 32 KiB. The [BIOS Builder](https://spark2k06.github.io/PCAT-286_MiSTer/BIOS_Builder) prepares it, and the EGA ROM. |
+| `PCAT286.ROM` | The system BIOS, at most 32 KiB. The [BIOS Builder](https://aitorgomez-net.github.io/PCAT-286_ZXTres/BIOS_Builder) prepares it, and the EGA ROM. |
 | `EGA.ROM` | The EGA BIOS, at most 32 KiB. |
 | `PCAT286.CMS` | 512 bytes of zeroes, made once. The core fills it with the CMOS contents. |
 | `PCAT286.CFG` | 512 bytes of zeroes, made once. Written by *Save settings* in the OSD; zeroes mean default settings. |
@@ -176,7 +176,7 @@ Verilog. The main scripts in `sim/`:
 - [demo/README.md](demo/README.md) describes the CPU-only bring-up demo, the
   first board test of the SPK286 on this board.
 - The [main README](../README.md) and the
-  [technical report](https://spark2k06.github.io/PCAT-286_MiSTer/report/)
+  [technical report](https://aitorgomez-net.github.io/PCAT-286_ZXTres/report/)
   describe the machine.
 
 ## Credits and licenses

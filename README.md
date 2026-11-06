@@ -1,53 +1,58 @@
-# PCAT-286 for MiSTer FPGA
+# PCAT-286 for ZXTRES+
 
 ![PCAT-286 boot splash](splash.jpg)
 
-PCAT-286 is an Intel 80286-compatible PC/AT implementation for MiSTer, using
-[SPK286](https://github.com/spark2k06/SPK286) and an EGA video subsystem.
-The repository builds one machine profile, `PCAT-286`, for the DE10-Nano's
-Cyclone V `5CSEBA6U23I7`. The supplied configuration (`PCAT286_RAM_DDR3` in
-[config.tcl](config.tcl)) keeps the AT RAM in the DE10-Nano's own HPS DDR3, so
-no SDRAM module is needed; without that macro the AT RAM uses the MiSTer SDRAM
-expansion.
+PCAT-286 is an Intel 80286-compatible PC/AT implementation for the ZXTRES+,
+using [SPK286](https://github.com/spark2k06/SPK286) and an EGA video subsystem.
+It targets the board's Xilinx Artix-7 `XC7A100T-2` (FGG484) and is loaded from
+the microSD card as a `.ZX3` file with the NMI browser of the ZX Spectrum core,
+so it does not replace the installed cores. The AT RAM lives in the board's
+64 MiB SDRAM; the DeMiSTify controller provides the OSD and reads the card.
+The card layout, the OSD, the video outputs and the evidence level of each
+feature are in [zxtres/README.md](zxtres/README.md).
 
 The machine includes real and protected mode execution, a six-byte prefetch
 queue, 24-bit physical addressing, AT interrupt and DMA controllers, PIT,
 8042 keyboard, RTC/CMOS, floppy and IDE storage, serial mouse, joystick and
-built-in audio. BIOS/DOS, Windows 3.1, OS/2 and games have been reported working
-on MiSTer. These observations do not imply complete chipset, protected-mode
+built-in audio. BIOS boot and DOS have been observed on the ZXTRES+; the
+evidence level of each feature is listed in [zxtres/README.md](zxtres/README.md).
+These observations do not imply complete chipset, protected-mode
 corner-case or historical timing certification; see [qualification limits](#qualification-limits).
 
-This branch also builds the machine for the ZXTRES+ (Xilinx Artix-7); its
-README, with the card layout, the OSD and the build, is
-[zxtres/README.md](zxtres/README.md).
-
-A detailed [technical report](https://spark2k06.github.io/PCAT-286_MiSTer/report/)
+A detailed [technical report](https://aitorgomez-net.github.io/PCAT-286_ZXTres/report/)
 (architecture, memory map, I/O, video, verification and FPGA timing; source in
 [docs/report](docs/report/CORE_REPORT.html)) complements this README, and the
-[BIOS Builder](https://spark2k06.github.io/PCAT-286_MiSTer/BIOS_Builder) prepares
+[BIOS Builder](https://aitorgomez-net.github.io/PCAT-286_ZXTres/BIOS_Builder) prepares
 the firmware the core needs. Both are published at
-[spark2k06.github.io/PCAT-286_MiSTer](https://spark2k06.github.io/PCAT-286_MiSTer/).
+[aitorgomez-net.github.io/PCAT-286_ZXTres](https://aitorgomez-net.github.io/PCAT-286_ZXTres/).
 
 ## Build and first boot
 
-The checked-in project targets Quartus Prime Lite 17.0.2. Build from the
-repository root, with Cyclone V device support installed:
+The build needs Vivado 2025.2 (the part is `xc7a100tfgg484-2`), Python 3, and
+`nasm`, `gcc` and `make` for the controller firmware and the demo ROM (from
+WSL if the host is Windows). The DeMiSTify and `mist-modules` submodules must
+be checked out. Run the scripts from the repository root, from Git Bash on
+Windows or from Linux:
 
 ```sh
-quartus_sh --flow compile PCAT-286
+zxtres/scripts/build_firmware.sh    # EightThirtyTwo toolchain and controller firmware
+zxtres/scripts/build_pcat.sh        # Vivado, to a .ZX3 file
 ```
 
-The result is `output_files/PCAT-286.rbf`. The source manifests are
-[PCAT-286.qsf](PCAT-286.qsf), [files.qip](files.qip) and
-[spk286_integration.qip](rtl/spk286_integration/spk286_integration.qip);
-[SYSTEM.sdc](SYSTEM.sdc) supplies the machine timing constraints. Builds use
-only this checkout, including the vendored CPU and generated microcode.
+The result is `build/zxtres-pcat/vivado-pcat/PCAT286.ZX3`, next to the `.bit`
+file and the timing and utilization reports. `rtl/pcat286_zxtres_guest.sv` is
+generated from [PCAT-286.sv](PCAT-286.sv) by `scripts/make_guest.py`, which copies
+the machine blocks as they are and adds the board glue; `build_pcat.sh` checks
+that the committed file is not stale. Builds use only this checkout, including
+the vendored CPU and generated microcode. The board constraints are in
+[zxtres/constraints](zxtres/constraints); [SYSTEM.sdc](SYSTEM.sdc) carries the
+machine timing constraints of the shared sources.
 
-[config.tcl](config.tcl) enables Sound Blaster, OPL2, C/MS, Tandy audio and
-MIDI. The graphical boot splash is controlled by `SPK286_AT_BOOT_SPLASH`,
-which the supplied configuration enables; comment it out to omit the splash
-and its OSD option. Required-ROM detection and the preboot video raster remain
-active without that artwork.
+`build_pcat.sh` enables Sound Blaster, OPL2, C/MS and Tandy audio. The graphical
+boot splash is controlled by `SPK286_AT_BOOT_SPLASH`, which the script defines;
+remove it from the `defines` list to omit the splash and its OSD option.
+Required-ROM detection and the preboot video raster remain active without that
+artwork.
 
 The splash is a 320x200, 256-colour picture drawn by the VGA mode 13h raster,
 at the Native or 15 kHz rate the OSD selects for mode 13h. It fades in over
@@ -57,7 +62,8 @@ preloaded into the mode 13h framebuffer and its colours sit in a small palette
 table, so it needs no ROM of its own. Edit
 [SW/splash_vga_320x200.png](SW/splash_vga_320x200.png) (an indexed PNG) and
 run `SW/make_vga_splash_rom.py` (or its `.ps1` equivalent) to regenerate
-`rtl/video/splash_vga_320x200.hex` and `rtl/video/splash_vga_palette.hex`.
+`rtl/video/splash_vga_320x200.hex` and `rtl/video/splash_vga_palette.hex`;
+the ZXTRES+ copy of the picture is in [zxtres/splash](zxtres/splash).
 
 **F12** pauses the machine and scrolls the credits over the dimmed picture;
 F12 again resumes. The pause puts the CPU on HOLD and mutes the audio; the key
@@ -67,16 +73,23 @@ opens with **Win + F12**. The credits text is [credits/msg](credits/msg):
 build `credits/msg2hex.cc`, run it on that file and copy the resulting
 `msg.bin` to `rtl/common/msg.bin`.
 
-1. Copy the built RBF to the MiSTer SD card and load it. Build the two ROMs
-   with the [BIOS Builder](https://spark2k06.github.io/PCAT-286_MiSTer/BIOS_Builder)
-   (see [Firmware](#firmware)).
-2. Open the OSD with **Win + F12**. Select both ROMs under **System & BIOS**:
-   **PCAT BIOS** and **EGA BIOS**.
-3. Mount a bootable floppy image at **Floppy A:** or an IDE disk at **IDE 0-0**.
-   The OSD accepts IMG/IMA/VFD floppy images and VHD IDE images. Set BIOS disk
-   geometry and floppy types to match the mounted media.
-4. Select **Hardware → Installed RAM** and **Monitor**, then use
-   **Reset & apply settings**. F12 or Esc closes the open OSD.
+1. Copy `PCAT286.ZX3` to the microSD card, with `PCAT286.CMS` and
+   `PCAT286.CFG` (512 bytes of zeroes each) and the two ROMs, in a folder
+   `PCAT286` at the root. Build the ROMs with the
+   [BIOS Builder](https://aitorgomez-net.github.io/PCAT-286_ZXTres/BIOS_Builder)
+   (see [Firmware](#firmware)). In the ZX Spectrum core press F5 for the NMI
+   browser, select the file and load it; to go back to the Spectrum core, power
+   cycle the board.
+2. Open the OSD with **Win + F12**. Select both ROMs in the **BIOS** page (or
+   name them `PCAT286.ROM` and `EGA.ROM` so they load by themselves).
+3. Mount a bootable floppy image in drive A or a `VHD`/`IMG` hard disk image in
+   disk 0, from the main page. The OSD accepts IMG/IMA/VFD floppy images and
+   VHD/IMG hard disk images. Set BIOS disk geometry and floppy types to match
+   the mounted media.
+4. Select the installed RAM and the monitor, then **Reset**. F12 or Esc closes
+   the open OSD. *Save settings* keeps the choices in `PCAT286.CFG`; the
+   [configuration generator](zxtres/tools/pcat286_cfg_generator.html) writes that
+   file from a form.
 
 ### Firmware
 
@@ -95,7 +108,7 @@ ROM slot: the selected AT BIOS must support the standard AT IDE interface at
 `1F0h`/`3F6h`.
 
 The original IBM EGA BIOS and the system BIOS images are not supplied. The
-[BIOS Builder](https://spark2k06.github.io/PCAT-286_MiSTer/BIOS_Builder) (source:
+[BIOS Builder](https://aitorgomez-net.github.io/PCAT-286_ZXTres/BIOS_Builder) (source:
 [SW/ROMs/BIOS_Builder.html](SW/ROMs/BIOS_Builder.html), which also runs from a
 local copy) prepares both from reference downloads. It builds `ega_bios.rom`
 (the 16 KiB IBM 6277356 EGA ROM in CPU address order) and a 64 KiB PhoenixBIOS
@@ -113,12 +126,12 @@ replace a general-purpose PC/AT BIOS.
 flowchart LR
     CPU[SPK286 and timing profile] --> Bus[AT bus bridge]
     Bus --> Machine[Address decode and bus arbitration]
-    HPS[MiSTer HPS / ROM loader] --> Machine
-    Machine --> RAM[Read buffers / posted writes / SDRAM or DDR3]
+    Ctrl[DeMiSTify controller / ROM loader] --> Machine
+    Machine --> RAM[Read buffers / posted writes / SDRAM]
     Machine --> Chipset[PIC / DMA / PIT / 8042 / RTC]
     Machine --> Devices[Floppy / IDE / serial / audio]
     Machine --> Video[EGA / VGA extension]
-    Video --> Output[Native video / CRT conversion / scaler]
+    Video --> Output[Native video / CRT conversion / VGA output]
 ```
 
 SPK286 owns instructions, architectural state, segmentation, protection,
@@ -147,26 +160,19 @@ stalls, reset cancellation and repeated identical requests.
 CPU, bridge and RAM service run on a common 50 MHz clock. Code/data read
 buffers and a single-entry posted-write buffer reduce memory overhead while
 retaining write ordering, snooping and reset/drain rules. Peripheral clocks,
-video clocks and the MiSTer video/HPS clock crossings remain independent.
+video clocks and the video and controller clock crossings remain independent.
 PIT channel 1 supplies the emulated AT refresh request; physical SDRAM
 refresh is also maintained by its controller.
 
-With `PCAT286_RAM_DDR3` (set in `config.tcl`), `spk286_at_mister_ddram_owner`
-replaces the SDRAM owner below the same buffers. It reaches the AT RAM window
-of the HPS DDR3 through the DDRAM port it shares with the framebuffer. HPS
-DDR3 answers much later than SDRAM, so the owner keeps a 32 KiB direct-mapped
-cache of 32-byte lines in block RAM. Reads that hit are answered without
-leaving the 50 MHz domain, and a miss fetches its whole line in one burst.
-Writes go through to DDR3 via an in-order queue and update a cached line;
-they complete once queued. Every CPU, DMA and loader access passes through
-this owner, so the cache needs no snooping. The directed CheckIt workloads
-(`AT_RAM_DDR3=1 scripts/test_checkit_directed.sh`) take as many cycles as with
-SDRAM.
+On the ZXTRES+ the AT RAM sits in the board's 64 MiB SDRAM, behind the same
+buffers: `spk286_at_mister_sdram_owner` serves every CPU, DMA and loader access,
+so the machine above it does not depend on the memory behind it. The video
+scan converter uses the board's 2 MiB SRAM as its frame store.
 
 ## Memory map
 
 Addresses below are CPU-visible, before translation to the private backing RAM
-(DDR3 or SDRAM).
+(SDRAM).
 The EGA graphics controller selects its active aperture within the reserved
 `A0000h–BFFFFh` region. ROM writes are blocked during CPU execution.
 Unmapped reads return `FFh` per byte and unmapped writes have no effect.
@@ -203,10 +209,10 @@ EMS provides 128 pages of 16 KiB (2 MiB total), selected through
 UMB and the EMS facility have no OSD enable switch. DOS needs a compatible
 memory manager to expose them through DOS/EMS services.
 
-The EMS backing occupies backing-RAM `200000h–3FFFFFh` (in the DDR3 window or
-SDRAM alike); CPU RAM at and above 2 MiB is translated upward by 2 MiB to
+The EMS backing occupies backing-RAM `200000h–3FFFFFh` (in the board
+SDRAM); CPU RAM at and above 2 MiB is translated upward by 2 MiB to
 avoid aliasing it. The CPU BIOS alias is resolved before this backend boundary
-and must not be reapplied inside the read buffers or the DDR3/SDRAM owner. A20 masking exempts the high BIOS alias so
+and must not be reapplied inside the read buffers or the SDRAM owner. A20 masking exempts the high BIOS alias so
 reset fetches remain valid when A20 is disabled.
 
 ## I/O, interrupts and audio
@@ -248,12 +254,12 @@ Blaster overlap at `220h`, so **Audio 220h** selects one of them or disables
 both. OPL2 and Tandy have independent controls. MPU-401 is UART mode; an
 MT32-pi synthesizer is external hardware connected through USER I/O.
 
-The HPS keyboard path reconstructs AT make/break and extended sequences,
+The controller keyboard path (`user_io`) reconstructs AT make/break and extended sequences,
 including Print Screen, Pause and 101-key navigation. It follows the 8042
 translation setting and queues events while the output buffer is occupied.
-The MiSTer mouse is presented as a serial mouse on COM1. RTC time and CMOS
-snapshots are exchanged with MiSTer through the host management window
-`F400h–F47Fh`, separate from CPU I/O `70h/71h`.
+The PS/2 mouse is presented as a serial mouse on COM1. The CMOS contents
+are exchanged with the card file `PCAT286.CMS` through the host management window
+`F400h–F47Fh`, separate from CPU I/O `70h/71h`; the board has no real-time clock.
 
 The minimal DOS examples are [CONFIG.SYS](hdd/CONFIG.SYS) and
 [AUTOEXEC.BAT](hdd/AUTOEXEC.BAT). The latter expects CuteMouse at
@@ -329,7 +335,7 @@ mode 7/`0Fh`. Apply changes with reset so the EGA BIOS can read them during
 POST. The EGA dot clock follows Miscellaneous Output bit 2: approximately
 14.318181 MHz for 200-line modes and 16.257 MHz for 350-line/MDA modes.
 
-### Native, CRT and scaled output
+### Native, CRT and converted output
 
 200-line EGA/CGA-compatible modes produce approximately 15.7 kHz video.
 Native 350-line and MDA timings are approximately 21.8 and 18.4 kHz.
@@ -341,25 +347,16 @@ Native 350-line and MDA timings are approximately 21.8 and 18.4 kHz.
 | 480i 15 kHz | Complete 350-line picture split across interlaced fields |
 | 240p 15 kHz | Progressive raster, fitting 350 source lines into 224 visible lines |
 
-The conversions publish complete frames through DDR3. They do not change the
+The conversions store complete frames in the board SRAM. They do not change the
 CRTC, display-enable or retrace state seen by the guest. CRT offsets centre
-television output without moving native 350-line video or HDMI. CRT 25%/50%
+television output without moving native 350-line video. CRT 25%/50%
 scanline effects darken lines and do not independently change scan frequency.
 
-For a 31 kHz display, route the MiSTer scaler to the analogue output, for
-example with this core-specific `MiSTer.ini` section:
-
-```ini
-[PCAT-286]
-vga_scaler=1
-video_mode=6
-vsync_adjust=2
-```
-
-Leave **350-line CRT** on **Native** when using the scaler. If a display
-rejects the source-following refresh, use `vsync_adjust=1`. VGA 13h+ Native
-already supplies its own approximately 31.4 kHz raster; ordinary native EGA
-modes do not.
+The default **350-line CRT** output is *480p 31 kHz* (720x480 at 59.94 Hz),
+which a VGA monitor accepts; *Native* leaves the original rate for monitors that
+take it. VGA 13h+ Native already supplies its own approximately 31.4 kHz raster;
+ordinary native EGA modes do not, so the board doubles the 200-line modes to
+31.4 kHz unless *Scandoubler* is off for a 15 kHz TV.
 
 ### Optional VGA 13h+
 
@@ -400,8 +397,8 @@ all source rows. TV keeps the normal table and 640×240 rows, but samples
 every second row of 320×350 and 640×480; the high table's single-scanline
 score panel can consequently disappear. Keep the VGA output setting fixed
 while a table runs: the game's PIT raster calibration occurs when it loads.
-Its high table is a 70 Hz mode, so smooth 60 Hz HDMI presentation depends on
-the selected MiSTer refresh synchronization.
+Its high table is a 70 Hz mode, so a monitor must accept the 70 Hz signal to
+show it at its native rate; `TV 60Hz` outputs 60 Hz.
 
 While enabled, written DAC entries also affect EGA modes; untouched entries
 fall back to the EGA palette. To retain EGA-only device detection, omit the
@@ -412,13 +409,14 @@ of `1234h` to `0040:0072`; run the TSR again afterward.
 
 | Path | Responsibility |
 | --- | --- |
-| `PCAT-286.sv` | MiSTer top, OSD, clocks, reset and I/O wiring |
+| `PCAT-286.sv` | Machine top, clocks, reset and I/O wiring; the source of the generated ZXTRES+ guest |
+| `zxtres/` | ZXTRES+ port: top level, DeMiSTify controller firmware, OSD, SD stores, scan converter, constraints, scripts, simulation and documentation |
 | `rtl/spk286_integration/` | AT CPU wrapper, bridge, chipset, devices and memory owners |
 | `rtl/spk286_timing/` | Instruction scheduling and target handoff |
 | `vendor/spk286/` | Pinned CPU RTL, authoritative microcode, generators and CPU tests |
 | `rtl/video/` | EGA, bounded VGA extension and video testbenches |
 | `rtl/KFPC-XT/` | Retained KF8259, KF8254 (KF8253) and KFSDRAM components, plus the EGA VRAM front end, ROM-presence latch and F12 pause key |
-| `rtl/sound/`, `rtl/uart/`, `rtl/common/`, `sys/` | Audio, serial and MiSTer support |
+| `rtl/sound/`, `rtl/uart/`, `rtl/common/`, `sys/` | Audio, serial and platform support |
 | `sim/`, `tests/`, `scripts/` | Directed simulations, firmware and verification entrypoints |
 | `SW/`, `hdd/` | DOS utilities, the ROM builder (`SW/ROMs/BIOS_Builder.html`), splash artwork and boot examples |
 | `credits/` | Credits text (`msg`) and its `msg2hex` converter |
@@ -427,7 +425,7 @@ of `1234h` to `0040:0072`; run the TSR again afterward.
 Use Python 3.10+, Bash, Icarus Verilog, Verilator, make and a C++ build
 toolchain on Linux or WSL for the portable regression entrypoint. Machine
 tests also use NASM; timing/formal checks use Yosys. Additional GHDL, Docker
-and Quartus checks remain separate scripts with their own tool requirements.
+and Vivado checks remain separate scripts with their own tool requirements.
 
 ```sh
 python3 scripts/run_regression.py --list
@@ -461,7 +459,7 @@ The microcode sources are authoritative; do not hand-edit generated ROMs or
 reuse a different compiler version. From `vendor/spk286`, `make microcode`
 regenerates them and `make microcode-check` checks consistency. The current
 format uses 8-bit micro-operations, 10-bit addresses and 743 defined words;
-the synchronous M10K ROM stores a valid bit alongside each word. Preserve
+the synchronous block RAM ROM stores a valid bit alongside each word. Preserve
 the address/data alignment and invalid-entry checks when changing that path.
 Generated packages precede their RTL consumers in the source manifest.
 
@@ -533,18 +531,14 @@ tools measure aggregate work, not native CPU pins, exact cycles or IRQ latency.
 The following limits describe the retained implementation; cleanup of the
 repository does not resolve them or constitute a new full regression.
 
-- **FPGA timing (as of 17 October 2026):** the selected fit (fitter `SEED 4`,
-  DDR3 AT RAM, boot splash, F12 credits) meets setup, hold, recovery and
-  removal in all four speed/temperature corners. Worst slacks are global
-  setup +0.178 ns, HDMI scaler setup +0.236 ns, global hold +0.078 ns, CPU
-  setup/hold +1.091/+0.104 ns and the common 50 MHz domain +0.477/+0.104 ns.
-  Placed utilization is 32,029/41,910 ALMs (76%) and 465/553 M10K blocks.
-  These figures describe that dated fit, not every later rebuild: the HDMI
-  scaler paths depend on the seed, and on the same sources seed 2 missed
-  them by 0.003 ns.
+- **FPGA timing (as of 28 October 2026):** the Vivado 2025.2 build for the
+  ZXTRES+'s `XC7A100T-2`, with the sound devices in the netlist, closes the
+  50 MHz clock with a worst negative slack of +0.217 ns and uses 34,858 LUTs
+  (55%) and 95 block RAM tiles. These figures describe that dated build, not
+  every later rebuild; each one needs its own timing check.
 - **Current-source validation:** the latest CPU/timing increments have
   directed checks, but their complete current-source regression and a new
-  source-bound MiSTer candidate acceptance remain outstanding. An older
+  source-bound ZXTRES+ candidate acceptance remain outstanding. An older
   second MRBIOS restart fixture timed out with its cause unclassified;
   working MRBIOS reboots on hardware remain accepted observations. Four
   Landmark workloads also lacked their exact ROM inputs.
@@ -586,7 +580,7 @@ repository does not resolve them or constitute a new full regression.
 ## Sources, credits and licenses
 
 Machine integration and SPK286 work are by
-[@spark2k06](https://github.com/spark2k06). The machine baseline was imported
+[@spark2k06](https://github.com/aitorgomez-net/). The machine baseline was imported
 from [PCXT-EGA_MiSTer](https://github.com/MiSTer-devel/PCXT-EGA_MiSTer), commit
 `c6b4dc8107bade3f41d94599720bd82706331c4e`. The vendored CPU's current upstream
 identity and content manifest are in [upstream.json](vendor/spk286/upstream.json);

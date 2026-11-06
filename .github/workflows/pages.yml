@@ -1,7 +1,7 @@
 name: Publish documentation site
 
 # Publishes the documentation to GitHub Pages
-# (https://spark2k06.github.io/PCAT-286_MiSTer/):
+# (https://aitorgomez-net.github.io/PCAT-286_ZXTres/):
 #   /             docs/index.html
 #   /report/      docs/report/CORE_REPORT.html
 #   /<Name>/      every SW/ROMs/<Name>.html, e.g. /BIOS_Builder/
