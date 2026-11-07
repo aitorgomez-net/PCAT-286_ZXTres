@@ -3,7 +3,8 @@
 ![PCAT-286 boot splash](../splash.jpg)
 
 PCAT-286 for the ZXTRES+ is an Intel 80286-compatible PC/AT for the board's
-Xilinx Artix-7 XC7A100T. The machine is the one of the MiSTer core: the
+Xilinx Artix-7 XC7A100T. The machine is the one of the
+[MiSTer core](https://github.com/MiSTer-devel/PCAT-286_MiSTer): the
 [SPK286](https://github.com/spark2k06/SPK286) CPU, the AT interrupt, DMA and
 timer controllers, the 8042 keyboard controller, CMOS, floppy and IDE storage,
 a serial mouse, a gameport, an EGA video subsystem with the VGA 13h+
@@ -28,7 +29,7 @@ in Vivado. The dates are those of the observation in [SPEC.md](SPEC.md).
 
 | Feature | State |
 | --- | --- |
-| BIOS boot from `PCAT286.ROM` and `EGA.ROM` on the card, or any two BIOS files chosen in the OSD | Built, Sim |
+| BIOS boot from `PCAT286.ROM` and `EGA.ROM` on the card, or any two BIOS files chosen in the OSD | Board (27 October 2026): the BIOS boots DOS from the hard disk image |
 | Hard disks 0 and 1 from `VHD`/`IMG` images | Board (27 October 2026): DOS boots, the second disk is D:, files survive a power cycle. Read speed not recorded. |
 | Floppy drives A and B from `IMG`/`IMA`/`VFD` images, 160K to 2.88M, with write protect | Board (27 October 2026). Speed not recorded. |
 | CMOS kept in `PCAT286.CMS` on the card | Board (27 October 2026): the configuration survives a power cycle |
@@ -97,7 +98,8 @@ Connect a VGA monitor, or a 15 kHz TV through a suitable adapter. Plug the
 PS/2 mouse in before the core starts, or before a reset from the OSD, because
 the converter handshakes with it at that point.
 
-The `.ZX3` file is built from source, see below. No release is published.
+A ready-made `.ZX3` is in [releases](../releases), named after its date; the
+core can also be built from source, see below.
 
 ## Keys and the OSD
 
@@ -151,8 +153,8 @@ The result is `build/zxtres-pcat/vivado-pcat/PCAT286.ZX3`, next to the
 `.bit` file and the timing and utilization reports. The DeMiSTify and
 `mist-modules` submodules must be checked out.
 
-`rtl/pcat286_zxtres_guest.sv` is generated from `PCAT-286.sv` by
-`scripts/make_guest.py`, which copies the machine blocks as they are and adds
+`zxtres/rtl/pcat286_zxtres_guest.sv` is generated from `PCAT-286.sv` by
+`zxtres/scripts/make_guest.py`, which copies the machine blocks as they are and adds
 the board glue. `build_pcat.sh` checks that the committed file is not stale.
 
 ## Simulation
@@ -176,9 +178,18 @@ Verilog. The main scripts in `sim/`:
   [technical report](https://aitorgomez-net.github.io/PCAT-286_ZXTres/report/)
   describe the machine.
 
+## Reporting issues
+
+Report problems at
+[github.com/aitorgomez-net/PCAT-286_ZXTres/issues](https://github.com/aitorgomez-net/PCAT-286_ZXTres/issues);
+the F12 credits screen of the core gives the same address.
+
 ## Credits and licenses
 
-The ZXTRES+ port builds on [DeMiSTify](https://github.com/robinsonb5/DeMiSTify)
+Thanks to [Antonio Villena](https://antoniovillena.com/) for the ZXTRES+ board
+used in this port, also thanked in the F12 credits.
+
+The port builds on [DeMiSTify](https://github.com/robinsonb5/DeMiSTify)
 by Alastair M. Robinson, on the MiST core modules (`mist-modules`) and on the
 PCXT port to this board, which showed the way. The OSD font is from jtframe by
 Jose Tejada ([@jotego](https://github.com/jotego), GPL v3), by way of

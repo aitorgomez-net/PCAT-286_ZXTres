@@ -113,8 +113,11 @@ registers, 87.5 of 135 block RAM tiles.
 Reading of those figures: about 17k of the registers were the MiST `osd.v`
 buffer, which `zxtres_osd.sv` has since replaced (5.4): the build of
 25 October 2026 has 24.4k LUTs, 15.0k registers, 88.5 block RAM tiles and
-WNS +0.085 ns. The sound
-devices are probably missing from the count: the guest does not carry the
+WNS +0.085 ns. The build of
+7 November 2026, with the sound devices, the floppy, IDE and CMOS stores and
+the scan converter, has 35.9k LUTs, 20.7k registers, 101.5 block RAM tiles
+and WNS +0.164 ns, WHS +0.040 ns, with no critical warnings. The sound
+devices were probably missing from the count: the guest does not carry the
 audio mixer, so the machine's sound outputs are unconnected and Vivado can
 prune the devices behind them. Re-measure after section 5.3 and section 5.4.
 
@@ -565,8 +568,8 @@ decision to make with the converter, not a CRTC change.
 
 ### 5.7 CPU speed and timing closure (P2, M)
 
-- Hold the 50 MHz closure across rebuilds: the margin (+0.063 ns as of
-  15 October 2026) is thin, and the audio, floppy, IDE and scan converter
+- Hold the 50 MHz closure across rebuilds: the margin (+0.164 ns as of
+  7 November 2026) is thin, and the audio, floppy, IDE and scan converter
   all add logic. Keep the seed and directives in the build script and
   re-record timing after each work package.
 - Test every CPU speed profile on the board, not only MAX.

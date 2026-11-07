@@ -9,7 +9,12 @@ the microSD card as a `.ZX3` file with the NMI browser of the ZX Spectrum core,
 so it does not replace the installed cores. The AT RAM lives in the board's
 64 MiB SDRAM; the DeMiSTify controller provides the OSD and reads the card.
 The card layout, the OSD, the video outputs and the evidence level of each
-feature are in [zxtres/README.md](zxtres/README.md).
+feature are in [zxtres/README.md](zxtres/README.md). A ready-made `.ZX3` is in
+[releases](releases).
+
+The same machine runs on MiSTer as [PCAT-286_MiSTer](https://github.com/MiSTer-devel/PCAT-286_MiSTer).
+This repository keeps the machine sources both builds share, so a fix in the
+machine reaches both; only the logic around it is specific to the board.
 
 The machine includes real and protected mode execution, a six-byte prefetch
 queue, 24-bit physical addressing, AT interrupt and DMA controllers, PIT,
@@ -40,8 +45,8 @@ zxtres/scripts/build_pcat.sh        # Vivado, to a .ZX3 file
 ```
 
 The result is `build/zxtres-pcat/vivado-pcat/PCAT286.ZX3`, next to the `.bit`
-file and the timing and utilization reports. `rtl/pcat286_zxtres_guest.sv` is
-generated from [PCAT-286.sv](PCAT-286.sv) by `scripts/make_guest.py`, which copies
+file and the timing and utilization reports. `zxtres/rtl/pcat286_zxtres_guest.sv` is
+generated from [PCAT-286.sv](PCAT-286.sv) by `zxtres/scripts/make_guest.py`, which copies
 the machine blocks as they are and adds the board glue; `build_pcat.sh` checks
 that the committed file is not stale. Builds use only this checkout, including
 the vendored CPU and generated microcode. The board constraints are in
@@ -71,9 +76,11 @@ never reaches the AT keyboard, and other key presses are ignored while paused.
 F12 on the boot splash holds it with the credits until pressed again. The OSD
 opens with **Win + F12**. The credits text is [credits/msg](credits/msg):
 build `credits/msg2hex.cc`, run it on that file and copy the resulting
-`msg.bin` to `rtl/common/msg.bin`.
+`msg.bin` to `rtl/common/msg.bin` (MiSTer) and to `zxtres/credits/msg.bin`
+(ZXTRES+, whose copy carries its own subtitle; see [zxtres/credits](zxtres/credits)).
 
-1. Copy `PCAT286.ZX3` to the microSD card, with `PCAT286.CMS` and
+1. Copy `PCAT286.ZX3` (the file in [releases](releases), or the one you built)
+   to the microSD card, with `PCAT286.CMS` and
    `PCAT286.CFG` (512 bytes of zeroes each) and the two ROMs, in a folder
    `PCAT286` at the root. Build the ROMs with the
    [BIOS Builder](https://aitorgomez-net.github.io/PCAT-286_ZXTres/BIOS_Builder)
@@ -420,6 +427,7 @@ of `1234h` to `0040:0072`; run the TSR again afterward.
 | `sim/`, `tests/`, `scripts/` | Directed simulations, firmware and verification entrypoints |
 | `SW/`, `hdd/` | DOS utilities, the ROM builder (`SW/ROMs/BIOS_Builder.html`), splash artwork and boot examples |
 | `credits/` | Credits text (`msg`) and its `msg2hex` converter |
+| `PCAT-286.qpf`, `PCAT-286.qsf`, `files.qip`, `SYSTEM.sdc`, `config.tcl` | Quartus project of the MiSTer build. The ZXTRES+ build does not use the project, but reads the source list from `files.qip`, and the regression and audit scripts in `scripts/` use these files |
 | `docs/` | Technical report and the landing page of the GitHub Pages site |
 
 Use Python 3.10+, Bash, Icarus Verilog, Verilator, make and a C++ build
@@ -531,10 +539,10 @@ tools measure aggregate work, not native CPU pins, exact cycles or IRQ latency.
 The following limits describe the retained implementation; cleanup of the
 repository does not resolve them or constitute a new full regression.
 
-- **FPGA timing (as of 28 October 2026):** the Vivado 2025.2 build for the
+- **FPGA timing (as of 7 November 2026):** the Vivado 2025.2 build for the
   ZXTRES+'s `XC7A100T-2`, with the sound devices in the netlist, closes the
-  50 MHz clock with a worst negative slack of +0.217 ns and uses 34,858 LUTs
-  (55%) and 95 block RAM tiles. These figures describe that dated build, not
+  50 MHz clock with a worst negative slack of +0.164 ns and uses 35,880 LUTs
+  (57%) and 101.5 block RAM tiles. These figures describe that dated build, not
   every later rebuild; each one needs its own timing check.
 - **Current-source validation:** the latest CPU/timing increments have
   directed checks, but their complete current-source regression and a new
@@ -577,6 +585,15 @@ repository does not resolve them or constitute a new full regression.
   bus response must not be discarded by treating execution enable as a
   general clock gate.
 
+## Reporting issues
+
+Report problems with the ZXTRES+ core at
+[github.com/aitorgomez-net/PCAT-286_ZXTres/issues](https://github.com/aitorgomez-net/PCAT-286_ZXTres/issues).
+Problems of the MiSTer core go to
+[PCAT-286_MiSTer](https://github.com/MiSTer-devel/PCAT-286_MiSTer/issues). When
+the machine itself misbehaves, say which board you saw it on and which BIOS
+and software were running.
+
 ## Sources, credits and licenses
 
 Machine integration and SPK286 work are by
@@ -598,6 +615,8 @@ Gremlin. The full list of developers, testers and supporters is in
 The ZXTRES+ port's OSD font (`rtl/common/font0.hex`) comes from jtframe by
 Jose Tejada ([@jotego](https://github.com/jotego), GPL v3), by way of PCXT_MiSTer;
 the OSD around it adapts MiST's `osd.v` (Till Harbaum and others, GPL v3 or later).
+Thanks to [Antonio Villena](https://antoniovillena.com/) for the ZXTRES+ board
+used in the ZXTRES+ port, also thanked in the F12 credits.
 
 The inherited root [LICENSE](LICENSE) is GNU GPL version 3. Component-specific
 licenses, copyright headers and redistribution notices remain authoritative
