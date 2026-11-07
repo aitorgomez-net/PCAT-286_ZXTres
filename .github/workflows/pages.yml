@@ -3,13 +3,14 @@ name: Publish documentation site
 # Publishes the documentation to GitHub Pages
 # (https://aitorgomez-net.github.io/PCAT-286_ZXTres/):
 #   /             docs/index.html
-#   /report/      docs/report/CORE_REPORT.html
+#   /report/      docs/report/CORE_REPORT.html (and the other docs/report/*.html by name)
+#   /<name>/      every docs/*.html page except index.html, e.g. /pcat286_cfg_generator/
 #   /<Name>/      every SW/ROMs/<Name>.html, e.g. /BIOS_Builder/
 on:
   push:
     branches: [main]
     paths:
-      - docs/index.html
+      - docs/*.html
       - docs/report/*.html
       - SW/ROMs/*.html
       - .github/workflows/pages.yml
@@ -36,7 +37,14 @@ jobs:
         run: |
           mkdir -p _site/report
           cp docs/index.html _site/index.html
+          cp docs/report/*.html _site/report/
           cp docs/report/CORE_REPORT.html _site/report/index.html
+          for page in docs/*.html; do
+            name=$(basename "$page" .html)
+            [ "$name" = index ] && continue
+            mkdir "_site/$name"
+            cp "$page" "_site/$name/index.html"
+          done
           for page in SW/ROMs/*.html; do
             name=$(basename "$page" .html)
             mkdir "_site/$name"

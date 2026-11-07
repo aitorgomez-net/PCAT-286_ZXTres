@@ -75,8 +75,9 @@ or in the root when there is no such folder.
 | `PCAT286.CFG` | 512 bytes of zeroes, made once. Written by *Save settings* in the OSD; zeroes mean default settings. |
 | Disk and floppy images | Anywhere on the card, chosen in the OSD. Hard disks are `.VHD` or `.IMG`, floppies `.IMG`, `.IMA` or `.VFD`. |
 
-[tools/pcat286_cfg_generator.html](tools/pcat286_cfg_generator.html) is a
-stand-alone page that writes `PCAT286.CFG` (and a blank `PCAT286.CMS`) from a
+The [configuration generator](https://aitorgomez-net.github.io/PCAT-286_ZXTres/pcat286_cfg_generator/)
+(source: [docs/pcat286_cfg_generator.html](../docs/pcat286_cfg_generator.html), it also
+works offline) is a stand-alone page that writes `PCAT286.CFG` (and a blank `PCAT286.CMS`) from a
 form, with the purpose of each option, so the first start can already have the
 images and settings you want.
 
