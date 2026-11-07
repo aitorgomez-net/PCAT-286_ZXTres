@@ -1,9 +1,12 @@
-# PCAT-286 for ZXTRES+
+# PCAT-286 for ZXTRES+ and ZXTRES++
 
 ![PCAT-286 boot splash](../splash.jpg)
 
-PCAT-286 for the ZXTRES+ is an Intel 80286-compatible PC/AT for the board's
-Xilinx Artix-7 XC7A100T. The machine is the one of the
+PCAT-286 for the ZXTRES+ and ZXTRES++ is an Intel 80286-compatible PC/AT for
+the boards' Xilinx Artix-7: the XC7A100T of the ZXTRES+ and the XC7A200T of the
+ZXTRES++, which are otherwise the same board. There is one build for each FPGA,
+and a file for one does not load on the other. The plain ZXTRES, with a smaller
+FPGA, is not supported. The machine is the one of the
 [MiSTer core](https://github.com/MiSTer-devel/PCAT-286_MiSTer): the
 [SPK286](https://github.com/spark2k06/SPK286) CPU, the AT interrupt, DMA and
 timer controllers, the 8042 keyboard controller, CMOS, floppy and IDE storage,
@@ -23,7 +26,7 @@ otherwise.
 
 ## What works
 
-Evidence levels: **Board** means it was observed on a ZXTRES+, **Sim** means
+Evidence levels: **Board** means it was observed on a ZXTRES+ (no ZXTRES++ has run it yet), **Sim** means
 it passes in the board simulation in `sim/`, **Built** means it meets timing
 in Vivado. The dates are those of the observation in [SPEC.md](SPEC.md).
 
@@ -98,8 +101,9 @@ Connect a VGA monitor, or a 15 kHz TV through a suitable adapter. Plug the
 PS/2 mouse in before the core starts, or before a reset from the OSD, because
 the converter handshakes with it at that point.
 
-A ready-made `.ZX3` is in [releases](../releases), named after its date; the
-core can also be built from source, see below.
+A ready-made `.ZX3` is in [releases](../releases), named after its date, in
+`A100T-board` for the ZXTRES+ and `A200T-board` for the ZXTRES++; the core can
+also be built from source, see below.
 
 ## Keys and the OSD
 
@@ -139,17 +143,20 @@ the pins, so the menu looks the same in every mode.
 
 ## Building
 
-The build needs Vivado 2025.2 (the part is `xc7a100tfgg484-2`), Python 3, and
+The build needs Vivado 2025.2 (the part is `xc7a100tfgg484-2` for the ZXTRES+ and `xc7a200tfbg484-2` for the
+ZXTRES++), Python 3, and
 `nasm`, `gcc` and `make` for the controller firmware (from
 WSL if the host is Windows). Run the scripts from the repository root, from
 Git Bash on Windows or from Linux:
 
 ```sh
 zxtres/scripts/build_firmware.sh    # EightThirtyTwo toolchain and firmware
-zxtres/scripts/build_pcat.sh        # Vivado, to a .ZX3 file
+zxtres/scripts/build_pcat.sh        # Vivado, ZXTRES+ (A100T), to a .ZX3 file
+zxtres/scripts/build_pcat.sh A200T  # the same for the ZXTRES++
 ```
 
-The result is `build/zxtres-pcat/vivado-pcat/PCAT286.ZX3`, next to the
+The result is `build/zxtres-pcat/vivado-pcat/PCAT286.ZX3` (`vivado-pcat-a200t`
+for the ZXTRES++), next to the
 `.bit` file and the timing and utilization reports. The DeMiSTify and
 `mist-modules` submodules must be checked out.
 

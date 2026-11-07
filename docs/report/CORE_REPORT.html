@@ -2,7 +2,7 @@
 <html lang="en" data-theme="dark"><head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="description" content="Technical report for PCAT-286, an 80286 PC/AT implementation for the ZXTRES+ FPGA board">
+  <meta name="description" content="Technical report for PCAT-286, an 80286 PC/AT implementation for the ZXTRES+ and ZXTRES++ FPGA boards">
   <title>PCAT-286 · Technical report</title>
   <style>
     :root {
@@ -1469,7 +1469,7 @@
     <div class="hero-top">
       <div class="brand">
         <span class="pcat-mark" aria-hidden="true">286</span>
-        <span>PCAT-286 · ZXTRES+ core</span>
+        <span>PCAT-286 · ZXTRES+ / ZXTRES++ core</span>
       </div>
 
       <div class="hero-actions">
@@ -1480,10 +1480,10 @@
 
     <div class="hero-inner">
       <div>
-        <p class="hero-kicker">Technical report · PC/AT implementation for the ZXTRES+ FPGA board</p>
+        <p class="hero-kicker">Technical report · PC/AT implementation for the ZXTRES+ and ZXTRES++ FPGA boards</p>
         <h1>
           PCAT-286
-          <span>an 80286 PC/AT for the ZXTRES+</span>
+          <span>an 80286 PC/AT for the ZXTRES+ and ZXTRES++</span>
         </h1>
         <p class="hero-lead">
           A PC/AT-class machine built around the SPK286 80286 core: AT chipset,
@@ -1555,7 +1555,7 @@
           PCAT-286 is the machine that SPK286, a synthesizable 80286, plugs into:
           the AT bus bridge, memory, chipset, storage, audio and EGA video that
           turn the CPU into something a PC/AT BIOS can boot. The repository
-          builds one profile, <code>PCAT-286</code>, for the ZXTRES+.
+          builds one profile, <code>PCAT-286</code>, for the ZXTRES+ and, with its own run, the ZXTRES++ (<code>XC7A200T</code>).
         </p>
 
         <div class="summary-grid">
@@ -2464,7 +2464,8 @@ python3 scripts/run_regression.py --suite all</code></pre>
 
         <p class="section-intro">
           The project builds with Vivado 2025.2 for the ZXTRES+'s
-          <code>xc7a100tfgg484-2</code>. Builds use only this checkout, including
+          <code>xc7a100tfgg484-2</code>, and for the ZXTRES++'s <code>xc7a200tfbg484-2</code>
+          with <code>build_pcat.sh A200T</code>. Builds use only this checkout, including
           the vendored CPU and its generated microcode; the DeMiSTify and
           <code>mist-modules</code> submodules must be checked out.
         </p>
@@ -2573,7 +2574,7 @@ python3 scripts/run_regression.py --suite all</code></pre>
 
   <footer>
     <div class="footer-inner">
-      <span>PCAT-286 · Technical report · PC/AT 80286 machine for the ZXTRES+ FPGA board · snapshot of 7 November 2026</span>
+      <span>PCAT-286 · Technical report · PC/AT 80286 machine for the ZXTRES+ and ZXTRES++ FPGA boards · snapshot of 7 November 2026</span>
       <a class="footer-brand" href="https://aitorgomez.net" target="_blank" rel="noopener noreferrer">
         <span class="author-logo" aria-hidden="true"></span>
         <span>AITORGOMEZ.NET</span>

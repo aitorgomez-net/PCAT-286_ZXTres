@@ -1,16 +1,19 @@
-# PCAT-286 for ZXTRES+
+# PCAT-286 for ZXTRES+ and ZXTRES++
 
 ![PCAT-286 boot splash](splash.jpg)
 
-PCAT-286 is an Intel 80286-compatible PC/AT implementation for the ZXTRES+,
-using [SPK286](https://github.com/spark2k06/SPK286) and an EGA video subsystem.
-It targets the board's Xilinx Artix-7 `XC7A100T-2` (FGG484) and is loaded from
-the microSD card as a `.ZX3` file with the NMI browser of the ZX Spectrum core,
+PCAT-286 is an Intel 80286-compatible PC/AT implementation for the ZXTRES+ and
+ZXTRES++, using [SPK286](https://github.com/spark2k06/SPK286) and an EGA video subsystem.
+The two boards differ only in the FPGA, so there is one build for each: the
+ZXTRES+ has a Xilinx Artix-7 `XC7A100T-2` (FGG484) and the ZXTRES++ an
+`XC7A200T`. The plain ZXTRES, with a smaller FPGA, is not supported. The core
+is loaded from the microSD card as a `.ZX3` file with the NMI browser of the ZX Spectrum core,
 so it does not replace the installed cores. The AT RAM lives in the board's
 64 MiB SDRAM; the DeMiSTify controller provides the OSD and reads the card.
 The card layout, the OSD, the video outputs and the evidence level of each
 feature are in [zxtres/README.md](zxtres/README.md). A ready-made `.ZX3` is in
-[releases](releases).
+[releases](releases), in `A100T-board` for the ZXTRES+ and `A200T-board` for the
+ZXTRES++; a file for one board does not load on the other.
 
 The same machine runs on MiSTer as [PCAT-286_MiSTer](https://github.com/MiSTer-devel/PCAT-286_MiSTer).
 This repository keeps the machine sources both builds share, so a fix in the
@@ -19,7 +22,7 @@ machine reaches both; only the logic around it is specific to the board.
 The machine includes real and protected mode execution, a six-byte prefetch
 queue, 24-bit physical addressing, AT interrupt and DMA controllers, PIT,
 8042 keyboard, RTC/CMOS, floppy and IDE storage, serial mouse, joystick and
-built-in audio. BIOS boot and DOS have been observed on the ZXTRES+; the
+built-in audio. BIOS boot and DOS have been observed on a ZXTRES+; the
 evidence level of each feature is listed in [zxtres/README.md](zxtres/README.md).
 These observations do not imply complete chipset, protected-mode
 corner-case or historical timing certification; see [qualification limits](#qualification-limits).
@@ -33,7 +36,7 @@ the firmware the core needs. Both are published at
 
 ## Build and first boot
 
-The build needs Vivado 2025.2 (the part is `xc7a100tfgg484-2`), Python 3, and
+The build needs Vivado 2025.2 (the part is `xc7a100tfgg484-2`, or `xc7a200tfbg484-2` for the ZXTRES++), Python 3, and
 `nasm`, `gcc` and `make` for the controller firmware (from
 WSL if the host is Windows). The DeMiSTify and `mist-modules` submodules must
 be checked out. Run the scripts from the repository root, from Git Bash on
@@ -41,11 +44,12 @@ Windows or from Linux:
 
 ```sh
 zxtres/scripts/build_firmware.sh    # EightThirtyTwo toolchain and controller firmware
-zxtres/scripts/build_pcat.sh        # Vivado, to a .ZX3 file
+zxtres/scripts/build_pcat.sh        # Vivado, ZXTRES+ (A100T), to a .ZX3 file
+zxtres/scripts/build_pcat.sh A200T  # the same for the ZXTRES++
 ```
 
-The result is `build/zxtres-pcat/vivado-pcat/PCAT286.ZX3`, next to the `.bit`
-file and the timing and utilization reports. `zxtres/rtl/pcat286_zxtres_guest.sv` is
+The result is `build/zxtres-pcat/vivado-pcat/PCAT286.ZX3` (`vivado-pcat-a200t`
+for the ZXTRES++), next to the `.bit` file and the timing and utilization reports. `zxtres/rtl/pcat286_zxtres_guest.sv` is
 generated from [PCAT-286.sv](PCAT-286.sv) by `zxtres/scripts/make_guest.py`, which copies
 the machine blocks as they are and adds the board glue; `build_pcat.sh` checks
 that the committed file is not stale. Builds use only this checkout, including
@@ -77,9 +81,9 @@ F12 on the boot splash holds it with the credits until pressed again. The OSD
 opens with **Win + F12**. The credits text is [credits/msg](credits/msg):
 build `credits/msg2hex.cc`, run it on that file and copy the resulting
 `msg.bin` to `rtl/common/msg.bin` (MiSTer) and to `zxtres/credits/msg.bin`
-(ZXTRES+, whose copy carries its own subtitle; see [zxtres/credits](zxtres/credits)).
+(ZXTRES, whose copy carries its own subtitle; see [zxtres/credits](zxtres/credits)).
 
-1. Copy `PCAT286.ZX3` (the file in [releases](releases), or the one you built)
+1. Copy `PCAT286.ZX3` (the file in [releases](releases) for your board, or the one you built)
    to the microSD card, with `PCAT286.CMS` and
    `PCAT286.CFG` (512 bytes of zeroes each) and the two ROMs, in a folder
    `PCAT286` at the root. Build the ROMs with the
@@ -171,7 +175,7 @@ video clocks and the video and controller clock crossings remain independent.
 PIT channel 1 supplies the emulated AT refresh request; physical SDRAM
 refresh is also maintained by its controller.
 
-On the ZXTRES+ the AT RAM sits in the board's 64 MiB SDRAM, behind the same
+On the ZXTRES+ and ZXTRES++ the AT RAM sits in the board's 64 MiB SDRAM, behind the same
 buffers: `spk286_at_mister_sdram_owner` serves every CPU, DMA and loader access,
 so the machine above it does not depend on the memory behind it. The video
 scan converter uses the board's 2 MiB SRAM as its frame store.
@@ -543,7 +547,10 @@ repository does not resolve them or constitute a new full regression.
   ZXTRES+'s `XC7A100T-2`, with the sound devices in the netlist, closes the
   50 MHz clock with a worst negative slack of +0.164 ns and uses 35,880 LUTs
   (57%) and 101.5 block RAM tiles. These figures describe that dated build, not
-  every later rebuild; each one needs its own timing check.
+  every later rebuild; each one needs its own timing check. The ZXTRES++ build
+  (`XC7A200T-2`, 8 November 2026) closes the same clock with a worst negative
+  slack of +0.277 ns and uses 36,016 LUTs (27%) and 101.5 block RAM tiles; it
+  has not been run on a board.
 - **Current-source validation:** the latest CPU/timing increments have
   directed checks, but their complete current-source regression and a new
   source-bound ZXTRES+ candidate acceptance remain outstanding. An older

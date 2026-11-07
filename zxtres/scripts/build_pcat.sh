@@ -1,21 +1,31 @@
 #!/usr/bin/env bash
-# Build the PCAT-286 ZXTRES+ target (DeMiSTify) with Vivado and convert it
-# to a .ZX3 core.
+# Build the PCAT-286 ZXTRES target (DeMiSTify) with Vivado and convert it to
+# a .ZX3 core. One design serves the ZXTRES+ and ZXTRES++ boards, which differ
+# only in the FPGA, so there is one build per FPGA:
 #
-#   zxtres/scripts/build_pcat.sh
+#   zxtres/scripts/build_pcat.sh [A100T|A200T]
+#
+#   A100T  ZXTRES+  (xc7a100tfgg484-2), the default
+#            output build/zxtres-pcat/vivado-pcat/PCAT286.ZX3
+#   A200T  ZXTRES++ (xc7a200tfbg484-2)
+#            output build/zxtres-pcat/vivado-pcat-a200t/PCAT286.ZX3
 #
 # The PC/AT machine is zxtres/rtl/pcat286_zxtres_guest.sv, generated from
 # PCAT-286.sv. Runs from Git Bash on Windows or from Linux. Needs python3 and
 # Vivado (VIVADO, else vivado on PATH, else D:\AMD\2025.2), and nasm, gcc and
-# make for the controller firmware, on PATH or in WSL.
-# Output: build/zxtres-pcat/vivado-pcat/PCAT286.ZX3, the .bit file and the
-# reports.
+# make for the controller firmware, on PATH or in WSL. The .bit file and the
+# timing and utilization reports are next to the .ZX3.
 set -euo pipefail
 
 root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
-part=xc7a100tfgg484-2
+board=${1:-A100T}
+case "${board^^}" in
+  A100T) part=xc7a100tfgg484-2; dir=vivado-pcat ;;
+  A200T) part=xc7a200tfbg484-2; dir=vivado-pcat-a200t ;;
+  *) echo "usage: build_pcat.sh [A100T|A200T]" >&2; exit 1 ;;
+esac
 top=zxtres_pcat_top
-out="$root/build/zxtres-pcat/vivado-pcat"
+out="$root/build/zxtres-pcat/$dir"
 
 if [[ -z "${VIVADO:-}" ]]; then
   for candidate in "$(command -v vivado 2>/dev/null || true)" \

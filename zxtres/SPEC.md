@@ -1,4 +1,4 @@
-# PCAT-286 on the ZXTRES+: specification
+# PCAT-286 on the ZXTRES+ and ZXTRES++: specification
 
 This file states what the ZXTRES+ port of PCAT-286 must do, what exists
 today, and what is left to develop.
@@ -16,7 +16,8 @@ change with every rebuild.
 
 ## 1. Goal and scope
 
-Run the PC/AT machine of the MiSTer core on the ZXTRES+ (Artix-7 XC7A100T)
+Run the PC/AT machine of the MiSTer core on the ZXTRES+ (Artix-7 XC7A100T) and
+the ZXTRES++ (XC7A200T, the same board with a larger FPGA, built separately)
 with the same RTL for the machine, so that a fix in one build reaches the
 other. Only the glue around the machine is board specific. The port is
 delivered as a `.ZX3` core loaded from the microSD card, using DeMiSTify for
@@ -39,11 +40,11 @@ Out of scope on this board (no hardware or no equivalent service):
 
 ## 2. Platform
 
-### 2.1 ZXTRES+ resources
+### 2.1 ZXTRES+ and ZXTRES++ resources
 
 | Resource | Value |
 | --- | --- |
-| FPGA | Xilinx Artix-7 XC7A100T-2, FGG484: about 63k LUTs and 4.9 Mbit (135 RAMB36) of block RAM |
+| FPGA | ZXTRES+: Xilinx Artix-7 XC7A100T-2, FGG484: about 63k LUTs and 4.9 Mbit (135 RAMB36) of block RAM. ZXTRES++: XC7A200T: 133,800 LUTs, 365 block RAM tiles; builds and closes timing (WNS +0.277 ns, 8 November 2026), not run on a board yet |
 | Memory | 64 MiB SDRAM (16 bit), 2 MiB asynchronous SRAM |
 | Storage | microSD (SPI mode), 32 MB SPI flash holding the installed cores |
 | Video | 8-bit-per-channel DAC on the VGA connector; DisplayPort through a GTP transceiver |
@@ -437,7 +438,7 @@ before that the sim had Tandy compiled out). Not tried with a game.
 - **Credits (Built, Sim)**: the MiSTer core's F12 credits, `jtframe_credits`
   scrolling the text over the dimmed picture, placed ahead of the line
   doubler and the scan converter so both paths carry it. The text is
-  `zxtres/credits/msg`, the MiSTer one with "ZXTRES+" in the subtitle and a
+  `zxtres/credits/msg`, the MiSTer one with "ZXTRES" in the subtitle and a
   line for DeMiSTify and MiST; `msg.bin` is made from it by
   `credits/msg2hex.cc` (fed without carriage returns) and cut to its first
   8192 lines, the size of the four-page text memory (Verilator rejects more).
