@@ -37,7 +37,7 @@ in Vivado. The dates are those of the observation in [SPEC.md](SPEC.md).
 | Video: 480i and 240p at 15.7 kHz for a TV, CRT H and V offsets | Built, Sim. Not verified on a TV. |
 | Audio on the 3.5 mm jack (sigma-delta and I2S): speaker, OPL2, Sound Blaster, C/MS, Tandy | Board (28 October 2026). The source tried was not recorded. |
 | PS/2 keyboard, with the OSD opened and closed | Built, Sim |
-| PS/2 mouse as a Microsoft serial mouse on COM1 (3F8h, IRQ4) | Built, Sim. Not tested on a board. |
+| PS/2 mouse as a Microsoft serial mouse on COM1 (3F8h, IRQ4) | Board (November 2026). |
 | DB9 joysticks on the gameport (digital mode) | Built. Not tested on a board. |
 | Installed RAM 1, 2, 4, 8 or 16 MB in the board SDRAM | Built, Sim |
 | CPU speed profiles, MAX to 25 MHz (MAX runs at 50 MHz and closes timing) | Built. Only MAX was run on a board. |
@@ -138,7 +138,7 @@ the pins, so the menu looks the same in every mode.
 ## Building
 
 The build needs Vivado 2025.2 (the part is `xc7a100tfgg484-2`), Python 3, and
-`nasm`, `gcc` and `make` for the controller firmware and the demo ROM (from
+`nasm`, `gcc` and `make` for the controller firmware (from
 WSL if the host is Windows). Run the scripts from the repository root, from
 Git Bash on Windows or from Linux:
 
@@ -172,10 +172,6 @@ Verilog. The main scripts in `sim/`:
 
 - [SPEC.md](SPEC.md) states what the port must do, what is done at each
   evidence level and what remains.
-- [PORT.md](PORT.md) records how the port was built and what each milestone
-  verified.
-- [demo/README.md](demo/README.md) describes the CPU-only bring-up demo, the
-  first board test of the SPK286 on this board.
 - The [main README](../README.md) and the
   [technical report](https://aitorgomez-net.github.io/PCAT-286_ZXTres/report/)
   describe the machine.

@@ -66,7 +66,33 @@ cp zxtres/splash/splash_vga_320x200.hex zxtres/credits/msg.bin "$out/"
 python3 zxtres/scripts/make_mem.py osdfont rtl/common/font0.hex "$out/osd_font.mem"
 
 ghdl_flags=(--std=08 -frelaxed -fsynopsys --workdir="$out/ghdl")
-mapfile -t controller < <(sed -n '/^vhdl=(/,/^)/p' zxtres/sim/run_board_sim.sh | sed '1d;$d' | sed 's/^ *//')
+# The DeMiSTify controller (VHDL), converted to Verilog by GHDL. GHDL fixes each
+# generic at its default, which is what zxtres_pcat_top uses.
+controller=(
+  zxtres/demistify/demistify_config_pkg.vhd
+  DeMiSTify/EightThirtyTwo/RTL/eightthirtytwo_pkg.vhd
+  DeMiSTify/EightThirtyTwo/RTL/eightthirtytwo_shifter.vhd
+  DeMiSTify/EightThirtyTwo/RTL/eightthirtytwo_alu.vhd
+  DeMiSTify/EightThirtyTwo/RTL/eightthirtytwo_aligner.vhd
+  DeMiSTify/EightThirtyTwo/RTL/eightthirtytwo_aligner_le.vhd
+  DeMiSTify/EightThirtyTwo/RTL/eightthirtytwo_decode.vhd
+  DeMiSTify/EightThirtyTwo/RTL/eightthirtytwo_fetchloadstore.vhd
+  DeMiSTify/EightThirtyTwo/RTL/eightthirtytwo_hazard.vhd
+  DeMiSTify/EightThirtyTwo/RTL/eightthirtytwo_debug.vhd
+  DeMiSTify/EightThirtyTwo/RTL/eightthirtytwo_cpu.vhd
+  DeMiSTify/controller/simple_uart.vhd
+  DeMiSTify/controller/jtag_uart.vhd
+  zxtres/sim/debug_bridge_jtag_stub.vhd
+  DeMiSTify/controller/io_ps2_com.vhd
+  DeMiSTify/controller/interrupt_controller.vhd
+  DeMiSTify/controller/timer_controller.vhd
+  DeMiSTify/controller/spi_controller.vhd
+  build/zxtres-pcat/firmware/controller_rom1_word.vhd
+  build/zxtres-pcat/firmware/controller_rom2_word.vhd
+  DeMiSTify/firmware/controller_rom.vhd
+  DeMiSTify/controller/substitute_mcu.vhd
+  DeMiSTify/templates/demistify/common/joystick_sega.vhd
+)
 mapfile -t uart < <(python3 zxtres/scripts/pcat_sources.py vhdl)
 for source in "${controller[@]}" "${uart[@]}"; do
   ghdl -a "${ghdl_flags[@]}" "$source" 2>&1 | grep -v ":warning:" | grep -v "^\s" || true

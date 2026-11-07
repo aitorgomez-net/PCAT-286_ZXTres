@@ -81,7 +81,7 @@ module zxtres_pcat_tb;
     endtask
 
     // ------------------------------------------------------------------
-    // VGA capture, as in zxtres_demo_tb: VSYNC falls at the start of line
+    // VGA capture: VSYNC falls at the start of line
     // 490, so dot t after it is line (490 + t / 800) % 525, column t % 800.
     logic vs_q = 1'b1;
     logic clk_pix;

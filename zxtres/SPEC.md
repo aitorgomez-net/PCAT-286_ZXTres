@@ -1,9 +1,7 @@
 # PCAT-286 on the ZXTRES+: specification
 
 This file states what the ZXTRES+ port of PCAT-286 must do, what exists
-today, and what is left to develop. It is a companion to
-[PORT.md](PORT.md), which records how the port was built and what each
-milestone verified.
+today, and what is left to develop.
 
 Evidence levels used below:
 
@@ -13,8 +11,8 @@ Evidence levels used below:
   disks, floppies, the CMOS file, the 480p video paths and the audio jack
   have it; the rows that lack it say so.
 
-Figures marked *as of 15 October 2026* are the build recorded in PORT.md on
-that date. They change with every rebuild.
+Figures marked *as of 15 October 2026* are the build of that date. They
+change with every rebuild.
 
 ## 1. Goal and scope
 
@@ -105,7 +103,7 @@ Board entry has not been observed on a board.
 | CMOS kept in `PCAT286.CMS` on the card (folder `PCAT286`, or the root without it), restored before the BIOS runs, saved on change | Built, Sim | `rtl/zxtres_cmos_store.sv`, `sim/run_cmos_store_test.sh` |
 | Hard disks: the machine's own IDE device served through its management window by an RTL master, from fixed VHD images chosen in the OSD (any folder; the paths are kept in `PCAT286.CFG`) as `user_io` block devices 0 and 1 | Built, Sim (unit test against the real `ide.v`), Board (2026-10-27: owner reports it works; the second disk, write persistence and read speed were not recorded separately) | `rtl/zxtres_ide_store.sv`, `rtl/zxtres_sd_arb.sv`, `sim/run_ide_store_test.sh` |
 | Whole-board simulation: MR BIOS 1.65 with IBM EGA ROM reaches setup | Sim | `sim/run_bios_sim.sh` |
-| Serial mouse: the PS/2 mouse port (pins P4 and N5, the same as DeMiSTify's ZXTRES template, with pull-ups) to the machine's COM1 (3F8h, IRQ4) through `MSMouseWrapper`, which is a PS/2 host for the mouse (reset, stream mode) and relays Microsoft serial packets; the firmware's own PS/2 mouse code stays off (`config.h`) so the two never answer the same device. COM2 and MIDI have no pins on the board | Built, Sim (a model of a real PS/2 mouse completes the reset and stream handshake on the open-collector bus, and the movement and the RTS identification come out on the serial line), Board: not tested | `rtl/zxtres_pcat_top.sv`, `rtl/pcat286_zxtres_guest.sv`, `sim/run_mouse_test.sh` |
+| Serial mouse: the PS/2 mouse port (pins P4 and N5, the same as DeMiSTify's ZXTRES template, with pull-ups) to the machine's COM1 (3F8h, IRQ4) through `MSMouseWrapper`, which is a PS/2 host for the mouse (reset, stream mode) and relays Microsoft serial packets; the firmware's own PS/2 mouse code stays off (`config.h`) so the two never answer the same device. COM2 and MIDI have no pins on the board | Built, Sim (a model of a real PS/2 mouse completes the reset and stream handshake on the open-collector bus, and the movement and the RTS identification come out on the serial line), Board (November 2026): works | `rtl/zxtres_pcat_top.sv`, `rtl/pcat286_zxtres_guest.sv`, `sim/run_mouse_test.sh` |
 | CPU speed profiles (MAX to 25 MHz), monitor type, display tint, joystick mode | Built (OSD entries present) | guest `CONF_STR` |
 
 Build figures *as of 15 October 2026*: 50 MHz closes with WNS +0.063 ns using
@@ -128,7 +126,7 @@ COM1 (section 3.1).
 ### 3.3 Not started
 
 DisplayPort, I/O timing constraints, return to the Spectrum core from the
-OSD. Board tests still to do: the mouse, the joysticks, the CPU speed
+OSD. Board tests still to do: the joysticks, the CPU speed
 profiles below MAX, and the 480i and 240p outputs on a TV.
 
 ## 4. Findings that change the plan
@@ -141,10 +139,8 @@ and MDA modes at about 21.8 and 18.4 kHz. Only the VGA 13h+ profiles
 (31.4 kHz) are VGA rates. Most VGA monitors will not lock to the others.
 Stage 1 (5.5) since doubles the 200-line modes to 31.4 kHz; the 350-line and
 MDA ones stay native until stage 2.
-PORT.md's mapping table used to say VGA at 31 kHz shows those modes natively;
-that was wrong for EGA modes and has been corrected. The comment in the guest that calls the
-5153/CGA monitor profile "31 kHz-capable" looks inconsistent with this: that
-profile is the 15.7 kHz one.
+The comment in the guest that calls the 5153/CGA monitor profile
+"31 kHz-capable" looks inconsistent with this: that profile is the 15.7 kHz one.
 
 **F2. The stock `zx3w` frame store does not fit with the machine.** The A100T
 wrapper keeps a 640x240 frame at 18 bits per pixel in block RAM: about 75
@@ -157,10 +153,10 @@ RAMB36 at 640x240 packed six pixels per word, about 37 at 640x350.
 
 **F3. IDE service mismatch.** DeMiSTify's IDE service speaks to the MiST `ide`
 module. The AT machine uses the AO486 `ide.v`, served on MiSTer by the HPS
-through the management window (F0xx IDE, F2xx floppy, F4xx RTC). PORT.md
-milestone 3 assumes the MiST module replaces it. That changes device
-behaviour the MiSTer core is verified against, and the MiST module is proven
-in the PCXT port with the XT-IDE BIOS, not with AT BIOSes. See 5.1.
+through the management window (F0xx IDE, F2xx floppy, F4xx RTC). Replacing
+it with the MiST module would change device behaviour the MiSTer core is
+verified against, and that module is proven in the PCXT port with the XT-IDE
+BIOS, not with AT BIOSes. The port keeps the AO486 `ide.v`. See 5.1.
 
 **F4. Block-device slots (resolved).** `user_io` takes any number of units
 (`SD_IMAGES`; its `drive_sel` is four bits wide), but DeMiSTify's
@@ -193,15 +189,13 @@ rough size (S under a week, M one to three weeks, L more) and is an estimate.
 
 ### 5.0 First board bring-up (P0, S)
 
-- Load `SPK286DEMO.ZX3`, then the skeleton guest (`build_pcat.sh skeleton`),
-  then the PC/AT guest. Each step answers one question: does the board and
-  clock work, does the controller reach the core, does the machine boot.
-- Add the missing I/O constraints: `set_input_delay`/`set_output_delay` for
-  SDRAM and the per-crossing constraints of `SYSTEM.sdc` instead of blanket
-  asynchronous clock groups (PORT.md, milestone 2 to-do).
-- Pass condition: BIOS POST text and setup on a monitor, ROMs loaded from a
-  real card, CMOS saved across power cycles, keyboard working with the OSD
-  open and closed.
+Done: the PC/AT guest boots on the board (BIOS POST and setup on a monitor,
+ROMs loaded from a card, CMOS saved across power cycles; see section 3.1 for
+the dates).
+
+- Still open: the I/O constraints. Add `set_input_delay`/`set_output_delay`
+  for SDRAM and the per-crossing constraints of `SYSTEM.sdc` instead of
+  blanket asynchronous clock groups.
 
 ### 5.1 Hard disks (P0, M)
 
@@ -559,12 +553,11 @@ decision to make with the converter, not a CRTC change.
 
 ### 5.6 Mouse, keyboard, joysticks (P1, S)
 
-- Board-test the PS/2 serial mouse path with CuteMouse (`/S14 /Y`). The path
-  is complete in the design (section 3.1) and `sim/run_mouse_test.sh` checks
-  the PS/2 handshake and the serial packets against a model of a real mouse,
-  so what is left is a real mouse on the board. It must be a PS/2 mouse (a
-  USB one on a passive adapter works only if it speaks PS/2), plugged in
-  before the core starts or before a reset of the machine from the OSD.
+- The PS/2 serial mouse path is board-tested (November 2026, section 3.1)
+  and `sim/run_mouse_test.sh` checks the PS/2 handshake and the serial
+  packets against a model of a real mouse. It must be a PS/2 mouse (a USB
+  one on a passive adapter works only if it speaks PS/2), plugged in before
+  the core starts or before a reset of the machine from the OSD.
 - Check keyboard behaviour with the OSD toggling; PCXT's port reports typing
   bugs on Xilinx.
 - Joysticks: DB9 pads reach the gameport in digital mode (F6). Map Mega Drive
@@ -613,7 +606,7 @@ and 5.3. Floppy images and DisplayPort follow.
   (`scripts/run_regression.py`) and are copied verbatim; any change to them
   must keep the MiSTer build unchanged and pass the same suites.
 - Board glue is verified by `sim/run_bios_sim.sh` (whole board with a real
-  BIOS), `sim/run_cmos_store_test.sh` and `sim/run_board_sim.sh`. Each new
+  BIOS), and `sim/run_cmos_store_test.sh`. Each new
   guest module gets a testbench of the same kind: the hard disk and floppy
   masters against the SD card model, the scan converter against captured
   rasters.

@@ -29,7 +29,7 @@ the firmware the core needs. Both are published at
 ## Build and first boot
 
 The build needs Vivado 2025.2 (the part is `xc7a100tfgg484-2`), Python 3, and
-`nasm`, `gcc` and `make` for the controller firmware and the demo ROM (from
+`nasm`, `gcc` and `make` for the controller firmware (from
 WSL if the host is Windows). The DeMiSTify and `mist-modules` submodules must
 be checked out. Run the scripts from the repository root, from Git Bash on
 Windows or from Linux:

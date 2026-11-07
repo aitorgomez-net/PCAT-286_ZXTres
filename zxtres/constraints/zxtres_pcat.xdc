@@ -273,14 +273,13 @@ create_generated_clock -name spiclk -source [get_ports CLOCK_50] -divide_by 4   
 
 # The MiST modules, at_cdc_snapshot and the dual-clock text memory carry
 # every crossing between these clocks.
-# The two video clocks come from one MMCM (u_mmcm in the skeleton guest,
-# u_video_mmcm in the PC/AT guest) and stay synchronous to each other.
+# The two video clocks come from one MMCM (u_video_mmcm in the guest) and stay
+# synchronous to each other.
 set video_clocks [get_clocks -of_objects [get_pins -hierarchical -filter {NAME =~ guest/u_mmcm/CLKOUT* || NAME =~ guest/u_video_mmcm/CLKOUT*}]]
 set_clock_groups -asynchronous -group [get_clocks clk50] -group [get_clocks spiclk] -group $video_clocks
-# The 27 MHz clock of the scan converter's output (u_scan_mmcm, PC/AT guest
-# only) is asynchronous to the others: its line store and two toggles cross.
+# The 27 MHz clock of the scan converter's output (u_scan_mmcm) is asynchronous
+# to the others: its line store and two toggles cross.
 set scan_clocks [get_clocks -quiet -of_objects [get_pins -quiet -hierarchical -filter {NAME =~ guest/u_scan_mmcm/CLKOUT*}]]
-# (XDC has no "if": with -quiet the commands are no-ops in the skeleton.)
 set_false_path -quiet -from $scan_clocks -to [get_clocks -quiet {clk50 spiclk}]
 set_false_path -quiet -from [get_clocks -quiet {clk50 spiclk}] -to $scan_clocks
 set_false_path -quiet -from $scan_clocks -to $video_clocks

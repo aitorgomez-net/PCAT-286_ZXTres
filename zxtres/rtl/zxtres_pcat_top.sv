@@ -102,29 +102,6 @@ module zxtres_pcat_top (
     logic spi_clk, spi_toguest, spi_ss2, spi_ss3, spi_ss4, conf_data0;
     wire  spi_fromguest;
     logic [15:0] dac_l, dac_r;
-    // ZXTRES_SKELETON selects the MiST-interface test guest (zxtres_skeleton_guest)
-    // instead of the PC/AT machine.
-`ifdef ZXTRES_SKELETON
-    assign guest_ps2m_clk_out = 1'b1;
-    assign guest_ps2m_dat_out = 1'b1;
-    assign SRAM_A  = '0;                 // the skeleton leaves the SRAM idle
-    assign SRAM_Q  = 16'hzzzz;
-    assign SRAM_WE = 1'b1;
-    assign SRAM_OE = 1'b1;
-    assign SRAM_UB = 1'b0;
-    assign SRAM_LB = 1'b0;
-    zxtres_skeleton_guest guest (
-        .CLOCK_50(clk50), .RESET_N(reset_n), .LED(act_led),
-        .SDRAM_A(SDRAM_A), .SDRAM_DQ(SDRAM_DQ), .SDRAM_DQML(SDRAM_DQML), .SDRAM_DQMH(SDRAM_DQMH),
-        .SDRAM_nWE(SDRAM_nWE), .SDRAM_nCAS(SDRAM_nCAS), .SDRAM_nRAS(SDRAM_nRAS),
-        .SDRAM_nCS(SDRAM_nCS), .SDRAM_BA(SDRAM_BA), .SDRAM_CLK(SDRAM_CLK), .SDRAM_CKE(SDRAM_CKE),
-        .SPI_DO(spi_fromguest), .SPI_DI(spi_toguest), .SPI_SCK(spi_clk),
-        .SPI_SS2(spi_ss2), .SPI_SS3(spi_ss3), .SPI_SS4(spi_ss4), .CONF_DATA0(conf_data0),
-        .VGA_R(VGA_R), .VGA_G(VGA_G), .VGA_B(VGA_B), .VGA_HS(VGA_HS), .VGA_VS(VGA_VS),
-        .PS2K_CLK_IN(PS2_KEYBOARD_CLK || intercept), .PS2K_DAT_IN(PS2_KEYBOARD_DAT),
-        .DAC_L(dac_l), .DAC_R(dac_r)
-    );
-`else
     pcat286_zxtres_guest guest (
         .CLOCK_50(clk50), .RESET_N(reset_n), .LED(act_led),
         .SDRAM_A(SDRAM_A), .SDRAM_DQ(SDRAM_DQ), .SDRAM_DQML(SDRAM_DQML), .SDRAM_DQMH(SDRAM_DQMH),
@@ -141,7 +118,6 @@ module zxtres_pcat_top (
         .PS2M_CLK_OUT(guest_ps2m_clk_out), .PS2M_DAT_OUT(guest_ps2m_dat_out),
         .DAC_L(dac_l), .DAC_R(dac_r)
     );
-`endif
 
     // DeMiSTify controller; SD_SCK is the shared SPI clock.
     /* verilator lint_off PINCONNECTEMPTY */
@@ -164,8 +140,7 @@ module zxtres_pcat_top (
     assign SD_SCK = spi_clk;
 
     // The 3.5 mm output is sigma-delta, the board's DAC takes I2S; both from
-    // the guest's signed 16-bit audio on the 50 MHz clock. (The skeleton and
-    // demo guests drive zero.)
+    // the guest's signed 16-bit audio on the 50 MHz clock.
     sigma_delta_codec u_sigma_delta (
         .clk(clk50), .audio_l(dac_l), .audio_r(dac_r),
         .sd_audio_l(AUDIO_L), .sd_audio_r(AUDIO_R)
