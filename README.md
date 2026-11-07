@@ -88,7 +88,7 @@ build `credits/msg2hex.cc`, run it on that file and copy the resulting
    the mounted media.
 4. Select the installed RAM and the monitor, then **Reset**. F12 or Esc closes
    the open OSD. *Save settings* keeps the choices in `PCAT286.CFG`; the
-   [configuration generator](https://aitorgomez-net.github.io/PCAT-286_ZXTres/pcat286_cfg_generator/) writes that
+   [configuration generator](https://aitorgomez-net.github.io/PCAT-286_ZXTres/CFG_Generator/) writes that
    file from a form.
 
 ### Firmware

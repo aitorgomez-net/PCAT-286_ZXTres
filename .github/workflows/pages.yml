@@ -4,7 +4,7 @@ name: Publish documentation site
 # (https://aitorgomez-net.github.io/PCAT-286_ZXTres/):
 #   /             docs/index.html
 #   /report/      docs/report/CORE_REPORT.html (and the other docs/report/*.html by name)
-#   /<name>/      every docs/*.html page except index.html, e.g. /pcat286_cfg_generator/
+#   /<name>/      every docs/*.html page except index.html, e.g. /CFG_Generator/
 #   /<Name>/      every SW/ROMs/<Name>.html, e.g. /BIOS_Builder/
 on:
   push:
