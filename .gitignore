@@ -51,3 +51,6 @@ __pycache__/
 *.vvp
 *.vcd
 *.fst
+
+# Vivado projects created by zxtres/vivado/create_project_*.tcl
+/zxtres/vivado/project-*/

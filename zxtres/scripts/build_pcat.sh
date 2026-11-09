@@ -10,9 +10,9 @@
 #   A200T  ZXTRES++ (xc7a200tfbg484-2)
 #            output build/zxtres-pcat/vivado-pcat-a200t/PCAT286.ZX3
 #
-# With "project" it stops before synthesis and creates a Vivado project
-# (build/zxtres-pcat/<dir>-project/project/pcat286_zxtres.xpr) on the
-# repository's own sources, to open in the Vivado IDE.
+# With "project" it only regenerates zxtres/vivado/create_project*.tcl (and the
+# generated files they use), the scripts that create the Vivado project; they
+# run inside Vivado on any host (see zxtres/vivado). Commit the result.
 #
 # The PC/AT machine is zxtres/rtl/pcat286_zxtres_guest.sv, generated from
 # PCAT-286.sv. Runs from Git Bash on Windows or from Linux. Needs python3 and
@@ -141,16 +141,21 @@ for source in "${sv[@]}"; do
   fi
 done > "$out/sv_sources.txt"
 printf '%s\n' src "${include_dirs[@]/#/src/}" > "$out/include_dirs.txt" 2>/dev/null || echo src > "$out/include_dirs.txt"
-cp zxtres/constraints/zxtres_pcat.xdc zxtres/scripts/build_pcat.tcl zxtres/scripts/make_project.tcl "$out/"
+cp zxtres/constraints/zxtres_pcat.xdc zxtres/scripts/build_pcat.tcl "$out/"
 git -C "$root" rev-parse HEAD > "$out/source-revision.txt"
 git -C "$root" status --short > "$out/source-status.txt"
 
-cd "$out"
-if [[ "$mode" == project ]]; then
-  "$VIVADO" -mode batch -log project.log -journal project.jou -source make_project.tcl     -tclargs "$part" "$top" "${defines[@]}" > console.log 2>&1     || { grep -E '^(ERROR|CRITICAL WARNING)' project.log | head -30 >&2; exit 1; }
-  grep '^project:' console.log
-  exit 0
+# Every run rewrites the Tcl scripts that create the Vivado project (and the
+# generated files they need) in zxtres/vivado, so they always match these
+# sources; when a build changes them, they are left to be committed.
+python3 "$root/zxtres/scripts/make_vivado_tcl.py" "$out" xc7a100tfgg484-2 xc7a200tfbg484-2 "${defines[@]}"
+if ! git -C "$root" diff --quiet -- zxtres/vivado 2>/dev/null \
+   || [[ -n "$(git -C "$root" ls-files -o --exclude-standard zxtres/vivado 2>/dev/null)" ]]; then
+  echo "NOTE: zxtres/vivado changed: commit it with the rest of this change" >&2
 fi
+
+cd "$out"
+[[ "$mode" == project ]] && exit 0
 "$VIVADO" -mode batch -log vivado.log -journal vivado.jou -source build_pcat.tcl \
   -tclargs "$part" "$top" "${defines[@]}" > console.log 2>&1 \
   || { grep -E '^(ERROR|CRITICAL WARNING)' vivado.log | head -30 >&2; exit 1; }

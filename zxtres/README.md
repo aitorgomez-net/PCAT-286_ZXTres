@@ -160,13 +160,19 @@ for the ZXTRES++), next to the
 `.bit` file and the timing and utilization reports. The DeMiSTify and
 `mist-modules` submodules must be checked out.
 
-To work in the Vivado IDE, `zxtres/scripts/build_pcat.sh A100T project` (or
-`A200T`) stops before synthesis and creates a project at
-`build/zxtres-pcat/vivado-pcat-project/project/pcat286_zxtres.xpr`, on the
-repository's own sources, with the same defines, constraints and run
-directives. Open it with File > Open Project. A finished build can also be
-inspected through `post_route.dcp` (File > Open Checkpoint). The `.ZX3` to
-distribute still comes from the batch build.
+To work in the Vivado IDE, no bash, WSL or Python is needed: in Vivado, on
+any host, run `source <repository>/zxtres/vivado/create_project_A100T.tcl`
+(ZXTRES+) or `create_project_A200T.tcl` (ZXTRES++), from the Tcl console or
+with Tools > Run Tcl Script. It creates and opens the project in
+`zxtres/vivado/project-A100T` (or `-A200T`), on the repository's own sources,
+with the same defines, constraints and run directives as the batch build. The
+files the build generates (controller ROMs, OSD font memory) are committed in
+`zxtres/vivado/generated`. Every run of `zxtres/scripts/build_pcat.sh` (or
+`build_pcat.sh A100T project`, which does only this, with no Vivado run)
+regenerates the scripts, so they are never stale; commit them when git shows
+them changed. A finished build can also be inspected through `post_route.dcp`
+(File > Open Checkpoint). The `.ZX3` to distribute still comes from the batch
+build.
 
 `zxtres/rtl/pcat286_zxtres_guest.sv` is generated from `PCAT-286.sv` by
 `zxtres/scripts/make_guest.py`, which copies the machine blocks as they are and adds

@@ -46,8 +46,12 @@ Windows or from Linux:
 zxtres/scripts/build_firmware.sh    # EightThirtyTwo toolchain and controller firmware
 zxtres/scripts/build_pcat.sh        # Vivado, ZXTRES+ (A100T), to a .ZX3 file
 zxtres/scripts/build_pcat.sh A200T  # the same for the ZXTRES++
-zxtres/scripts/build_pcat.sh A100T project  # a Vivado project to open in the IDE
+zxtres/scripts/build_pcat.sh A100T project  # only refresh zxtres/vivado/create_project_*.tcl (every build does too)
 ```
+
+To open the design in the Vivado IDE, run `source zxtres/vivado/create_project_A100T.tcl`
+(or `_A200T`) in the Vivado Tcl console, on any host: it creates the project
+without bash, WSL or Python.
 
 The result is `build/zxtres-pcat/vivado-pcat/PCAT286.ZX3` (`vivado-pcat-a200t`
 for the ZXTRES++), next to the `.bit` file and the timing and utilization reports. `zxtres/rtl/pcat286_zxtres_guest.sv` is
