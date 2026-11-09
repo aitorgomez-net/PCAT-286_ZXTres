@@ -46,6 +46,7 @@ Windows or from Linux:
 zxtres/scripts/build_firmware.sh    # EightThirtyTwo toolchain and controller firmware
 zxtres/scripts/build_pcat.sh        # Vivado, ZXTRES+ (A100T), to a .ZX3 file
 zxtres/scripts/build_pcat.sh A200T  # the same for the ZXTRES++
+zxtres/scripts/build_pcat.sh A100T project  # a Vivado project to open in the IDE
 ```
 
 The result is `build/zxtres-pcat/vivado-pcat/PCAT286.ZX3` (`vivado-pcat-a200t`

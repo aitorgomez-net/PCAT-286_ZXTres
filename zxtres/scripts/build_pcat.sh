@@ -3,12 +3,16 @@
 # a .ZX3 core. One design serves the ZXTRES+ and ZXTRES++ boards, which differ
 # only in the FPGA, so there is one build per FPGA:
 #
-#   zxtres/scripts/build_pcat.sh [A100T|A200T]
+#   zxtres/scripts/build_pcat.sh [A100T|A200T] [project]
 #
 #   A100T  ZXTRES+  (xc7a100tfgg484-2), the default
 #            output build/zxtres-pcat/vivado-pcat/PCAT286.ZX3
 #   A200T  ZXTRES++ (xc7a200tfbg484-2)
 #            output build/zxtres-pcat/vivado-pcat-a200t/PCAT286.ZX3
+#
+# With "project" it stops before synthesis and creates a Vivado project
+# (build/zxtres-pcat/<dir>-project/project/pcat286_zxtres.xpr) on the
+# repository's own sources, to open in the Vivado IDE.
 #
 # The PC/AT machine is zxtres/rtl/pcat286_zxtres_guest.sv, generated from
 # PCAT-286.sv. Runs from Git Bash on Windows or from Linux. Needs python3 and
@@ -19,11 +23,14 @@ set -euo pipefail
 
 root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
 board=${1:-A100T}
+mode=${2:-build}
+[[ "$mode" == build || "$mode" == project ]] || { echo "usage: build_pcat.sh [A100T|A200T] [project]" >&2; exit 1; }
 case "${board^^}" in
   A100T) part=xc7a100tfgg484-2; dir=vivado-pcat ;;
   A200T) part=xc7a200tfbg484-2; dir=vivado-pcat-a200t ;;
   *) echo "usage: build_pcat.sh [A100T|A200T]" >&2; exit 1 ;;
 esac
+[[ "$mode" == project ]] && dir="$dir-project"
 top=zxtres_pcat_top
 out="$root/build/zxtres-pcat/$dir"
 
@@ -134,11 +141,16 @@ for source in "${sv[@]}"; do
   fi
 done > "$out/sv_sources.txt"
 printf '%s\n' src "${include_dirs[@]/#/src/}" > "$out/include_dirs.txt" 2>/dev/null || echo src > "$out/include_dirs.txt"
-cp zxtres/constraints/zxtres_pcat.xdc zxtres/scripts/build_pcat.tcl "$out/"
+cp zxtres/constraints/zxtres_pcat.xdc zxtres/scripts/build_pcat.tcl zxtres/scripts/make_project.tcl "$out/"
 git -C "$root" rev-parse HEAD > "$out/source-revision.txt"
 git -C "$root" status --short > "$out/source-status.txt"
 
 cd "$out"
+if [[ "$mode" == project ]]; then
+  "$VIVADO" -mode batch -log project.log -journal project.jou -source make_project.tcl     -tclargs "$part" "$top" "${defines[@]}" > console.log 2>&1     || { grep -E '^(ERROR|CRITICAL WARNING)' project.log | head -30 >&2; exit 1; }
+  grep '^project:' console.log
+  exit 0
+fi
 "$VIVADO" -mode batch -log vivado.log -journal vivado.jou -source build_pcat.tcl \
   -tclargs "$part" "$top" "${defines[@]}" > console.log 2>&1 \
   || { grep -E '^(ERROR|CRITICAL WARNING)' vivado.log | head -30 >&2; exit 1; }
