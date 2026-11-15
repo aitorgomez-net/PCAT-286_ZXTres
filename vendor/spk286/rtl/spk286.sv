@@ -159,6 +159,7 @@ module spk286 (
     logic [7:0] opcode_q;
     logic unsupported_q;
     logic is_prefix, prefix_accept, context_active, segment_override, lock_prefix, length_fault, extended_opcode_active;
+    logic lock_privilege_fault, prefix_fault;
     logic [1:0] override_segment, repeat_kind;
     logic io_transfer;
     logic [15:0] io_port;
@@ -261,7 +262,7 @@ module spk286 (
     logic [7:0] task_cache_dpl, task_cache_rpl;
     logic [2:0] alu_operation;
     logic result_write_allowed, internal_flags_write_en, alu_byte;
-    logic [15:0] decoded_flags_mask, decoded_undefined_mask;
+    logic [15:0] decoded_flags_mask;
     logic [15:0] internal_flags_write_data, internal_flags_write_mask;
     logic internal_task_flags_write;
     logic event_active, event_cancel, event_dispatch, event_request, event_software, event_needs_ack, event_external;
@@ -845,9 +846,9 @@ module spk286 (
     assign loadall_start = operation_valid && micro_word == spk286_microcode_pkg::MC_LOADALL;
     assign operation_done = micro_end || executor_done || loadall_complete;
     assign opcode_start = decode_ready && !event_active && !event_request && !event_completed && !raw_retired &&
-                          !unsupported_q && queue_consume_valid && decode_supported && !is_prefix && !length_fault;
+                          !unsupported_q && queue_consume_valid && decode_supported && !is_prefix && !prefix_fault;
     assign prefix_accept = decode_ready && !event_active && !event_request && !event_completed && !raw_retired &&
-                           !unsupported_q && queue_consume_valid && is_prefix && !length_fault;
+                           !unsupported_q && queue_consume_valid && is_prefix && !prefix_fault;
     assign length_fault = !event_active && !raw_retired && !event_completed && instruction_bytes == 10 &&
                           (micro_active ? executor_byte_ready : decode_ready);
     // The next queue byte as the executor and the operand decoder see it.
@@ -858,6 +859,17 @@ module spk286 (
     logic consumer_byte_valid;
     assign consumer_byte_valid = queue_consume_valid &&
                                  !(!event_active && !raw_retired && !event_completed && instruction_bytes == 10);
+    // The LOCK prefix is IOPL-sensitive on the 80286: "#GP(0) if the current
+    // privilege level is bigger (less privileged) than the I/O privilege
+    // level" (Intel 210498, LOCK). It faults when the opcode arrives, before
+    // the instruction consumes anything. An opcode that is invalid, or that
+    // rejects the prefix outright with #UD (ARPL, CLTS), keeps its #UD: an
+    // invalid opcode comes before a privilege check.
+    assign lock_privilege_fault = lock_prefix && protected_msw[0] && current_cpl > debug_flags[13:12] &&
+                                  !event_active && !raw_retired && !event_completed && decode_ready &&
+                                  queue_consume_valid && !is_prefix && !opcode_invalid &&
+                                  !(extended_opcode_active ? queue_consume_data == 8'h06 : queue_consume_data == 8'h63);
+    assign prefix_fault = length_fault || lock_privilege_fault;
     spk286_instruction_context instruction_context (
         .clk(clk), .reset(reset), .cancel(semantic_cancel), .complete(raw_retired || event_completed),
         .consume(queue_consume_valid && queue_consume_ready && !event_active), .prefix_accept(prefix_accept),
@@ -955,7 +967,7 @@ module spk286 (
         .software_event_request(software_request), .software_vector(software_vector),
         .halt_request(halt_request), .context_commit(context_commit),
         .vector_request(vector_request), .context_cs(context_cs), .vector_offset(vector_offset),
-        .decoded_flags_mask(decoded_flags_mask), .decoded_undefined_mask(decoded_undefined_mask),
+        .decoded_flags_mask(decoded_flags_mask),
         .flags_write_en(internal_flags_write_en), .flags_write_data(internal_flags_write_data),
         .flags_write_mask(internal_flags_write_mask),
         .protected_msw(protected_msw), .protected_gdtr_limit(protected_gdtr_limit), .protected_idtr_limit(protected_idtr_limit),
@@ -1036,8 +1048,7 @@ module spk286 (
 
     spk286_alu_decode alu_decode (
         .opcode(opcode_q), .group_extension(operand_reg), .operation(alu_operation),
-        .operand_byte(alu_byte), .reverse_operands(reverse_operands), .write_result(result_write_allowed), .flags_mask(decoded_flags_mask),
-        .undefined_mask(decoded_undefined_mask)
+        .operand_byte(alu_byte), .reverse_operands(reverse_operands), .write_result(result_write_allowed), .flags_mask(decoded_flags_mask)
     );
 
     spk286_operand_decode operand_decode (
@@ -1090,7 +1101,7 @@ module spk286 (
 
     // Decode and the executor share one byte-consumption interface. Unsupported
     // opcodes stay at its head. Redirect/control errors suppress both consumers.
-    assign queue_consume_ready = !length_fault && (prefix_accept || opcode_start || executor_byte_ready);
+    assign queue_consume_ready = !prefix_fault && (prefix_accept || opcode_start || executor_byte_ready);
 
     assign internal_ip_write_en = internal_redirect || (queue_consume_valid && queue_consume_ready);
     assign internal_ip_write_data = internal_redirect ? internal_target : debug_ip + 16'h0001;
@@ -1102,7 +1113,7 @@ module spk286 (
             unsupported_q <= 1'b0;
         end else if (operand_context_valid && micro_active && !event_active && !form_supported && !invalid_form) begin
             unsupported_q <= 1'b1;
-        end else if (decode_ready && !event_active && !event_request && !event_completed && !raw_retired && !unsupported_q && queue_consume_valid && !is_prefix && !length_fault) begin
+        end else if (decode_ready && !event_active && !event_request && !event_completed && !raw_retired && !unsupported_q && queue_consume_valid && !is_prefix && !prefix_fault) begin
             opcode_q <= queue_consume_data;
             if (decode_supported) begin destination_q <= decode_destination; source_index_q <= decode_source_index; end
             else unsupported_q <= 1'b1;
@@ -1165,7 +1176,7 @@ module spk286 (
                                  (micro_active ? executor_byte_ready : decode_ready);
     assign fault_request = range_fault || bounds_fault || arithmetic_fault || operand_blocked || invalid_form ||
                            invalid_opcode_fault || system_limit_fault || system_fault ||
-                           protected_access_fault || protected_fetch_fault || demanded_code_fault || length_fault || loadall_fault;
+                           protected_access_fault || protected_fetch_fault || demanded_code_fault || prefix_fault || loadall_fault;
     assign fault_vector = (invalid_form || invalid_opcode_fault) ? 8'd6 : loadall_fault ? loadall_fault_vector : system_fault ? system_fault_vector :
                           (protected_access_ss_fault || ((system_limit_fault || range_fault) && protected_msw[0] && service_segment == 2'd2)) ? 8'd12 : protected_access_fault ? 8'd13 :
                           protected_fetch_fault ? 8'd13 : bounds_fault ? 8'd5 : arithmetic_fault ? 8'd0 : 8'd13;

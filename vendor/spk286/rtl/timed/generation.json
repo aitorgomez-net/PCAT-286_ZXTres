@@ -4,22 +4,22 @@
     "vendor/spk286/microcode/generated/spk286_microcode_pkg.sv": "bceb66da9de83c85651ec9d7be1634c3fee78a6308d1203f3b0c0dece796c1c5",
     "vendor/spk286/microcode/generated/spk286_microcode_rom.sv": "d4a84b70696e2d01acdde25973e70a39c85714f3d55300f4dcc9f912ba215a1c",
     "vendor/spk286/microcode/generated/spk286_microcode_sync_rom.sv": "12fa6c4be08cbd4ddee67fbcaa51726cdb96ae5081c15845219ca82a3f54b54c",
-    "vendor/spk286/rtl/spk286.sv": "d651610d18a56c171d443231bf4eb74d3b33eec7ddc76bc1642b8221cda5018b",
+    "vendor/spk286/rtl/spk286.sv": "ee5995899dac02e8f175a291f39a26ee27dfe7d59b03683283d1fa1faa515382",
     "vendor/spk286/rtl/spk286_adjust.sv": "bcae2b1171d4ac1906f998ee825702ff7ea7db13d2935ff67934b5eb4508a66e",
     "vendor/spk286/rtl/spk286_alu.sv": "f7b94f6d9bc16e9cee51ce4d512558bfd829a04c34844942dc7f70fcf64fede5",
-    "vendor/spk286/rtl/spk286_alu_decode.sv": "15241fe0bb6ca7d43eb85ed1e6a078135308118fa0ae2a8af4f5ea2d9c6ef3b0",
+    "vendor/spk286/rtl/spk286_alu_decode.sv": "42dc1cbde330e1ff8debc4e885e277afcb7c6c6128fa7628b4976b86f99e2333",
     "vendor/spk286/rtl/spk286_biu.sv": "a64dd6edf281dc50629806bbb1718b282bb11a6b2663d95346d2aa2d094f4152",
     "vendor/spk286/rtl/spk286_condition.sv": "29758db56f2442c69a5675b7df269c8c436abf65d2f93991e0394ffd7ee04788",
     "vendor/spk286/rtl/spk286_control_decode.sv": "74d0f3277cfbdf0fea1efa42fce7019cfcfd87150bf5124f8867402dbaeaf34d",
     "vendor/spk286/rtl/spk286_decoder.sv": "c80f45d5df5d5ab0641d9931594d6aaf66256fb560925267b142135bb29838fa",
-    "vendor/spk286/rtl/spk286_descriptor.sv": "ac88dc98388457f0bf3b65f5ddd120ab8aee051b847b0aaedfb0f75c42493cb4",
+    "vendor/spk286/rtl/spk286_descriptor.sv": "a90aecfca911cf7c68ad373235f23284f84af1b9df2594ab2c91f72ed1caa7e7",
     "vendor/spk286/rtl/spk286_effective_address.sv": "0698ac4d6192ddd500c37865136be23319f026bfcdfa7e15e9d74086aa8be96c",
     "vendor/spk286/rtl/spk286_events.sv": "e67b64b6a3c7d3f0330ee85d726f4f14d3c64cabd880adb29d7ec7be148df7a4",
     "vendor/spk286/rtl/spk286_fetch.sv": "db2ee67fd3e0c50dfffb89474182cbecb5e81ecb52e68861258ea8b25c71f1e9",
     "vendor/spk286/rtl/spk286_flags_decode.sv": "6ffae2b500227ca768316a911b8f9c7e75880798612c2bc774c49764d823bbc0",
     "vendor/spk286/rtl/spk286_instruction_context.sv": "711b95277b1353d84005523cc3087215d1c98f54b0a7816b78f90f996260a83a",
     "vendor/spk286/rtl/spk286_loadall_service.sv": "83b75f016a769edf6db16720c075e3b346aad3526544c9d7df1922c5bea059c9",
-    "vendor/spk286/rtl/spk286_micro_executor.sv": "0c4f0d2b73b39f965159e2c8b7aef6a739e7df2c6e884944343feafab4b95cac",
+    "vendor/spk286/rtl/spk286_micro_executor.sv": "d74ae3e5daf78ef4f014a443fecaf4edc767bfd636d665e38470ee806b8a0675",
     "vendor/spk286/rtl/spk286_microsequencer.sv": "89422b76d58c0515eb65a686b2057b4378446e6bed3f3751367cbcc3890af985",
     "vendor/spk286/rtl/spk286_modrm.sv": "7cc8c17faff3ae76ee7b131ef21bd6c13d4ed2f15eb7fcc85e51a8f1e0da86ff",
     "vendor/spk286/rtl/spk286_muldiv.sv": "395128b9b5071ff9fad6ba95e6c00896f02bdcd7ab85bc03d8ed79dcaaf0b124",
@@ -42,7 +42,7 @@
     "vendor/spk286/rtl/spk286_tss_descriptor_service.sv": "c0a2a49adccad255382ad5b3b0535d307ec05ea45c6246ab96e87c150cfe3ff1",
     "vendor/spk286/rtl/spk286_tss_pkg.sv": "d62f345edf4b9d05e9f05c1217807aae3f581d2801047711ac7d945ac766249d",
     "vendor/spk286/rtl/spk286_tss_service.sv": "b67ce22e2e4b92e85f34c11618fed64cf7435598f265a599565c622e71df8f71",
-    "scripts/profile_sources.json": "8a6642f34b96c29b4b8d6aab8dfa90206379791f25118ce8f1bc664532fd1f1b",
+    "scripts/profile_sources.json": "6f16ee6cee8e791edbdfeed3c123d2f433bd9b6d980d3d3b5ddb3d2349c4c63f",
     "scripts/build_p06_profile_cpu.py": "3a036e3d065b546309986350e178b33d62f2458e7091a9b78c8c09e3d13bbc7d",
     "rtl/spk286_timing/spk286_instruction_schedule.sv": "9d7fd079c1214beb0099835d70f809418e9676f96dec320ac7076a0ebfcf393e",
     "rtl/spk286_timing/spk286_target_handoff.sv": "7f8057eee52bd8c55eb3063c6284232245570ee41d47b232c1e9cb3510004e18",
@@ -54,9 +54,9 @@
     "scripts/p06_repeat_local.py": "0b8168093e29ee8a44b02482f667bcf57f6006bb82991df4059cdc96ac8e65c4"
   },
   "generated_sha256": {
-    "spk286_profiled.sv": "80e7fb7b560cdcddd165341c6a0d735b7192faa1119137f67a99a1932ed7efcc",
+    "spk286_profiled.sv": "4105eaf46523913dc21feb7788f1aa123a69fcf275f772ae867cb506c403cc68",
     "spk286_profiled_events.sv": "5b8d059d63840eda2704e87514555689e12ce4ab5fd8782fd6a9d52ef831c79e",
-    "spk286_profiled_micro_executor.sv": "24760e37154613611752a791a7652a01d63ee77da16e9b939af63da295f8c9a7"
+    "spk286_profiled_micro_executor.sv": "81ea69ca76ea678accd01281f8a107481199ef699929174fe5cc3d56cc69e92f"
   },
   "scope": "Single selected functional core with reserved READY chaining and historical source-retirement target encoding handoff; provisional instruction intervals and logical bus supplied by integration; inputs pinned by scripts/profile_sources.json"
 }

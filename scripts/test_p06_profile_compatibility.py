@@ -264,10 +264,15 @@ class TraceAccumulator:
                     "architecture": "unchanged"}}
 
 
+# The slowest historical profile of the largest benches (iopl_access) needs
+# about seven minutes of Icarus wall time.
+SIMULATION_TIMEOUT = 900
+
+
 def test_run(command, log, trace, profile, multiplier, storage="digest"):
     args = [*command, f"+profile={profile}", f"+watchdog_multiplier={multiplier}"]
     if storage == "raw":
-        result = run([*args, f"+profile_trace={trace}"], log, timeout=300, check=False)
+        result = run([*args, f"+profile_trace={trace}"], log, timeout=SIMULATION_TIMEOUT, check=False)
         trace_info(trace)
         return result
     # Keep the exact observer byte stream, but consume it in Linux RAM rather
@@ -298,7 +303,7 @@ def test_run(command, log, trace, profile, multiplier, storage="digest"):
         reader = threading.Thread(target=consume, name="p06-observer-consumer")
         reader.start()
         try:
-            result = run([*args, f"+profile_trace={pipe}"], log, timeout=300, check=False)
+            result = run([*args, f"+profile_trace={pipe}"], log, timeout=SIMULATION_TIMEOUT, check=False)
         finally:
             os.close(anchor)
             reader.join(timeout=30)

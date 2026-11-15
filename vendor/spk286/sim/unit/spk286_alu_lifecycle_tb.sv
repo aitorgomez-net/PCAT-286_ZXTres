@@ -175,7 +175,7 @@ module spk286_alu_lifecycle_tb;
         memory[271]=8'h03; memory[272]=8'hD8;
         memory[273]=8'h33; memory[274]=8'hC0;
         memory[275]=8'h15; memory[276]=0; memory[277]=0; memory[278]=8'hF4;
-        stream_flags[0]=16'h7613; stream_flags[1]=16'h7E12; stream_flags[2]=16'h7696;
+        stream_flags[0]=16'h7613; stream_flags[1]=16'h7E12; stream_flags[2]=16'h7686; // OR clears AF, as the physical 80286 does
         stream_flags[3]=16'h7617; stream_flags[4]=16'h7617; stream_flags[5]=16'h7606;
         stream_flags[6]=16'h7646; stream_flags[7]=16'h7646;
         stream_gpr=debug_gpr; stream_ip=256; permit_read=1; permit_write=1; execute_enable=1;

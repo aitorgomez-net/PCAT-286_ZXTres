@@ -2,6 +2,8 @@
 
 // Intel 80286 PRM 10.1: CLI/STI and I/O require CPL <= IOPL in protected
 // mode. Denial must precede IF changes, port cycles and string side effects.
+// So does the LOCK prefix (kind 14, LOCK NOP): "#GP(0) if the current privilege
+// level is bigger (less privileged) than the I/O privilege level" (LOCK).
 module spk286_iopl_access_tb;
     `include "spk286_signals.svh"
     logic [7:0] memory [0:65535];
@@ -69,7 +71,7 @@ module spk286_iopl_access_tb;
         for (integer i='h800;i<'h866;i=i+1) memory[i]=0;
         for (integer i='h3000;i<'h3020;i=i+1) memory[i]=8'(i ^ 'h5A);
         for (integer i='h4000;i<'h4020;i=i+1) memory[i]=8'hCC;
-        string_form=kind>=10; input_form=kind==2 || kind==3 || kind==6 || kind==7 || kind==10 || kind==11;
+        string_form=kind>=10 && kind<14; input_form=kind==2 || kind==3 || kind==6 || kind==7 || kind==10 || kind==11;
         word_form=kind==3 || kind==5 || kind==7 || kind==9 || kind==11 || kind==13;
         repeated=string_form && (variant & 2)!=0; df=string_form && (variant & 1)!=0;
         denied=pe && cpl>iopl; old_if=kind<2 && (variant & 1)!=0;
@@ -94,11 +96,12 @@ module spk286_iopl_access_tb;
             0: opcode=8'hFA; 1: opcode=8'hFB;
             2: opcode=8'hE4; 3: opcode=8'hE5; 4: opcode=8'hE6; 5: opcode=8'hE7;
             6: opcode=8'hEC; 7: opcode=8'hED; 8: opcode=8'hEE; 9: opcode=8'hEF;
-            10: opcode=8'h6C; 11: opcode=8'h6D; 12: opcode=8'h6E; default: opcode=8'h6F;
+            10: opcode=8'h6C; 11: opcode=8'h6D; 12: opcode=8'h6E; 13: opcode=8'h6F; default: opcode=8'h90;
         endcase
         p='h100;
         if ((variant & 1)!=0) begin memory[p]=8'h3E; p=p+1; end
         if (repeated) begin memory[p]=8'hF3; p=p+1; end
+        if (kind==14) begin memory[p]=8'hF0; p=p+1; end
         memory[p]=opcode; p=p+1;
         if (kind>=2 && kind<=5) begin memory[p]=port_addr[7:0]; p=p+1; end
         memory[p]=8'hEB; memory[p+1]=8'hFE;
@@ -129,8 +132,8 @@ module spk286_iopl_access_tb;
             check(instruction_retired && debug_ip==16'(p) && debug_timing_event_requests==0 && debug_gpr==expected_gpr && debug_flags==expected_flags,
                   "admitted CPL<=IOPL and real-mode operations have exact architectural results");
             transfers_per_word=word_form && port_addr[0] ? 2 : 1;
-            check(io_cycles==(kind<2 ? 0 : iterations*transfers_per_word),"exact physical port transaction count");
-            for (integer iteration=0;iteration<(kind<2 ? 0 : iterations);iteration=iteration+1) begin
+            check(io_cycles==(kind<2 || kind==14 ? 0 : iterations*transfers_per_word),"exact physical port transaction count");
+            for (integer iteration=0;iteration<(kind<2 || kind==14 ? 0 : iterations);iteration=iteration+1) begin
                 src_addr=int'(initial_si)+(df ? -iteration*stride : iteration*stride);
                 dst_addr=int'(initial_di)+(df ? -iteration*stride : iteration*stride);
                 value_word=string_form ? {memory[src_addr+1],memory[src_addr]} : 16'hA55A;
@@ -159,10 +162,10 @@ module spk286_iopl_access_tb;
         for (integer policy=0;policy<3;policy=policy+1)
             for (integer cpl=0;cpl<4;cpl=cpl+1)
                 for (integer iopl=0;iopl<4;iopl=iopl+1)
-                    for (integer kind=0;kind<14;kind=kind+1)
+                    for (integer kind=0;kind<15;kind=kind+1)
                         for (integer variant=0;variant<4;variant=variant+1)
                             run_case(kind,1,2'(cpl),2'(iopl),variant,2'(policy));
-        for (integer kind=0;kind<14;kind=kind+1)
+        for (integer kind=0;kind<15;kind=kind+1)
             for (integer variant=0;variant<4;variant=variant+1) run_case(kind,0,3,0,variant,0);
         for (integer kind=10;kind<14;kind=kind+1) run_case(kind,1,3,0,3,0,1);
         for (integer policy=0;policy<3;policy=policy+1)

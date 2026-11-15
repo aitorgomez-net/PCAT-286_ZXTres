@@ -117,7 +117,7 @@ module spk286_profiled_micro_executor #(parameter bit USE_PARALLEL_SYSTEM_LIMIT 
     output logic protected_segment_commit_table_indicator2,
     output logic [1:0] protected_segment_commit_rpl2,
     input logic result_write_allowed,
-    input logic [15:0] decoded_flags_mask, decoded_undefined_mask,
+    input logic [15:0] decoded_flags_mask,
     output logic flags_write_en,
     output logic [15:0] flags_write_data, flags_write_mask,
     input logic [15:0] protected_msw,
@@ -768,10 +768,14 @@ module spk286_profiled_micro_executor #(parameter bit USE_PARALLEL_SYSTEM_LIMIT 
     assign descriptor_cs_candidate_success_live = call_gate_cs_validation_operation ? descriptor_call_gate_cs_success_live :
                                                    iret_cs_validation_operation ? descriptor_iret_cs_success_live : descriptor_cs_success_live;
     assign descriptor_effective_privilege = descriptor_unused_rpl > protected_cpl ? descriptor_unused_rpl : protected_cpl;
+    // VERR does not check privilege on a conforming code segment: "If the
+    // code segment is readable and conforming, the descriptor privilege
+    // level (DPL) can be any value for VERR" (Intel, VERR/VERW). VERW never
+    // succeeds on code, so the exemption needs no read qualifier here.
     assign descriptor_verify_success_live = descriptor_valid && descriptor_reserved_valid && descriptor_present &&
                                             descriptor_unused_segment &&
-                                            ((descriptor_unused_conforming && descriptor_unused_dpl <= protected_cpl) ||
-                                             (!descriptor_unused_conforming && descriptor_unused_dpl >= descriptor_effective_privilege)) &&
+                                            (descriptor_unused_conforming ||
+                                             descriptor_unused_dpl >= descriptor_effective_privilege) &&
                                             ((descriptor_verify_read &&
                                               ((descriptor_class == spk286_protected_pkg::DESC_CODE && descriptor_unused_readable) ||
                                                descriptor_class == spk286_protected_pkg::DESC_DATA ||
@@ -853,10 +857,13 @@ module spk286_profiled_micro_executor #(parameter bit USE_PARALLEL_SYSTEM_LIMIT 
                                    (iret_cs_validation_operation ?
                                    ((({1'b0, tmp0_q} > {1'b0, descriptor_limit}) && descriptor_iret_cs_success_live) || !descriptor_iret_cs_success_live) :
                                     (cs_validation_operation ?
+                                     // The selector in a task gate must name an available TSS
+                                     // (Intel 210498, JMP: "JUMP TASK GATE"), as it must for CALL.
+                                     (task_gate_target_active_q ? !task_descriptor_success_live :
                                      ((jmp_gate_probe_operation && descriptor_class == spk286_protected_pkg::DESC_CALL_GATE) ?
                                        !descriptor_call_gate_success_live :
                                       ((task_descriptor_success_live || task_gate_target_begin) ? 1'b0 :
-                                       (descriptor_cs_offset_fault || !descriptor_cs_success_live))) :
+                                       (descriptor_cs_offset_fault || !descriptor_cs_success_live)))) :
                                    (iret_ss_validation_operation ? !descriptor_iret_ss_success_live :
                                     (segment_reload_operation ? !descriptor_segment_success_live :
                                     (!descriptor_verify_operation && !descriptor_inspect_operation && !descriptor_success_live))))))));
@@ -868,7 +875,14 @@ module spk286_profiled_micro_executor #(parameter bit USE_PARALLEL_SYSTEM_LIMIT 
     assign event_gate_entry_offset = {5'd0, event_vector, 3'b000};
     assign event_gate_limit_fault = event_gate_begin &&
                                     ({1'b0, event_gate_entry_offset} + 17'd7 > {1'b0, protected_idtr_limit});
-    assign event_gate_pre_fault = event_gate_limit_fault;
+    // Real address mode: "Interrupt Table Limit Too Small (Interrupt 8) ... if
+    // the limit of the interrupt vector table was changed from 3FFH by the
+    // LIDT instruction and an interrupt whose vector is outside the limit
+    // occurs" (Intel 210498, 5.2.3). The entry is four bytes; no error code.
+    logic event_vector_limit_fault;
+    assign event_vector_limit_fault = event_gate_operation && !protected_msw[0] &&
+                                      ({7'd0, event_vector, 2'b00} + 17'd3 > {1'b0, protected_idtr_limit});
+    assign event_gate_pre_fault = event_gate_limit_fault || event_vector_limit_fault;
     assign event_gate_operand_done = event_gate_active_q && operand_done;
     assign event_gate_high_word_valid = event_gate_unused_segment ||
                                        ((event_gate_operand_done && event_gate_phase_q == 3'd3) ?
@@ -963,9 +977,11 @@ module spk286_profiled_micro_executor #(parameter bit USE_PARALLEL_SYSTEM_LIMIT 
                                        (descriptor_cs_offset_fault || !descriptor_call_gate_cs_success_live || descriptor_unused_accessed)) ||
                                        (descriptor_operand_done && descriptor_phase_q == 3'd4 && call_gate_cs_validation_operation && descriptor_success_q) ||
                                       (descriptor_operand_done && descriptor_phase_q == 3'd3 && cs_validation_operation &&
-                                         (!task_gate_target_begin && !jmp_gate_target_begin && (task_descriptor_success_live ||
-                                          (!task_descriptor_success_live &&
-                                           (descriptor_cs_offset_fault || !descriptor_cs_success_live || descriptor_unused_accessed))))) ||
+                                         (!task_gate_target_begin && !jmp_gate_target_begin &&
+                                          (task_gate_target_active_q ? task_descriptor_success_live :
+                                           (task_descriptor_success_live ||
+                                            (!task_descriptor_success_live &&
+                                             (descriptor_cs_offset_fault || !descriptor_cs_success_live || descriptor_unused_accessed)))))) ||
                                       (descriptor_operand_done && descriptor_phase_q == 3'd4 && cs_validation_operation && descriptor_success_q) ||
                                       (descriptor_operand_done && descriptor_phase_q == 3'd3 && iret_cs_validation_operation &&
                                        ((({1'b0, tmp0_q} > {1'b0, descriptor_limit}) && descriptor_iret_cs_success_live) ||
@@ -992,7 +1008,7 @@ module spk286_profiled_micro_executor #(parameter bit USE_PARALLEL_SYSTEM_LIMIT 
                                               descriptor_class == spk286_protected_pkg::DESC_TASK_GATE ? task_gate_access_valid :
                                               descriptor_class == spk286_protected_pkg::DESC_CODE ? descriptor_cs_access_valid :
                                               task_descriptor_access_valid;
-    assign system_fault_vector = npx_fault ? 8'd7 : task_service_fault ? task_service_fault_vector : system_mode_fault ? 8'd6 : (system_privilege_fault || io_privilege_fault || halt_privilege_fault) ? 8'd13 :
+    assign system_fault_vector = npx_fault ? 8'd7 : event_vector_limit_fault ? 8'd8 : task_service_fault ? task_service_fault_vector : system_mode_fault ? 8'd6 : (system_privilege_fault || io_privilege_fault || halt_privilege_fault) ? 8'd13 :
                                  arpl_fault ? 8'd6 :
                                  clts_lock_fault ? 8'd6 :
                                  clts_privilege_fault ? 8'd13 :
@@ -1510,7 +1526,7 @@ module spk286_profiled_micro_executor #(parameter bit USE_PARALLEL_SYSTEM_LIMIT 
     assign flags_write_en = sequential_flags_write_en || (register_complete && register_alu);
     assign flags_write_data = register_complete && register_alu ? alu_flags : sequential_flags_write_data;
     assign flags_write_mask = register_complete && register_alu ?
-                              decoded_flags_mask & ~decoded_undefined_mask : sequential_flags_write_mask;
+                              decoded_flags_mask : sequential_flags_write_mask;
 
     spk286_alu alu (.operation(alu_operation), .operand_a(reverse_operands ? tmp1_q : tmp0_q), .operand_b(reverse_operands ? tmp0_q : tmp1_q),
                    .carry_in(carry_in), .operand_byte(alu_byte), .result(alu_result), .candidate_flags(alu_flags));
@@ -2128,7 +2144,7 @@ module spk286_profiled_micro_executor #(parameter bit USE_PARALLEL_SYSTEM_LIMIT 
                 result_suppress_q <= adjust_complete ? !adjust_write : shift_complete && !shift_write;
                 tmp2_q <= adjust_complete ? adjust_result : shift_complete ? shift_result : alu_result; temporary_valid_q[2] <= 1'b1;
                 flags_q <= adjust_complete ? adjust_flags : shift_complete ? shift_flags : alu_flags;
-                flags_mask_q <= adjust_complete ? adjust_mask : shift_complete ? shift_mask : (decoded_flags_mask & ~decoded_undefined_mask);
+                flags_mask_q <= adjust_complete ? adjust_mask : shift_complete ? shift_mask : decoded_flags_mask;
                 flags_valid_q <= 1'b1; result_disposed_q <= 1'b0;
             end
             if (commit_result && operation_done) begin

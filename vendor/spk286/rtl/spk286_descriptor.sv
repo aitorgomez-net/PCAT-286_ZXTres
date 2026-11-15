@@ -83,15 +83,13 @@ module spk286_descriptor (
         // The 286 ignores bytes 6-7 in code/data descriptors. Zeroing them
         // is a 386 compatibility rule, not a 286 validity check (Intel 386
         // PRM 13.3.2). Windows uses this word even for absent segments.
-        // Retain the separate system/gate reserved-form checks below.
+        // System and gate descriptors keep the word-3 check: the 286 manual
+        // gives no evidence either way for them.
+        // The unused gate fields are not checked. Intel 210498 marks bits 5-7
+        // of call-gate byte 4 as don't care (figure 7-10), byte 4 of interrupt
+        // and trap gates as unused (figure 9-3: "not used by either of these
+        // gates"), and bytes 0-1 and 4 of a task gate as unused (figure 8-3).
         reserved_form_valid = segment || raw_descriptor[63:48] == 16'h0000;
-        if (!segment && (system_type == 4'h4))
-            reserved_form_valid = reserved_form_valid && (raw_descriptor[39:37] == 3'b000);
-        else if (!segment && system_type == 4'h5)
-            reserved_form_valid = reserved_form_valid && (raw_descriptor[39:32] == 8'h00) &&
-                                   (raw_descriptor[15:0] == 16'h0000);
-        else if (!segment && (system_type == 4'h6 || system_type == 4'h7))
-            reserved_form_valid = reserved_form_valid && (raw_descriptor[39:32] == 8'h00);
 
         descriptor_valid = recognized_class && reserved_form_valid;
     end

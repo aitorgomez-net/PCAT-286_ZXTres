@@ -192,10 +192,10 @@
       "sha256": "a7768d3d7dc31ed2ed2b931e907f8d165883c8b9fe3fe41599cb6b01244a86af"
     },
     "rtl/spk286.sv": {
-      "bytes": 87474,
-      "git_blob": "a7bbf9aeba77a972319df9a8f239b77afe6ad256",
+      "bytes": 88318,
+      "git_blob": "c297fe93b6651d8d8c6ee0265e66f0deffbf21e9",
       "git_mode": "100644",
-      "sha256": "d651610d18a56c171d443231bf4eb74d3b33eec7ddc76bc1642b8221cda5018b"
+      "sha256": "ee5995899dac02e8f175a291f39a26ee27dfe7d59b03683283d1fa1faa515382"
     },
     "rtl/spk286_adjust.sv": {
       "bytes": 5376,
@@ -210,10 +210,10 @@
       "sha256": "f7b94f6d9bc16e9cee51ce4d512558bfd829a04c34844942dc7f70fcf64fede5"
     },
     "rtl/spk286_alu_decode.sv": {
-      "bytes": 2245,
-      "git_blob": "47f28121f48fb61485e0cbf4f1ea64bc8d83655b",
+      "bytes": 2224,
+      "git_blob": "2175b3a1958d30722d20bfcf18a141afd0fd1f5e",
       "git_mode": "100644",
-      "sha256": "15241fe0bb6ca7d43eb85ed1e6a078135308118fa0ae2a8af4f5ea2d9c6ef3b0"
+      "sha256": "42dc1cbde330e1ff8debc4e885e277afcb7c6c6128fa7628b4976b86f99e2333"
     },
     "rtl/spk286_biu.sv": {
       "bytes": 7339,
@@ -240,10 +240,10 @@
       "sha256": "c80f45d5df5d5ab0641d9931594d6aaf66256fb560925267b142135bb29838fa"
     },
     "rtl/spk286_descriptor.sv": {
-      "bytes": 4645,
-      "git_blob": "0914972bc14a8e05ee14297a652351d9ed000a7d",
+      "bytes": 4498,
+      "git_blob": "8d30789c801ce41b02bb652336013c3a82699127",
       "git_mode": "100644",
-      "sha256": "ac88dc98388457f0bf3b65f5ddd120ab8aee051b847b0aaedfb0f75c42493cb4"
+      "sha256": "a90aecfca911cf7c68ad373235f23284f84af1b9df2594ab2c91f72ed1caa7e7"
     },
     "rtl/spk286_effective_address.sv": {
       "bytes": 1395,
@@ -288,10 +288,10 @@
       "sha256": "83b75f016a769edf6db16720c075e3b346aad3526544c9d7df1922c5bea059c9"
     },
     "rtl/spk286_micro_executor.sv": {
-      "bytes": 170620,
-      "git_blob": "c26c5e91e5a79f508f68506ba670174855ea9366",
+      "bytes": 171802,
+      "git_blob": "4e9c8a69ee77455be10b07599a59b5e2a294e9c3",
       "git_mode": "100644",
-      "sha256": "0c4f0d2b73b39f965159e2c8b7aef6a739e7df2c6e884944343feafab4b95cac"
+      "sha256": "d74ae3e5daf78ef4f014a443fecaf4edc767bfd636d665e38470ee806b8a0675"
     },
     "rtl/spk286_microsequencer.sv": {
       "bytes": 4529,
@@ -463,16 +463,16 @@
       "sha256": "ec846a6af6b536b66aed92a0140b9dadf7eb5a7276e2a99f7ae744d371c182c7"
     },
     ".gitignore": {
-      "bytes": 498,
-      "sha256": "14d6f8411d35cc34ca1e147729a34f8fc95c292ce29146c17bddef9bc040418f"
+      "bytes": 547,
+      "sha256": "3fe592fc3b4472b990b420f7231a54e3b9a5e4a1f574cb2ea655bbac28a26f15"
     },
     "Makefile": {
       "bytes": 2474,
       "sha256": "e0a552fc50a4baaf45e41a1ac7be473e7008e6e737f00216c5a5a70966e8b3e9"
     },
     "config/environment.example": {
-      "bytes": 151,
-      "sha256": "68be2b8d024802e03c344f355a7ca55ba685d773ddac0c113ab79700215f3063"
+      "bytes": 154,
+      "sha256": "9d48f48d237bc1f1fb72eee72e62ddc30f162243b4271d149bec1dbd4701ff6d"
     },
     "research/__init__.py": {
       "bytes": 74,
@@ -499,8 +499,8 @@
       "sha256": "253b64fe770ed8a7896da7022894471f91f5c9d3d54104868e843dce11f9d801"
     },
     "research/phase6_probes/probes.asm": {
-      "bytes": 4644,
-      "sha256": "4ffa4a5063ac8f03e54f21d6f29fc46e7cac0a94b8e925b356bed6aeafaec0be"
+      "bytes": 4846,
+      "sha256": "dad5af499b2d8a651cc1e2d2363c36bf7e39a6a53d75106b547ae3c652aee471"
     },
     "research/phase6_probes/results.py": {
       "bytes": 10846,
@@ -2138,7 +2138,7 @@
   "schema_version": 2,
   "upstream_excluded": {
     "rtl/timed/spk286_profiled.sv": {
-      "git_blob": "b90fbd1af3fb146179de75df00295aff005a2335",
+      "git_blob": "d1ff7cd0cc144e7c674975c05868278eaf17f710",
       "git_mode": "100644"
     },
     "rtl/timed/spk286_profiled_events.sv": {
@@ -2146,7 +2146,7 @@
       "git_mode": "100644"
     }
   },
-  "upstream_head": "ef62028ba2c7144dba001a4ba333cdfff208f7f6",
+  "upstream_head": "012991415b63cd978c009bc6adfcd593513f7f40",
   "upstream_repository": "https://github.com/spark2k06/SPK286.git",
   "validation": "All imported bytes verified; overlay/extras unchanged; upstream clean and HEAD pinned before/after"
 }

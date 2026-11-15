@@ -218,10 +218,9 @@ module spk286_protected_task_gate_fault_tb;
                        16'h002B, 8'h81, 8'h0B,
                        "far CALL/JMP task gate reports a not-present gate");
 
-        // Non-zero reserved gate words are rejected as #GP.
-        run_fault_pair(16'h0028, 16'h0001, 8'h85,
-                       16'h002B, 8'h81, 8'h0D,
-                       "far CALL/JMP task gate rejects reserved encoding");
+        // Bytes 0-1 of a task gate are unused (Intel 210498, figure 8-3), so
+        // a non-zero value there is no fault: spk286_protected_task_gate_far_tb
+        // checks that such a gate switches tasks.
 
         // A busy target TSS is not a valid entry target.
         run_fault_pair(16'h0028, 16'h0000, 8'h85,

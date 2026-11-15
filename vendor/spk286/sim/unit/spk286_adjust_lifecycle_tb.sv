@@ -167,10 +167,10 @@ module spk286_adjust_lifecycle_tb;
         memory[257]=8'hD4; memory[258]=10; // AAM -> 0000.
         memory[259]=8'hD5; memory[260]=0; // AAD zero -> 0000, valid.
         memory[261]=8'hF6; memory[262]=8'hD0; // NOT AL -> 00FF.
-        memory[263]=8'hA8; memory[264]=8'h0F; // TEST AL,0F.
+        memory[263]=8'hA8; memory[264]=8'h0F; // TEST AL,0F: clears AF, as the physical 80286 does.
         memory[265]=8'h0F;
         timeout_count=0; while(retired_count<5 && timeout_count<400) begin service(); timeout_count++; check(!unsupported_opcode,"mixed adjust/unary/TEST stream executable"); end
-        check(retired_count==5 && deliveries==0 && data_count==0 && debug_ip==16'h0109 && debug_gpr[15:0]==16'h00FF && debug_flags==16'h0016,"mixed stream preserves result, status and fault ownership"); cases++;
+        check(retired_count==5 && deliveries==0 && data_count==0 && debug_ip==16'h0109 && debug_gpr[15:0]==16'h00FF && debug_flags==16'h0006,"mixed stream preserves result, status and fault ownership"); cases++;
         $display("ADJUST_LIFECYCLE PASS: %0d pause/cancel/reset/fault/frame/priority/stream cases; %0d checks",cases,checks);
         $finish;
     end

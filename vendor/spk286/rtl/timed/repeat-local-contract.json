@@ -13499,8 +13499,47 @@
                 ]
               ],
               [
-                "and",
+                "or",
                 [
+                  [
+                    "and",
+                    [
+                      [
+                        "and",
+                        [
+                          [
+                            "and",
+                            [
+                              [
+                                "permission",
+                                "allowed"
+                              ],
+                              [
+                                "compare",
+                                "==",
+                                151
+                              ]
+                            ]
+                          ],
+                          [
+                            "context",
+                            "protected_msw[0]"
+                          ],
+                          [
+                            "not",
+                            [
+                              "context",
+                              "event_gate_active_q"
+                            ]
+                          ]
+                        ]
+                      ],
+                      [
+                        "context",
+                        "{1'b0, event_gate_entry_offset} + 17'd7 > {1'b0, protected_idtr_limit}"
+                      ]
+                    ]
+                  ],
                   [
                     "and",
                     [
@@ -13519,21 +13558,17 @@
                         ]
                       ],
                       [
-                        "context",
-                        "protected_msw[0]"
-                      ],
-                      [
                         "not",
                         [
                           "context",
-                          "event_gate_active_q"
+                          "protected_msw[0]"
                         ]
+                      ],
+                      [
+                        "context",
+                        "{7'd0, event_vector, 2'b00} + 17'd3 > {1'b0, protected_idtr_limit}"
                       ]
                     ]
-                  ],
-                  [
-                    "context",
-                    "{1'b0, event_gate_entry_offset} + 17'd7 > {1'b0, protected_idtr_limit}"
                   ]
                 ]
               ],
@@ -19953,8 +19988,47 @@
                 ]
               ],
               [
-                "and",
+                "or",
                 [
+                  [
+                    "and",
+                    [
+                      [
+                        "and",
+                        [
+                          [
+                            "and",
+                            [
+                              [
+                                "permission",
+                                "allowed"
+                              ],
+                              [
+                                "compare",
+                                "==",
+                                151
+                              ]
+                            ]
+                          ],
+                          [
+                            "context",
+                            "protected_msw[0]"
+                          ],
+                          [
+                            "not",
+                            [
+                              "context",
+                              "event_gate_active_q"
+                            ]
+                          ]
+                        ]
+                      ],
+                      [
+                        "context",
+                        "{1'b0, event_gate_entry_offset} + 17'd7 > {1'b0, protected_idtr_limit}"
+                      ]
+                    ]
+                  ],
                   [
                     "and",
                     [
@@ -19973,21 +20047,17 @@
                         ]
                       ],
                       [
-                        "context",
-                        "protected_msw[0]"
-                      ],
-                      [
                         "not",
                         [
                           "context",
-                          "event_gate_active_q"
+                          "protected_msw[0]"
                         ]
+                      ],
+                      [
+                        "context",
+                        "{7'd0, event_vector, 2'b00} + 17'd3 > {1'b0, protected_idtr_limit}"
                       ]
                     ]
-                  ],
-                  [
-                    "context",
-                    "{1'b0, event_gate_entry_offset} + 17'd7 > {1'b0, protected_idtr_limit}"
                   ]
                 ]
               ],

@@ -140,13 +140,13 @@ module spk286_unary_lifecycle_tb;
         memory[258]=8'hF7; memory[259]=8'hD8; // NEG AX: 41F0.
         memory[260]=8'hFE; memory[261]=8'hC4; // INC AH: 42F0.
         memory[262]=8'hFF; memory[263]=8'hC8; // DEC AX: 42EF.
-        memory[264]=8'hF7; memory[265]=8'hC0; memory[266]=8'hFF; memory[267]=8'h0F; // TEST AX,0FFF.
+        memory[264]=8'hF7; memory[265]=8'hC0; memory[266]=8'hFF; memory[267]=8'h0F; // TEST AX,0FFF: clears the AF that DEC left, as the physical 80286 does.
         memory[268]=8'hFF; memory[269]=8'h36; memory[270]=8'h01; memory[271]=8'h10; // PUSH word [1001].
         memory[272]=8'h5B; memory[273]=8'h0F; // POP BX.
         execute_enable=1; permit_data=1; timeout_count=0;
         while(retired_count<7 && timeout_count<700) begin service(); timeout_count++; check(!unsupported_opcode && !operand_blocked,"mixed unary/TEST/stack stream executable"); end
         check(retired_count==7 && debug_ip==16'h0111 && debug_gpr[15:0]==16'h42EF && debug_gpr[63:48]==16'hC35A &&
-              debug_gpr[79:64]==16'h2000 && debug_flags==16'h0012 && data_count==4 && write_count==1,"mixed dispatch stream preserves dependencies and exact traffic");
+              debug_gpr[79:64]==16'h2000 && debug_flags==16'h0002 && data_count==4 && write_count==1,"mixed dispatch stream preserves dependencies and exact traffic");
         cases++;
         $display("UNARY_LIFECYCLE PASS: %0d dispatch/operand/commit/reset/invalid/stream cases; %0d checks",cases,checks);
         $finish;
