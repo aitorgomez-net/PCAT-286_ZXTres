@@ -62,6 +62,7 @@ TESTS = [
     shell("pit-irq", "devices", "test_at_pit_irq0"),
     shell("serial", "devices", "test_at_serial"),
     shell("soundblaster", "devices", "test_at_soundblaster"),
+    shell("tandy", "devices", "test_at_tandy"),
     shell("xtide", "devices", "test_at_xtide_machine"),
     python("floppy-write", "devices", "test_at_floppy_write", "--output", "{work}", tools=SIM),
     python("floppy-protection", "devices", "test_at_floppy_write_protect", "--output", "{work}", tools=SIM),
