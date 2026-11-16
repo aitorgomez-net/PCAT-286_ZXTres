@@ -456,8 +456,8 @@ module spk286_microcode_rom (
             10'd443: word = spk286_microcode_pkg::MC_RESTORE_AUX_TMP0;
             10'd444: word = spk286_microcode_pkg::MC_PUSH16;
             10'd445: word = spk286_microcode_pkg::MC_RESTORE_AUX_TMP0;
-            10'd446: word = spk286_microcode_pkg::MC_WRITE_BP_TMP0;
-            10'd447: word = spk286_microcode_pkg::MC_ALLOCATE_STACK;
+            10'd446: word = spk286_microcode_pkg::MC_ALLOCATE_STACK;
+            10'd447: word = spk286_microcode_pkg::MC_WRITE_BP_TMP0;
             10'd448: word = spk286_microcode_pkg::MC_END;
             10'd449: word = spk286_microcode_pkg::MC_READ_BP_TMP0;
             10'd450: word = spk286_microcode_pkg::MC_CHECK_STACK_TMP0;

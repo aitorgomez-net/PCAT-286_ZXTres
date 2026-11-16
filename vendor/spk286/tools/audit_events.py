@@ -41,7 +41,7 @@ PROBES=(
     ('nmi-unblock','spk286_events','spk286_event_lifecycle',
      "opcode == 8'hCF","opcode == 8'h00",'complete selected event'),
     ('sti-shadow','spk286_events','spk286_event_lifecycle',
-     'intr && flags[9] && !sti_shadow && !ss_shadow && !(repeat_boundary && (repeat_ss_inhibit_q || repeat_sti_inhibit_q)) && !shutdown','intr && flags[9] && !ss_shadow && !(repeat_boundary && (repeat_ss_inhibit_q || repeat_sti_inhibit_q)) && !shutdown','STI shadow executes exactly'),
+     'intr && flags[9] && !sti_shadow && !ss_shadow &&','intr && flags[9] && !ss_shadow &&','STI shadow executes exactly'),
     ('tf-sample','spk286_events','spk286_event_lifecycle',
      'trap_sample_q <= flags[8];',"trap_sample_q <= 1'b0;",'complete selected event'),
     ('fault-retirement','spk286','spk286_event_instructions',

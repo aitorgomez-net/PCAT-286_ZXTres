@@ -6114,9 +6114,9 @@
         "line": 71
       },
       "operands": [],
-      "operation": "WRITE_BP_TMP0",
-      "statement": "TMP0 -> BP",
-      "word": 91
+      "operation": "ALLOCATE_STACK",
+      "statement": "ALLOCATE_STACK",
+      "word": 108
     },
     {
       "address": 447,
@@ -6126,9 +6126,9 @@
         "line": 72
       },
       "operands": [],
-      "operation": "ALLOCATE_STACK",
-      "statement": "ALLOCATE_STACK",
-      "word": 108
+      "operation": "WRITE_BP_TMP0",
+      "statement": "TMP0 -> BP",
+      "word": 91
     },
     {
       "address": 448,

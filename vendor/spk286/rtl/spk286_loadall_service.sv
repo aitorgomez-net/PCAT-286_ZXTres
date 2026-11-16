@@ -113,8 +113,12 @@ module spk286_loadall_service (
     // 18 ES, 19..26 AX..DI, then six-byte ES/CS/SS/DS/GDTR/LDT/IDTR/TSS
     // cache records.  The high byte of each cache's middle word is access.
     always_comb begin
-        loaded_msw = image_q[3];
-        loaded_flags = image_q[12];
+        // MSW bits 4-15 always read 1, and a real-mode image loads FLAGS
+        // with bits 12-15 and the reserved positions clear and bit 1 set, as
+        // an Intel N80286-12 does. A
+        // protected-mode image keeps its FLAGS word: that case is unmeasured.
+        loaded_msw = image_q[3] | 16'hFFF0;
+        loaded_flags = image_q[3][0] ? image_q[12] : ((image_q[12] & 16'h0FD5) | 16'h0002);
         loaded_ip = image_q[13];
         loaded_ldtr_selector = image_q[14];
         loaded_tr_selector = image_q[11];

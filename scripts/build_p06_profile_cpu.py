@@ -37,6 +37,7 @@ CONNECTION = r'''
     logic profile_head_permit, profile_deadline_ready, profile_retire_fire;
     logic profile_normal_retired_q, profile_async_enable, profile_preserve_cancel;
     logic profile_repeat_empty, profile_repeat_continue, profile_repeat_more;
+    logic profile_repeat_exhausted, profile_repeat_event_pending;
     logic profile_repeat_permit, profile_repeat_checkpoint;
     logic profile_metadata_valid;
     logic profile_family_estimated;
@@ -330,17 +331,27 @@ CONNECTION = r'''
         ((!context_active && (prefix_accept || opcode_start)) ||
          (event_dispatch && !event_software));
     assign profile_start_body = opcode_start || (event_dispatch && !event_software);
+    // The iteration that exhausts CX ends at an event boundary too. Its
+    // branch word keeps fabric speed unless a trap or an external request
+    // could be taken there; then it waits for a CPU boundary, like the
+    // entry word. It opens no further iteration budget.
+    assign profile_repeat_event_pending = debug_flags[8] || intr || nmi || debug_nmi_pending;
     assign profile_repeat_more = repeat_kind != 0 && register_state[16 +: 16] != 0 &&
         (!string_compare || (debug_flags[6] == (repeat_kind == 2'd2)));
     assign profile_repeat_empty = profile_raw_operation_valid && repeat_kind != 0 &&
         micro_word == spk286_microcode_pkg::MC_BRANCH_REPEAT_EMPTY && register_state[16 +: 16] != 0;
     assign profile_repeat_continue = profile_raw_operation_valid && profile_repeat_more &&
         micro_word == spk286_microcode_pkg::MC_BRANCH_REPEAT_CONTINUE;
+    assign profile_repeat_exhausted = profile_raw_operation_valid && repeat_kind != 0 &&
+        register_state[16 +: 16] == 0 &&
+        (!string_compare || (debug_flags[6] == (repeat_kind == 2'd2))) &&
+        micro_word == spk286_microcode_pkg::MC_BRANCH_REPEAT_CONTINUE && profile_repeat_event_pending;
     assign profile_repeat_permit = !historical_enable ||
-        (!(profile_repeat_empty || profile_repeat_continue) ||
+        (!(profile_repeat_empty || profile_repeat_continue || profile_repeat_exhausted) ||
          (cpu_boundary && (!profile_repeat_continue || profile_deadline_ready)));
     assign operation_valid = profile_raw_operation_valid && profile_repeat_permit;
-    assign profile_repeat_checkpoint = historical_enable && repeat_boundary && repeat_stepped;
+    assign profile_repeat_checkpoint = historical_enable && repeat_boundary && repeat_stepped &&
+                                       profile_repeat_more;
     assign decode_ready = profile_decode_ready &&
                           (!historical_enable || event_active || profile_head_permit);
     assign profile_async_enable = !historical_enable ||

@@ -3,23 +3,23 @@
   "downstream_overlay": {
     "rtl/timed/generation.json": {
       "bytes": 6589,
-      "sha256": "8c7d124a9adcbe4d064e5844cf66cec2b9f92a2344a2735e10acec244b3e7cc8"
+      "sha256": "2f7348c7ce2e7d505e11a7a802abe423df0387687553e628f3d0530375fd640f"
     },
     "rtl/timed/repeat-local-contract.json": {
-      "bytes": 678857,
-      "sha256": "0503597782151dcd5fc4efa52a60a283c4090b10f56ca2b483082d8d703078e3"
+      "bytes": 701841,
+      "sha256": "d4f2abea022ab017f8a3fe913232a66513943efb2485d5d769e7b65c3042318f"
     },
     "rtl/timed/spk286_profiled.sv": {
-      "bytes": 112526,
-      "sha256": "80e7fb7b560cdcddd165341c6a0d735b7192faa1119137f67a99a1932ed7efcc"
+      "bytes": 115273,
+      "sha256": "af3261779e9f342ec3e5c340179e4ef3132a376b12948c1e226a2dcb614523d9"
     },
     "rtl/timed/spk286_profiled_events.sv": {
-      "bytes": 11371,
-      "sha256": "5b8d059d63840eda2704e87514555689e12ce4ab5fd8782fd6a9d52ef831c79e"
+      "bytes": 11911,
+      "sha256": "e57425fc01b0421eae98ec13a29bba6f5eb9b057e6726b91ed31778780b2a889"
     },
     "rtl/timed/spk286_profiled_micro_executor.sv": {
-      "bytes": 173101,
-      "sha256": "24760e37154613611752a791a7652a01d63ee77da16e9b939af63da295f8c9a7"
+      "bytes": 179480,
+      "sha256": "7e0b35cbde7a6114dda54375ce2d7b9fb3f96e3cbcd93f85806ff3d8c6d4ee68"
     }
   },
   "imported": {
@@ -31,9 +31,9 @@
     },
     "microcode/generated/spk286_microcode.lst": {
       "bytes": 42627,
-      "git_blob": "2ee4c46dbc2205ba7efe1ab30266d797d637dcfc",
+      "git_blob": "595a6675b3f858d21ee04f4fa3bdba157d71ab04",
       "git_mode": "100644",
-      "sha256": "feade36ef984ef39963b989b19fc402ba8aa4741dac0978c59a77fc6979241fb"
+      "sha256": "416ff1df4781800f5570791373253d7cd76144fca154db8266dc756466530698"
     },
     "microcode/generated/spk286_microcode_pkg.sv": {
       "bytes": 34602,
@@ -43,27 +43,27 @@
     },
     "microcode/generated/spk286_microcode_rom.sv": {
       "bytes": 49423,
-      "git_blob": "e3e15c6785642a7bc163e837fcc73f6f6e095975",
+      "git_blob": "792470ced9f439d6d9f0c704ab6737cba7684824",
       "git_mode": "100644",
-      "sha256": "d4a84b70696e2d01acdde25973e70a39c85714f3d55300f4dcc9f912ba215a1c"
+      "sha256": "eaba2cd326d80cb8c77ef9275b80070814deba9931cac7f87b88f628f27ec7bf"
     },
     "microcode/generated/spk286_microcode_symbols.json": {
       "bytes": 212742,
-      "git_blob": "4f222acdedcbe839033dfe2f12389443520f486c",
+      "git_blob": "f23061d8801d3592750de6d07e88ff28e1e1ed7e",
       "git_mode": "100644",
-      "sha256": "24ebb2f009f8e75776daa8652029ba0ed573df81f61ee7a9bc310b49526935f3"
+      "sha256": "d3fd4aabb4754abae40c9e2b0e9a7398b1c8cbeb8ae0c83ccf270a630f014986"
     },
     "microcode/generated/spk286_microcode_sync_rom.sv": {
       "bytes": 62526,
-      "git_blob": "9693b8354dcbe41146818e7680cdce8106570df2",
+      "git_blob": "bbe6ef57675124e46e3e1a66d96f99dfdae6ebf9",
       "git_mode": "100644",
-      "sha256": "12fa6c4be08cbd4ddee67fbcaa51726cdb96ae5081c15845219ca82a3f54b54c"
+      "sha256": "36b52efc004ea4ec868e4bced8e4f3e0cd0bf0197a580c05b3b036d929003e3e"
     },
     "microcode/generated/spk286_microcode_validation.json": {
       "bytes": 24678,
-      "git_blob": "44ede07f3815e99ad6000684fe54508a6ef20793",
+      "git_blob": "996e7e21973afc95163d6b0cd39aca9e33d6cacf",
       "git_mode": "100644",
-      "sha256": "9d1e48fefefd436373bee4765031b66012fe3873ed561461e98bff21a86947b7"
+      "sha256": "485352ecd68f8f92e573d392d07ee5fe01248fac3547245bed21e3d9b541fd30"
     },
     "microcode/source/data_move.mc": {
       "bytes": 436,
@@ -133,9 +133,9 @@
     },
     "microcode/source/zzzzzzzzz_stack_frame.mc": {
       "bytes": 1732,
-      "git_blob": "38582675714ce9f54586760d56f34b7706a5d301",
+      "git_blob": "dc4b7981784dfaf769221ba5a616d7fce3f46aea",
       "git_mode": "100644",
-      "sha256": "748ef8165440e753ecb6be11269330030e3b09ed39f4406b113c1b9c5d8255a9"
+      "sha256": "82c6fdf67ea305074018df99609428cd474f25482cbab359fe94e7c978a3891d"
     },
     "microcode/source/zzzzzzzzzz_far_pointer.mc": {
       "bytes": 1968,
@@ -192,10 +192,10 @@
       "sha256": "a7768d3d7dc31ed2ed2b931e907f8d165883c8b9fe3fe41599cb6b01244a86af"
     },
     "rtl/spk286.sv": {
-      "bytes": 88318,
-      "git_blob": "c297fe93b6651d8d8c6ee0265e66f0deffbf21e9",
+      "bytes": 89387,
+      "git_blob": "7e082fd8cae81423dff9d7caa78e99bead3db353",
       "git_mode": "100644",
-      "sha256": "ee5995899dac02e8f175a291f39a26ee27dfe7d59b03683283d1fa1faa515382"
+      "sha256": "058c09823e5ddbfefcd277c66681d2892f413a06a35ea8d5c2971353ab9c69cb"
     },
     "rtl/spk286_adjust.sv": {
       "bytes": 5376,
@@ -258,10 +258,10 @@
       "sha256": "9a31cacb899944d99908bc647506c681408382c2db92cafe9a312a19b9ccd73c"
     },
     "rtl/spk286_events.sv": {
-      "bytes": 11084,
-      "git_blob": "729700abb77e9b7aeaa5b2f9f59918b6d8ac419c",
+      "bytes": 11624,
+      "git_blob": "c53f6f6925d05c76f9e9487d2bb8fb9c7f613068",
       "git_mode": "100644",
-      "sha256": "e67b64b6a3c7d3f0330ee85d726f4f14d3c64cabd880adb29d7ec7be148df7a4"
+      "sha256": "936ea05f6d8e2dfeff5034e7bca6d890307dba17735762011ffbb2851b46cb20"
     },
     "rtl/spk286_fetch.sv": {
       "bytes": 6435,
@@ -282,16 +282,16 @@
       "sha256": "711b95277b1353d84005523cc3087215d1c98f54b0a7816b78f90f996260a83a"
     },
     "rtl/spk286_loadall_service.sv": {
-      "bytes": 9756,
-      "git_blob": "c990a7a3aba81a3502ff06d16e6ae4aef27c56fc",
+      "bytes": 10092,
+      "git_blob": "b078532e54036283777ef2241e61538ed78bc1b4",
       "git_mode": "100644",
-      "sha256": "83b75f016a769edf6db16720c075e3b346aad3526544c9d7df1922c5bea059c9"
+      "sha256": "870ba529cf66f366c1765b9746cbda8cd2d402ca5868beb93275d6c74d4e463c"
     },
     "rtl/spk286_micro_executor.sv": {
-      "bytes": 171802,
-      "git_blob": "4e9c8a69ee77455be10b07599a59b5e2a294e9c3",
+      "bytes": 176999,
+      "git_blob": "8e25221eefc2bcad89aa2ea8f3bae13ffe4abc58",
       "git_mode": "100644",
-      "sha256": "d74ae3e5daf78ef4f014a443fecaf4edc767bfd636d665e38470ee806b8a0675"
+      "sha256": "0b347574c400c58d4c61c8884ba09eec3ae96fc5a5335ee6d5320f6ca9b9a6da"
     },
     "rtl/spk286_microsequencer.sv": {
       "bytes": 4529,
@@ -378,10 +378,10 @@
       "sha256": "aea6fde473e7ac7902caacae9b283542404a7472d7ddf93c5f37f175c7beed9d"
     },
     "rtl/spk286_task_segment_service.sv": {
-      "bytes": 16187,
-      "git_blob": "a1b44967656c32ccc8d4087e8315ee83c55bcf74",
+      "bytes": 16194,
+      "git_blob": "267e180cddc78fdd669a91d9bd4cd818d7ef1940",
       "git_mode": "100644",
-      "sha256": "1199542a4b90fa096a3da244b973428ff982244565b47359ed75c2bd8e5bb5ad"
+      "sha256": "432708490f1ef17b360b63c2b1231c2c7b866a9ac38134e76466ad05dc7cebc6"
     },
     "rtl/spk286_task_switch_service.sv": {
       "bytes": 27311,
@@ -408,10 +408,10 @@
       "sha256": "c0a2a49adccad255382ad5b3b0535d307ec05ea45c6246ab96e87c150cfe3ff1"
     },
     "rtl/spk286_tss_pkg.sv": {
-      "bytes": 1622,
-      "git_blob": "c6118726ab81cf259b7507faf4ac6bae9a25e5aa",
+      "bytes": 1741,
+      "git_blob": "fb5f9058beb5a6ba9f0410fee074d3f1520c8cb2",
       "git_mode": "100644",
-      "sha256": "d62f345edf4b9d05e9f05c1217807aae3f581d2801047711ac7d945ac766249d"
+      "sha256": "2c377eee1a1e6ffd0e9506e4cdbf83c7a5644bc0b434c6a1d5007ccb1162905d"
     },
     "rtl/spk286_tss_service.sv": {
       "bytes": 11713,
@@ -439,15 +439,15 @@
     },
     "tools/microcode/audit_microcode.py": {
       "bytes": 24402,
-      "git_blob": "17ce58eb100e7cb843f4c7d307ecfc94607c6586",
+      "git_blob": "ebfb59e11c9b3642936c6e763ce80ab88bd25166",
       "git_mode": "100644",
-      "sha256": "ddc8b655e1c8908ad36a30f5876d5e6e86c885611aec670761a162e0cbc91b3f"
+      "sha256": "eed35b8d0e455407c2555d8af19b80ea42e0d58c4a39689a7753ef72f69c8db5"
     },
     "tools/microcode/compile_microcode.py": {
-      "bytes": 79750,
-      "git_blob": "5661f5069596dd28abb591fb735f3260d6847197",
+      "bytes": 80076,
+      "git_blob": "8f2a8681a3ca48ff271e8e1887c2496614adc5b7",
       "git_mode": "100644",
-      "sha256": "77154d158f746b139550890879f3c657edfa94de31d9107f1cd8d5e4513ae784"
+      "sha256": "bb35a19c2fd2bb438e0da018fd0050ea529d846f5cf76d237e73268ab15fb05a"
     }
   },
   "ownership_policy": "PCAT owns the vendor/spk286/rtl/timed overlay, generated by scripts/build_p06_profile_cpu.py, and maintains its verification tools locally. Synchronization imports only portable CPU RTL, microcode source/generated files and the microcode compiler tools. Use the root profile generator and regression for this integration.",
@@ -743,8 +743,8 @@
       "sha256": "e074e34034e2155cd52e503c29284f53202f0a00bf758d20ee195c12cb93e836"
     },
     "sim/unit/spk286_adjust_lifecycle_tb.sv": {
-      "bytes": 12201,
-      "sha256": "cbd50984caa9eedac77af9b054e542526c35ad6feb17ab478dbf3a15350a8ce1"
+      "bytes": 12240,
+      "sha256": "64e7ef3d247f2a4535550087378d0f99eefa636a897534b2761a9887409f1187"
     },
     "sim/unit/spk286_adjust_tb.sv": {
       "bytes": 4322,
@@ -759,8 +759,8 @@
       "sha256": "c60bcaa0ad7bbe08dce52bd61af28a72c3904cc7026f18df4b27df16d51b9461"
     },
     "sim/unit/spk286_alu_lifecycle_tb.sv": {
-      "bytes": 12722,
-      "sha256": "3a050c1414f4d3c1e10cabd03249d742b461c6dad993069f824c0bc2289f4625"
+      "bytes": 12766,
+      "sha256": "9221217056f33bece80c7967894a6b3d303875c63f76a3501facaa3df9c204d6"
     },
     "sim/unit/spk286_alu_tb.sv": {
       "bytes": 1994,
@@ -831,12 +831,12 @@
       "sha256": "853af4ec3060d60a0dab82ebf56a18a6ba2efd54c6dffbb658a93d7bfba4ab4f"
     },
     "sim/unit/spk286_double_fault_cpu_tb.sv": {
-      "bytes": 14326,
-      "sha256": "c8130080f15c75323143c81bbfafc99ee064a709a86507bc80cb42730aefd47d"
+      "bytes": 14477,
+      "sha256": "c41827a28747b77f8190ee792354c9e88ac70993da612a67ed4f1879c947d306"
     },
     "sim/unit/spk286_double_fault_events_tb.sv": {
-      "bytes": 10504,
-      "sha256": "ba25a83a639da03427e2b8e53e0b09b1db088ece37a7f832043eb71739d849c5"
+      "bytes": 10562,
+      "sha256": "c758ae4ca4b41bfb9f26af634c7479a0f1c17abcbb6beefff7fc368bc173e2cc"
     },
     "sim/unit/spk286_effective_address_tb.sv": {
       "bytes": 2795,
@@ -863,12 +863,12 @@
       "sha256": "51c6649206607c1be32e702a151ebaf5690c73de16b93bb966eba2e32ab00a31"
     },
     "sim/unit/spk286_event_lifecycle_tb.sv": {
-      "bytes": 26391,
-      "sha256": "07d4be629040bc896b4d71796a6265dbca97653aaefc9bc1eb3a756ce98adf90"
+      "bytes": 26523,
+      "sha256": "5d5b33e2122afe8f9b627c668865fa38968fc17580679dd3e92a6d488af94620"
     },
     "sim/unit/spk286_event_nt_tb.sv": {
-      "bytes": 7424,
-      "sha256": "398957c95e45b2dcd011f932781ec02f3ec88a2965b56a3e5939682a7d093079"
+      "bytes": 7620,
+      "sha256": "343df4053e1ed8ce20d8c8d4a28290a9740ffcc668a4b5ecdb32d2b07b1acf4c"
     },
     "sim/unit/spk286_event_streams_tb.sv": {
       "bytes": 8850,
@@ -887,8 +887,8 @@
       "sha256": "126bafcf365fc53f3e33aabe4f7bda0e1585703e084398d671ed0ac521e5be2c"
     },
     "sim/unit/spk286_fault_metadata_tb.sv": {
-      "bytes": 8984,
-      "sha256": "ebca57db6b065e55e9b48591522e69ce9419205eab399a06926b3a27eaca4dba"
+      "bytes": 9147,
+      "sha256": "7095ac32a105fe252bd3585dd8e75db783cab9a62a40fdaedf625a6bbc4778eb"
     },
     "sim/unit/spk286_fault_precedence_tb.sv": {
       "bytes": 10772,
@@ -903,8 +903,8 @@
       "sha256": "363d5a66e798f81eab29f8a5d86ccd9d505e8be3078f2275b5a847da0ae22fb7"
     },
     "sim/unit/spk286_hlt_privilege_tb.sv": {
-      "bytes": 5591,
-      "sha256": "5f305a583dd2f1f9f69083ed147a45c8051932654823701dfa41a5b837600cdc"
+      "bytes": 5726,
+      "sha256": "0408018a3253e21584ee3259c1c38809c31ba056921eac8a2777dc087786632b"
     },
     "sim/unit/spk286_immediate_execution_tb.sv": {
       "bytes": 16385,
@@ -927,8 +927,8 @@
       "sha256": "69ec8174bf73468a0266054b6c02f7d45da1902d5c052fb73be9689e0b3aee53"
     },
     "sim/unit/spk286_iopl_access_tb.sv": {
-      "bytes": 11603,
-      "sha256": "949a81a2b16942a9e9e8725f516ed32eb78fe93575f3bbcbb178accec2201c17"
+      "bytes": 11868,
+      "sha256": "8521145e0628490e1ca1f3e6bafa17ed9640bef9fbddb8c0ce8b52974b737c1d"
     },
     "sim/unit/spk286_jmp_call_gate_tb.sv": {
       "bytes": 14280,
@@ -940,15 +940,15 @@
     },
     "sim/unit/spk286_loadall_integration_tb.sv": {
       "bytes": 12787,
-      "sha256": "dd1e9d360fbbe55a2ed7c44caaae19cc95c3501b5743fe43a0764b3b74523c41"
+      "sha256": "820e568590f6b2225a13944dc2062748bb69910d08755e14e06c87dc64390476"
     },
     "sim/unit/spk286_loadall_protected_tb.sv": {
       "bytes": 6767,
-      "sha256": "d51636cf48b73dbef079c5eac2e8c4a1dcb06384c15b5a1aeecbd08acd55c1c3"
+      "sha256": "458d8dc987e170d650a6ed492a138374c62173eb2a1dc17efa37c6135f781729"
     },
     "sim/unit/spk286_loadall_service_tb.sv": {
-      "bytes": 9647,
-      "sha256": "503fce21cc53a16e5d39e4bc7a3c189c361b210c3b679791684e90f37f26d49d"
+      "bytes": 9855,
+      "sha256": "1bf67f425ab0c2bc2d7766e3e887eeeacbf0769700cc8aaa216b7086da1bf3ca"
     },
     "sim/unit/spk286_microcode_execution_tb.sv": {
       "bytes": 12144,
@@ -995,8 +995,8 @@
       "sha256": "ac0aa1f333297af8c1ffbd34e5bcfa9b16a2a62a6a0af10ad83032920644a66d"
     },
     "sim/unit/spk286_odd_protected_stack_tb.sv": {
-      "bytes": 11293,
-      "sha256": "572f718e43ce371dc2a4f0bea6b9685d30b37548f5888ae8df713a62a207a33f"
+      "bytes": 11819,
+      "sha256": "edc50b6a6d3a727538b00995fd3400a1f32a62b75ef3e54f9320bec2017672dd"
     },
     "sim/unit/spk286_operand_byte_tb.sv": {
       "bytes": 5526,
@@ -1051,16 +1051,16 @@
       "sha256": "8fd620789809b695509d6af4bac5ae669a2f94d4a7f4dbee4701f739239c4464"
     },
     "sim/unit/spk286_protected_expand_down_tb.sv": {
-      "bytes": 156104,
-      "sha256": "97da467cc974339540ccd492581b2081a2769434c275ab63232a032d23f1559a"
+      "bytes": 156281,
+      "sha256": "137665e9a8cb335bfbe218894e9729af03af266329660aaff3b23a90b72020b9"
     },
     "sim/unit/spk286_protected_foundation_tb.sv": {
       "bytes": 19682,
       "sha256": "77a599d4f9d403de9b150b69a419ccf38e1074a73f10267056488a8216e1c2ac"
     },
     "sim/unit/spk286_protected_ltr_tb.sv": {
-      "bytes": 10002,
-      "sha256": "5f0b3ca0ea7283158950df1713e31977825ed397573cbf32404824899b1b9b69"
+      "bytes": 10184,
+      "sha256": "f7bcbccfa1e84352f395ef8bacdea44c702d9d300d82858fbedc33e29dded7e1"
     },
     "sim/unit/spk286_protected_pop_segment_restart_tb.sv": {
       "bytes": 10001,
@@ -1075,8 +1075,8 @@
       "sha256": "cf91519da3672ad2621c0fe0ebb53a6642ad6c1ae148c50c588d2006a6958719"
     },
     "sim/unit/spk286_protected_system_tb.sv": {
-      "bytes": 79315,
-      "sha256": "c07d1e5ca0369b853471516be4e715726893861c1196fc6113c70a8b53c4d124"
+      "bytes": 82160,
+      "sha256": "abb5e57c855817b87f640f140689cca30f77efd35dc6645a82719121499bec90"
     },
     "sim/unit/spk286_protected_task_fault_tb.sv": {
       "bytes": 10861,
@@ -1091,12 +1091,12 @@
       "sha256": "8dda846e5e6a06e7eb87f4b1f676de8e301f5e766090281a83c06a1e938b595e"
     },
     "sim/unit/spk286_protected_task_gate_far_tb.sv": {
-      "bytes": 8293,
-      "sha256": "5d6c713a2b60f8b64610c8420978a7bb9dbbefeb86e42706878f58a8dc429508"
+      "bytes": 10492,
+      "sha256": "fc09b1e87faca283377e165dfe204416d80b9788fe6dbdf298839c656e6c5a23"
     },
     "sim/unit/spk286_protected_task_gate_fault_tb.sv": {
-      "bytes": 10942,
-      "sha256": "1541f0dd9150f0b022f66d25319c37c6e7e8cd912890834050753bb3761571ec"
+      "bytes": 10918,
+      "sha256": "d181975d6ecaf2af7c12018255643af8ed4af619930ba2e36de3af4dd2f68894"
     },
     "sim/unit/spk286_protected_task_gate_privilege_outer_tb.sv": {
       "bytes": 10628,
@@ -1127,8 +1127,8 @@
       "sha256": "77e5e522fc8cedebf6ac69bd9d949221de26e8c0bfae0b69df1a7fde653ef980"
     },
     "sim/unit/spk286_protected_task_state_fault_tb.sv": {
-      "bytes": 18019,
-      "sha256": "6ee4ecbc8a529b240e4a85396c345d89e05570941e0ade16acb38ecef3f6d3a9"
+      "bytes": 18095,
+      "sha256": "f464c481cd1388e0bc6552f36d26930b6de2c4577a914f83a7962a868134facd"
     },
     "sim/unit/spk286_protected_task_tb.sv": {
       "bytes": 9092,
@@ -1147,8 +1147,8 @@
       "sha256": "079028efb5fe08ad89b11a23b41f791620141ccbde4c7b282ea3b55863dfcaa7"
     },
     "sim/unit/spk286_return_flags_tb.sv": {
-      "bytes": 7583,
-      "sha256": "050022ae0a9bce9d83726ca505eb0bebbc9f8c11c53a8333432816ab4a5ac190"
+      "bytes": 7789,
+      "sha256": "f1bdf423033a9fb063a02db92264eb58beaadde564e2c3c62ea4658cc99c7712"
     },
     "sim/unit/spk286_scalar_direct_tb.sv": {
       "bytes": 8700,
@@ -1159,8 +1159,8 @@
       "sha256": "66762984b18b558bc37d6614687763dd97b17c5c7119357e05bda6e6a1efd40a"
     },
     "sim/unit/spk286_segment_instructions_tb.sv": {
-      "bytes": 9430,
-      "sha256": "320dc7b07332145a4444ba44a53b092c7edc3066afe055c9baa0cdb2a1aff0ea"
+      "bytes": 9631,
+      "sha256": "28cb8255e696ffe581581b68163cfa5a3c59a11e155486db3e0795bf1e968748"
     },
     "sim/unit/spk286_segment_lifecycle_tb.sv": {
       "bytes": 13983,
@@ -1183,16 +1183,16 @@
       "sha256": "b62b822f37940d0bc66bdfb7f40c8bc4b09ece3a08d4953a63cef41bd566a748"
     },
     "sim/unit/spk286_stack_control_tb.sv": {
-      "bytes": 9153,
-      "sha256": "8617b320aa260724e5c233abe7c0979a6ed7611d0acf1438d8022615ec9eefc2"
+      "bytes": 9352,
+      "sha256": "e4923319c3d7b27dd8b03285f54ae196f24437481330c065d7ebe14305cd0149"
     },
     "sim/unit/spk286_stack_frame_instructions_tb.sv": {
       "bytes": 7604,
       "sha256": "a2a7858186a8b2b86d992a3127b39505ff2f1fc9c36bbd2a8f5ff64783f694a9"
     },
     "sim/unit/spk286_stack_frame_lifecycle_tb.sv": {
-      "bytes": 18920,
-      "sha256": "57aa1da9e37ec93bdf78a467d2c5d5f0cdbd3e9676b2591abf24ff58531d1359"
+      "bytes": 19073,
+      "sha256": "70adfa146b2e6a91e149e8d86e54962b036221986e8066bbd52692c925472a35"
     },
     "sim/unit/spk286_stack_lifecycle_tb.sv": {
       "bytes": 15498,
@@ -1203,16 +1203,16 @@
       "sha256": "58edcab59444223370631101688267d2edceb04eed641c641f61a8f90f5f91fd"
     },
     "sim/unit/spk286_string_boundaries_tb.sv": {
-      "bytes": 15802,
-      "sha256": "a950e566a87b2919b86732f51afcd662cfa7ebb4d5dde9ea5d99839604960677"
+      "bytes": 15834,
+      "sha256": "a69f5c4efa630ec6602d32defb83222eafcdbc70e61f864f94b240439cdccb6a"
     },
     "sim/unit/spk286_string_instructions_tb.sv": {
       "bytes": 8118,
       "sha256": "f010a545bb9579a6a662cf33000f0e3cd23ac85596cb4f882ea96c17d8a729ba"
     },
     "sim/unit/spk286_string_io_lifecycle_tb.sv": {
-      "bytes": 18668,
-      "sha256": "3dd193154ad39d5b0aa70d3556e514f509fad199e27326a1abe0ffc509df5ff1"
+      "bytes": 18828,
+      "sha256": "0c70fce57ae26b19fa5c661a9ae3092f56ff5318a158652d0fac7c3e9a8e4129"
     },
     "sim/unit/spk286_string_io_tb.sv": {
       "bytes": 8649,
@@ -1223,8 +1223,8 @@
       "sha256": "78eadd909719beda4cc283df6e2987f4755d67bea4065e727b647b9e29324ae9"
     },
     "sim/unit/spk286_string_lifecycle_tb.sv": {
-      "bytes": 12352,
-      "sha256": "d40df1b898178a8484723a2cbec095b54db7f05ea1f942d251e6cb64a03bbe08"
+      "bytes": 12512,
+      "sha256": "cd3a423f11d4129a8d0edf96c89deddfc8ea2b495de9e1d355ddbf354a25f0f9"
     },
     "sim/unit/spk286_string_zero_events_tb.sv": {
       "bytes": 11043,
@@ -1243,20 +1243,20 @@
       "sha256": "3dd451b2619f1af3ca05a41892dc0acce9bdf0990802641e5e99c4755c54a0e9"
     },
     "sim/unit/spk286_system_access_tb.sv": {
-      "bytes": 12305,
-      "sha256": "05071a30978b822175153dd345afff893ca66fc49ddbc4a3cdfa67c9be2bb57e"
+      "bytes": 12383,
+      "sha256": "3570c5d93b95a1f78c95fafe6b11c465b01ac1206d4543a181522cc46f586ed7"
     },
     "sim/unit/spk286_system_table_range_tb.sv": {
-      "bytes": 8780,
-      "sha256": "c1d9e7c5483a1bad3149eee97d00e939169767773f0fb731c9f0611db788d347"
+      "bytes": 10948,
+      "sha256": "fd6c00b1a921f676e71fc57d0dee07aefa915461b217a5e52712803e52502676"
     },
     "sim/unit/spk286_task_late_publication_tb.sv": {
       "bytes": 7184,
-      "sha256": "f70878bf0942a93ac466c8d4a059170a4341a276e1d47a22af6e89aeecfff3da"
+      "sha256": "6107b4612524f59dfafa0f0479e71fa988431883da16f96b88b16f48b9110534"
     },
     "sim/unit/spk286_task_segment_service_tb.sv": {
-      "bytes": 16515,
-      "sha256": "bf4dbc610b1be589adf978ffb8ba881baef53aa15fcb1b449b8fe7759f906aab"
+      "bytes": 17160,
+      "sha256": "65e4d4ad603b2e476161559b43ad944c006b9d26fb540a578a9e6143a559ee50"
     },
     "sim/unit/spk286_task_switch_service_tb.sv": {
       "bytes": 16137,
@@ -1307,8 +1307,8 @@
       "sha256": "7ef4020714b2bd86686e72fd83663dea50c17dfbc057857b67e32939e1a2135b"
     },
     "sim/unit/spk286_unary_lifecycle_tb.sv": {
-      "bytes": 9983,
-      "sha256": "e68a9a8e15dfb8e4a99a095867ebd94b8392c0d785d6b8aaf72d2bd4b93ea45d"
+      "bytes": 10040,
+      "sha256": "06e6d29b40e981976533c44c6d7d2d3dbad2f081de06f94427780827e9e5eda0"
     },
     "sim/unit/spk286_xchg_hold_lock_tb.sv": {
       "bytes": 6781,
@@ -1341,6 +1341,10 @@
     "sim/verilator/timing_policy_init.cpp": {
       "bytes": 1465,
       "sha256": "a6796495351b207df1aec2f327e7e38e48ddebc119c37e7db159c05ed91318c2"
+    },
+    "tests/fixtures/microcode_enter_commit.json": {
+      "bytes": 12971,
+      "sha256": "ea045760443bbd858a2e6c9dba5a106e9f18fe9b05c3224b7fb78ac2697c7f24"
     },
     "tests/fixtures/microcode_esc_boundary.json": {
       "bytes": 12938,
@@ -1547,8 +1551,8 @@
       "sha256": "2ef56fd2497759f4289878ed973fb51e9a6811ed9a47956c3dbd7fec89aa7f88"
     },
     "tests/test_event_reference.py": {
-      "bytes": 4704,
-      "sha256": "62d035128f427ec3bfa5f11758425e848324bffc348dc38654595b5ed661cc58"
+      "bytes": 4988,
+      "sha256": "c0911fcad292de369b07b008606b39535e95ff72a31654639e8688028f768538"
     },
     "tests/test_idiv_compatibility.py": {
       "bytes": 962,
@@ -1582,9 +1586,13 @@
       "bytes": 3512,
       "sha256": "0087b7cdc752f68ec2e04927586d228e1f1b9a39cf5f6bec82ec1bcb8ac09ff0"
     },
+    "tests/test_microcode_enter_commit.py": {
+      "bytes": 2899,
+      "sha256": "fe24013ab8f643749a64ad6aa7d6af4bc0e8dfe3de772b0f08a2659d66f3ef71"
+    },
     "tests/test_microcode_esc_boundary.py": {
-      "bytes": 3057,
-      "sha256": "cfd50d3306d8de9a95a91cd174226b992383c1a636f5381d3beef2751e4383fa"
+      "bytes": 3173,
+      "sha256": "811df8afd69771b2b29a99e879e6187990c484279da0b9e3623957d07e75d1c0"
     },
     "tests/test_microcode_events.py": {
       "bytes": 2695,
@@ -1783,8 +1791,8 @@
       "sha256": "f7a0ee65fa9d5b1874ee8837d38803280aece2461dd55c9e8e9410ca9bec5451"
     },
     "tests/test_stack_control_reference.py": {
-      "bytes": 2554,
-      "sha256": "752b684fc03a6cf5b36b94ad75fd41c99a5bec63d7b84cff78551cb5718fca39"
+      "bytes": 3001,
+      "sha256": "b0b301cfa32f50d7d01f2b282664c1cce24d1d7f4fa508abc449e7c3dab68934"
     },
     "tests/test_stack_frame_reports.py": {
       "bytes": 1834,
@@ -1847,16 +1855,16 @@
       "sha256": "3b8391389442f4df5df229fa55592b1de1328d89db26d5c330758cfe9659b823"
     },
     "tools/audit_events.py": {
-      "bytes": 7600,
-      "sha256": "1316f52a8c0a550bf32ed715e53e53ab6b63b921a579b5cf0b613a069eaef4d3"
+      "bytes": 7438,
+      "sha256": "a7ade6804af470ee5d4ec8107e06d1a5c9b4021acc541a7f362835600dd31e18"
     },
     "tools/audit_far.py": {
       "bytes": 6137,
       "sha256": "a3add8ba4e368ce9be29bb51998fa24fca43442bdbebd34635a393a46d650bc1"
     },
     "tools/audit_io.py": {
-      "bytes": 7915,
-      "sha256": "7c6fcb8a4d6fefde74834d7a8a5c7c6f1ee96fe5def8506edcb522e3aaa11029"
+      "bytes": 8035,
+      "sha256": "1f8851b3e3f1ffce51b9965bbd20c7ac4008e3807bd1b66779b27e824c1fafea"
     },
     "tools/audit_muldiv.py": {
       "bytes": 7285,
@@ -1903,12 +1911,12 @@
       "sha256": "4b40f90b1ffe6aa6fe6206ace10e13117293bb3e73bf8dd100fbb216dd1764b9"
     },
     "tools/audit_stack_frame.py": {
-      "bytes": 7020,
-      "sha256": "b1294be570b1e18e99b4b63ea34542912a1db7434f4eb13edf3103ddf4f07d72"
+      "bytes": 7082,
+      "sha256": "ec4d8cc419cc3e441915e28fe32e2a47f592b2b918046f64c9a916d1766ff1e5"
     },
     "tools/audit_strings.py": {
-      "bytes": 7901,
-      "sha256": "ff3f5ece34d5bfc3885fca0f533cf5b752d758e04bbed0042a515d3de8477cdd"
+      "bytes": 8205,
+      "sha256": "b5f8f098ee928a12ff19f3110203118c43765612145cf242f5751ce55f003636"
     },
     "tools/audit_task_late.py": {
       "bytes": 3794,
@@ -1943,8 +1951,8 @@
       "sha256": "1a59821a96749ce9d0813d1d54c7c8673eb64fe2936889afed0befbff8631c45"
     },
     "tools/event_reference.py": {
-      "bytes": 6133,
-      "sha256": "58c637b4e6143b59a61f332e4fbc31d40f6dc793ea848125ca01443f21c375d7"
+      "bytes": 6406,
+      "sha256": "d4cc2061d2bceb12363517fd6c3db529d561f0e2eacb2c34964821a0216ee40c"
     },
     "tools/event_streams.py": {
       "bytes": 8317,
@@ -2083,8 +2091,8 @@
       "sha256": "925dda117692be016a30386f4bce21bc0a603bca9992b68ef84f97a2e42b8d2d"
     },
     "tools/segment_instruction_vectors.py": {
-      "bytes": 2867,
-      "sha256": "e2d85ed19be11162b0cfa45faf28066836de55c6b5616aacb9a35f020acb5902"
+      "bytes": 3008,
+      "sha256": "445deec11e97f4666e04f4ba4db60b3e38c2dae81338f6617d953b05f0c543a3"
     },
     "tools/shift_instruction_vectors.py": {
       "bytes": 2576,
@@ -2099,8 +2107,8 @@
       "sha256": "bd28da95ac1ee3089289e9202e3414d97d76c018cfc43fc8a87d27e6d503c19f"
     },
     "tools/stack_control_reference.py": {
-      "bytes": 4998,
-      "sha256": "f7d216ebd6ddbb4001ed661799a50c76dde12f0f0e2cd0d75a17743db8d09541"
+      "bytes": 5212,
+      "sha256": "5f72531869446051feece1c4e367c2fc744974687b699baa43ab58ad5b4c6026"
     },
     "tools/stack_control_vectors.py": {
       "bytes": 4408,
@@ -2138,15 +2146,15 @@
   "schema_version": 2,
   "upstream_excluded": {
     "rtl/timed/spk286_profiled.sv": {
-      "git_blob": "d1ff7cd0cc144e7c674975c05868278eaf17f710",
+      "git_blob": "5efffa10cda28024939d7a0069b6c0362e75bdea",
       "git_mode": "100644"
     },
     "rtl/timed/spk286_profiled_events.sv": {
-      "git_blob": "b55e8516341b54447ef62d9dc5b5bfb0363a4057",
+      "git_blob": "677397d16716e695af98cf58b417da3545ec6852",
       "git_mode": "100644"
     }
   },
-  "upstream_head": "012991415b63cd978c009bc6adfcd593513f7f40",
+  "upstream_head": "cb08ecbd29fbc8dea6958756dffbe03bbb523495",
   "upstream_repository": "https://github.com/spark2k06/SPK286.git",
   "validation": "All imported bytes verified; overlay/extras unchanged; upstream clean and HEAD pinned before/after"
 }

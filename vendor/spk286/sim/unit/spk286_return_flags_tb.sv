@@ -47,7 +47,7 @@ module spk286_return_flags_tb;
                             input integer form, input logic old_if, input logic old_nt,
                             input logic [15:0] popped, input logic [1:0] policy,
                             input logic bad_return);
-        logic [15:0] old_flags, expected, source_cs, source_ss, target_cs, target_ss;
+        logic [15:0] image_flags, old_flags, expected, source_cs, source_ss, target_cs, target_ss;
         logic [1:0] target_cpl;
         integer deadline;
         reset=1; execute_enable=0; observe=0; fault_seen=0; timing_policy_request=policy;
@@ -57,14 +57,17 @@ module spk286_return_flags_tb;
         target_cpl = form==2 ? cpl+2'd1 : cpl;
         target_cs = form==2 ? (16'h0018 | {14'd0,target_cpl}) : source_cs;
         target_ss = form==2 ? (16'h0020 | {14'd0,target_cpl}) : source_ss;
-        old_flags=16'h00D7 | {2'd0,iopl,12'd0} | (old_if ? 16'h0200 : 0) | (old_nt ? 16'h4000 : 0);
+        image_flags=16'h00D7 | {2'd0,iopl,12'd0} | (old_if ? 16'h0200 : 0) | (old_nt ? 16'h4000 : 0);
+        // A real-mode LOADALL image loads FLAGS with bits 12-15 clear, as on
+        // an Intel N80286-12.
+        old_flags=pe ? image_flags : image_flags & 16'h0FFF;
         // Status/control bits common to real/protected POPF and ordinary IRET.
         expected=(popped & 16'h0DD5) | 16'h0002;
         expected[9]=!pe || cpl<=iopl ? popped[9] : old_if;
-        expected[13:12]=pe && cpl==0 ? popped[13:12] : iopl;
-        expected[14]=pe ? popped[14] : old_nt;
+        expected[13:12]=pe && cpl==0 ? popped[13:12] : old_flags[13:12];
+        expected[14]=pe ? popped[14] : old_flags[14];
         memory['h40]=8'h0F; memory['h41]=8'h05;
-        word_at('h806,{15'd0,pe}); word_at('h818,old_flags); word_at('h81A,16'h0100);
+        word_at('h806,{15'd0,pe}); word_at('h818,image_flags); word_at('h81A,16'h0100);
         word_at('h81E,16'h0033); word_at('h820,source_ss); word_at('h822,source_cs);
         word_at('h824,16'h0033); word_at('h82C,16'hF000);
         cache('h836,0,8'hF3,16'hFFFF); cache('h83C,0,8'h9B | {1'b0,cpl,5'd0},16'hFFFF);

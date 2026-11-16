@@ -233,13 +233,16 @@ module spk286_protected_ltr_tb;
         check(debug_tr_selector == 16'h0000,
               "LTR rejects a non-TSS descriptor");
 
-        // The fixed 80286 image must include the final LDT word.
+        // LTR does not check the TSS limit: an Intel N80286-12 loads a TSS of
+        // limit 2Ah. Only a task switch needs
+        // the complete image.
         write_ltr_program(16'h0018);
         write_descriptor(32'h00000418, 24'h001000, 16'h002A, 8'h81);
         reset_to_ltr_entry();
-        wait_fault(8'd13);
-        check(debug_tr_selector == 16'h0000 && memory[16'h041D] == 8'h81,
-              "LTR rejects a TSS shorter than the fixed 80286 image");
+        wait_halt();
+        check(debug_tr_selector == 16'h0018 && debug_tr_limit == 16'h002A && memory[16'h041D] == 8'h83 &&
+              !(event_completed && debug_event_vector == 8'd13),
+              "LTR accepts a TSS shorter than the fixed 80286 image");
 
         // LDT and null selectors are invalid for LTR before any busy write.
         write_ltr_program(16'h000C);

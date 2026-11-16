@@ -1036,7 +1036,8 @@ module spk286_protected_expand_down_tb;
             observed_lar_value = {memory[descriptor_address + 5], 8'h00};
             for (rpl = 0; rpl < 4; rpl = rpl + 1) begin
                 rpl_value = rpl[1:0];
-                valid = descriptor_present && descriptor_dpl >= caller_cpl && descriptor_dpl >= rpl_value;
+                // VERR/VERW ignore the present bit, as an Intel N80286-12 does.
+                valid = descriptor_dpl >= caller_cpl && descriptor_dpl >= rpl_value;
                 inspect_valid = descriptor_dpl >= caller_cpl && descriptor_dpl >= rpl_value;
                 verr_valid = valid && (descriptor_kind == 3'd0 || descriptor_kind == 3'd1 || descriptor_kind == 3'd2);
                 verw_valid = valid && descriptor_kind == 3'd0;
@@ -1155,7 +1156,8 @@ module spk286_protected_expand_down_tb;
             observed_lar_value = {memory[descriptor_address + 5], 8'h00};
             for (rpl = 0; rpl < 4; rpl = rpl + 1) begin
                 rpl_value = rpl[1:0];
-                valid = descriptor_present && descriptor_dpl >= 2'd3 && descriptor_dpl >= rpl_value;
+                // VERR/VERW ignore the present bit, as an Intel N80286-12 does.
+                valid = descriptor_dpl >= 2'd3 && descriptor_dpl >= rpl_value;
                 inspect_valid = descriptor_dpl >= 2'd3 && descriptor_dpl >= rpl_value;
                 verr_valid = valid && (descriptor_kind == 3'd0 || descriptor_kind == 3'd1 || descriptor_kind == 3'd2);
                 verw_valid = valid && descriptor_kind == 3'd0;
@@ -1417,7 +1419,8 @@ module spk286_protected_expand_down_tb;
             observed_limit = {memory[descriptor_address + 1], memory[descriptor_address]};
             for (rpl = 0; rpl < 4; rpl = rpl + 1) begin
                 rpl_value = rpl[1:0];
-                valid = descriptor_present && descriptor_dpl >= 2'd2 && descriptor_dpl >= rpl_value;
+                // VERR/VERW ignore the present bit, as an Intel N80286-12 does.
+                valid = descriptor_dpl >= 2'd2 && descriptor_dpl >= rpl_value;
                 inspect_valid = descriptor_dpl >= 2'd2 && descriptor_dpl >= rpl_value;
                 verr_valid = valid && (descriptor_kind == 3'd0 || descriptor_kind == 3'd1 || descriptor_kind == 3'd2);
                 verw_valid = valid && descriptor_kind == 3'd0;

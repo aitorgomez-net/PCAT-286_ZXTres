@@ -346,7 +346,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output", type=Path, default=ROOT / "build/microcode-audit")
     parser.add_argument("--contract", type=Path,
-                        default=ROOT / "tests/fixtures/microcode_esc_boundary.json")
+                        default=ROOT / "tests/fixtures/microcode_enter_commit.json")
     args = parser.parse_args()
     audit(args.output, args.contract)
 

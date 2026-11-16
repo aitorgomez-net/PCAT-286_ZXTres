@@ -460,8 +460,8 @@ module spk286_microcode_sync_rom (
         contents[10'd443] = {1'b1, 4'b0000, spk286_microcode_pkg::MC_RESTORE_AUX_TMP0};
         contents[10'd444] = {1'b1, 4'b0000, spk286_microcode_pkg::MC_PUSH16};
         contents[10'd445] = {1'b1, 4'b0000, spk286_microcode_pkg::MC_RESTORE_AUX_TMP0};
-        contents[10'd446] = {1'b1, 4'b0000, spk286_microcode_pkg::MC_WRITE_BP_TMP0};
-        contents[10'd447] = {1'b1, 4'b0000, spk286_microcode_pkg::MC_ALLOCATE_STACK};
+        contents[10'd446] = {1'b1, 4'b0000, spk286_microcode_pkg::MC_ALLOCATE_STACK};
+        contents[10'd447] = {1'b1, 4'b0000, spk286_microcode_pkg::MC_WRITE_BP_TMP0};
         contents[10'd448] = {1'b1, 4'b0001, spk286_microcode_pkg::MC_END};
         contents[10'd449] = {1'b1, 4'b0000, spk286_microcode_pkg::MC_READ_BP_TMP0};
         contents[10'd450] = {1'b1, 4'b0000, spk286_microcode_pkg::MC_CHECK_STACK_TMP0};

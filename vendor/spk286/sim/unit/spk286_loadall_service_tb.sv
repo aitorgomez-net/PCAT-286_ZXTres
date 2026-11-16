@@ -90,7 +90,7 @@ module spk286_loadall_service_tb;
         tick();
         start = 1'b0;
         feed_image();
-        if (!complete || !commit_valid || loaded_msw !== 16'h0000 || loaded_ip !== 16'h5678 ||
+        if (!complete || !commit_valid || loaded_msw !== 16'hFFF0 || loaded_ip !== 16'h5678 ||
             loaded_flags !== 16'h0202 || loaded_gpr[15:0] !== 16'h6161 ||
             loaded_gpr[16 +: 16] !== 16'h7171 || loaded_gpr[112 +: 16] !== 16'hD1D1)
             $fatal(1, "architectural image decode");
@@ -109,24 +109,29 @@ module spk286_loadall_service_tb;
             $fatal(1, "segment cache image decode selectors=%h bases=%h limits=%h access=%h", cache_selectors, cache_bases, cache_limits, cache_access);
         checks = checks + 6;
 
-        // Keep the current SPK286 FLAGS publication contract explicit.  The
-        // emulator differential records that 86Box and PCem normalize
-        // reserved positions; SPK286 currently exposes the image word and
-        // leaves any future architectural normalization to evidence review.
+        // A real-mode image loads FLAGS with bits 12-15 and the reserved
+        // positions cleared and bit 1 set: an Intel N80286-12 reads FFFF as
+        // 0FD7 and 3002 as 0002.
         reset = 1'b1; tick(); reset = 1'b0;
         current_protected = 1'b0; current_cpl = 2'd0; image[12] = 16'hFFFF;
         start = 1'b1; tick(); start = 1'b0;
         feed_image();
-        if (!complete || !commit_valid || loaded_flags !== 16'hFFFF)
-            $fatal(1, "SPK286 LOADALL FLAGS image publication flags=%h", loaded_flags);
-        checks = checks + 1;
+        if (!complete || !commit_valid || loaded_flags !== 16'h0FD7)
+            $fatal(1, "real-mode LOADALL FLAGS normalization flags=%h", loaded_flags);
+        reset = 1'b1; tick(); reset = 1'b0;
+        image[12] = 16'h3000;
+        start = 1'b1; tick(); start = 1'b0;
+        feed_image();
+        if (!complete || !commit_valid || loaded_flags !== 16'h0002)
+            $fatal(1, "real-mode LOADALL clears FLAGS 12-15 flags=%h", loaded_flags);
+        checks = checks + 2;
 
         // CPL 0 may execute LOADALL while protected mode remains enabled.
         reset = 1'b1; tick(); reset = 1'b0;
         current_protected = 1'b1; current_cpl = 2'd0; image[3] = 16'h0001; image[12] = 16'h0202;
         start = 1'b1; tick(); start = 1'b0;
         feed_image();
-        if (!complete || !commit_valid || loaded_msw !== 16'h0001 || !cache_protected[0] ||
+        if (!complete || !commit_valid || loaded_msw !== 16'hFFF1 || loaded_flags !== 16'h0202 || !cache_protected[0] ||
             !cache_protected[1] || !cache_protected[2] || !cache_protected[3])
             $fatal(1, "CPL0 protected LOADALL success path");
         checks = checks + 1;

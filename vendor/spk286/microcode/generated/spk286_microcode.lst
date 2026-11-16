@@ -531,8 +531,8 @@ SPK286 microcode compiler 27.5; format 27; encoding 27
 01BC  15  PUSH16 DECODED TMP0  # zzzzzzzzz_stack_frame.mc:68
 01BD  ENTER_FRAME.finish:
 01BD  5F  RESTORE_AUX -> TMP0  # zzzzzzzzz_stack_frame.mc:70
-01BE  5B  TMP0 -> BP  # zzzzzzzzz_stack_frame.mc:71
-01BF  6C  ALLOCATE_STACK  # zzzzzzzzz_stack_frame.mc:72
+01BE  6C  ALLOCATE_STACK  # zzzzzzzzz_stack_frame.mc:71
+01BF  5B  TMP0 -> BP  # zzzzzzzzz_stack_frame.mc:72
 01C0  3  END  # zzzzzzzzz_stack_frame.mc:73
 01C1  LEAVE_FRAME:
 01C1  53  READ_BP -> TMP0  # zzzzzzzzz_stack_frame.mc:76

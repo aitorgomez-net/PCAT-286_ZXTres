@@ -168,8 +168,9 @@ module spk286_string_boundaries_tb;
             check(retired_count==1,"locked repeated instruction retires once");verify_result(variant);
             timeout_count=0;while(!hlda && timeout_count<100)begin service();timeout_count++;end
             check(hlda,"LOCK released at whole instruction completion");cases++;
-            // MOV SS protects the following whole REP. STI protects INTR;
-            // NMI and TF remain interruptible at a completed element boundary.
+            // MOV SS protects the following whole REP. STI protects INTR only
+            // before the first element, as on an Intel N80286-12; NMI and TF remain interruptible
+            // at a completed element boundary.
             for(integer shadow=0;shadow<2;shadow++)for(integer kind=0;kind<3;kind++)begin
                 setup(variant,kind==2?16'h09D7:(shadow==0?16'h0AD7:16'h08D7),16'h2000);
                 if(shadow==0)begin
@@ -188,9 +189,9 @@ module spk286_string_boundaries_tb;
                 check(timeout_count<500,"reach protected repeated body");
                 if(kind==0)nmi=1;if(kind==1)intr=1;
                 if(shadow!=0)initial_flags=initial_flags|16'h0200;
-                expected_progress(variant,shadow==0 || kind==1?3:1);
-                wait_event(shadow!=0 && kind==2?2:1,kind==0?2:kind==1?35:1,shadow==0 || kind==1 || kind==2?2:1,
-                           shadow==0?16'h0105:kind==1?16'h0104:16'h0101,expected_flags,16'h2000);cases++;
+                expected_progress(variant,shadow==0?3:1);
+                wait_event(shadow!=0 && kind==2?2:1,kind==0?2:kind==1?35:1,shadow==0 || kind==2?2:1,
+                           shadow==0?16'h0105:16'h0101,expected_flags,16'h2000);cases++;
             end
             // Length limit is checked before the opcode can create an element.
             for(integer overlength=0;overlength<2;overlength++)begin

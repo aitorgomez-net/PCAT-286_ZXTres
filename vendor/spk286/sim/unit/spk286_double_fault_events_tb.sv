@@ -74,7 +74,9 @@ module spk286_double_fault_events_tb;
         logic expect_df,expect_shutdown,external_origin;
         logic[15:0] expected_ip,expected_flags;
         setup(pe);accept_origin(origin,first);
-        external_origin=origin>=2 || origin==0 && (first==7 || first==9);
+        // Only a software INT (origin 1) leaves EXT clear, as on an Intel
+        // N80286-12.
+        external_origin=origin!=1;
         expected_ip=origin==0 || origin==1 ? 'h100 : 'h104;
         expected_flags=origin==4 ? 'h346 : 'h246;
         if(live_context) begin

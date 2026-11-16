@@ -238,7 +238,7 @@ module spk286_loadall_integration_tb;
             $fatal(1, "LOADALL lifecycle controls reset=%b nmi=%b hold=%b/%b pending=%b event=%b",
                    reset_injected, nmi_injected, hold_requested, hold_granted,
                    debug_nmi_pending, event_completed);
-        if (debug_protected_msw !== 16'h0000 || debug_ip !== 16'h0200 || debug_flags !== 16'h0202 ||
+        if (debug_protected_msw !== 16'hFFF0 || debug_ip !== 16'h0200 || debug_flags !== 16'h0202 ||
             debug_cs !== 16'h4444 || debug_cs_base !== 24'h100000 ||
             debug_segment_selectors !== 64'h2222333344445555 ||
             debug_segment_bases !== 96'h123456234567100000345678 ||

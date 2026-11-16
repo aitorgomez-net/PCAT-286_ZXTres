@@ -99,9 +99,13 @@ class Machine:
         self.memory[(address+1) % (1 << 24)]=value // 256
         self.accesses.append((True,address,value))
 
-    def push(self, value):
+    def push(self, value, event=False):
         offset=(self.sp-2) % 65536
         if offset == 65535:
+            # An instruction PUSH decrements SP before it faults on a word at
+            # SS:FFFF, as on an Intel N80286-12. Event frames are not measured and keep SP.
+            if not event:
+                self.sp=offset
             raise WordLimit
         self.word(self.ss*16+offset,value)
         self.sp=offset
@@ -115,9 +119,9 @@ class Machine:
 
     def deliver(self, vector, return_ip, software=False):
         try:
-            self.push(self.flags)
-            self.push(self.cs)
-            self.push(return_ip)
+            self.push(self.flags,event=True)
+            self.push(self.cs,event=True)
+            self.push(return_ip,event=True)
         except WordLimit:
             self.shutdown=True
             return

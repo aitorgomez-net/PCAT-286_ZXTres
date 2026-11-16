@@ -120,14 +120,18 @@ module spk286_segment_instructions_tb;
             memory[target-1] = 8'h5A; memory[target] = initial_memory[7:0];
             memory[target+1] = initial_memory[15:8]; memory[target+2] = 8'hA5;
             setup(); timeout_count = 0;
-            while (!instruction_retired && !operand_blocked && !dut.invalid_form && timeout_count < 500) begin
+            while (!instruction_retired && !dut.fault_request && timeout_count < 500) begin
                 service(); timeout_count = timeout_count + 1;
                 check(!unsupported_opcode, "supported segment instruction");
             end
             if (blocked != 0) begin
-                execute_enable = 0; // Inspect the fault producer; event suite checks delivery.
+                // Inspect the fault producer; the event suite checks delivery. A
+                // PUSH to SS:FFFF leaves SP decremented; the model says so.
+                check(blocked == 2 ? dut.invalid_form : (dut.fault_request && dut.fault_vector == 8'd13),
+                      "invalid form or word limit raises its fault");
+                execute_enable = 0;
                 repeat (6) service();
-                check((blocked == 2 ? dut.invalid_form : operand_blocked) && retires == 0 && reads == 0 && writes == 0, "invalid form or word limit blocks without effects");
+                check(retires == 0 && reads == 0 && writes == 0, "invalid form or word limit blocks without effects");
             end else begin
                 check(retires == 1 && debug_ip == 16'h0100 + 16'(length), "exact IP and single retirement");
                 check(reads == expected_reads && writes == expected_writes, "complete data traffic before END");

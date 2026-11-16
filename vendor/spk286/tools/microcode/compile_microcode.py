@@ -545,9 +545,13 @@ def validate_stack_frame(block: Block) -> None:
              'BRANCH_ZERO','DECREMENT_STACK_ADDRESS','READ_STACK_ADDRESS_TMP0','PUSH16',
              'DECREMENT_COUNTER','BRANCH_NONZERO','RESTORE_AUX_TMP0','PUSH16',
              'RESTORE_AUX_TMP0','WRITE_BP_TMP0','ALLOCATE_STACK','END')
-    if block.format_version < 13 or ops not in (push,pop,leave,bound,enter):
+    # ALLOCATE_STACK may raise #SS in protected mode, so the current source
+    # commits SP before BP: a failed ENTER then leaves both unchanged, as on
+    # an Intel N80286-12. The BP-first form is the phase 7 baseline.
+    enter_checked = enter[:-3] + ('ALLOCATE_STACK','WRITE_BP_TMP0','END')
+    if block.format_version < 13 or ops not in (push,pop,leave,bound,enter,enter_checked):
         raise CompileError(block.location, 'invalid stack/frame acquisition, precheck or commit protocol')
-    branches = {11:21,13:19,18:14} if ops == enter else {}
+    branches = {11:21,13:19,18:14} if ops in (enter,enter_checked) else {}
     labels = {label.name:label.statement_index for label in block.labels}
     for index,target in branches.items():
         statement=block.statements[index]

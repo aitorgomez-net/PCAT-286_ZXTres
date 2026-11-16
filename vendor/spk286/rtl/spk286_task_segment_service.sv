@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: MIT
 // Hidden-cache construction for the four 80286 task segments.
 //
-// Load SS, CS, ES and DS in architectural order. Each completed descriptor
-// publishes separately, so a later fault retains the earlier valid caches.
+// Load SS, CS, DS and ES, the order of an Intel N80286-12. Each completed
+// descriptor publishes separately, so a later fault retains the earlier
+// valid caches.
 `timescale 1ns/1ps
 
 module spk286_task_segment_service (
@@ -316,11 +317,11 @@ module spk286_task_segment_service (
                 end
             end else if (state_q == ST_PUBLISH) begin
                 // B-13 leaves DS/ES as a pair without an ordering promise;
-                // retain this implementation's existing ES-before-DS policy.
+                // an Intel N80286-12 reports a bad DS before a bad ES.
                 case (segment_index_q)
                     2'd2: begin segment_index_q <= 2'd1; state_q <= ST_CHECK; end
-                    2'd1: begin segment_index_q <= 2'd0; state_q <= ST_CHECK; end
-                    2'd0: begin segment_index_q <= 2'd3; state_q <= ST_CHECK; end
+                    2'd1: begin segment_index_q <= 2'd3; state_q <= ST_CHECK; end
+                    2'd3: begin segment_index_q <= 2'd0; state_q <= ST_CHECK; end
                     default: state_q <= ST_COMPLETE;
                 endcase
                 word_index_q <= 2'd0;

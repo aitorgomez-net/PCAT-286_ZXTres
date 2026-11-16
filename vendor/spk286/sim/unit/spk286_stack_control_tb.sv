@@ -125,16 +125,19 @@ module spk286_stack_control_tb;
                 scan(); transaction_data[t]=vector_word; scan(); transaction_bhe[t]=vector_word;
             end
             setup(); timeout_count = 0;
-            while (!instruction_retired && !operand_blocked && timeout_count < 400) begin
+            while (!instruction_retired && !dut.fault_request && timeout_count < 400) begin
                 service(); timeout_count = timeout_count + 1;
                 check(!unsupported_opcode, "supported stack/control instruction");
             end
             if (blocked != 0) begin
-                // Preserve the original fault-producer check under debug pause.
-                // Completed delivery and frame effects are covered by Phase 6.
+                // Check the faulting word under debug pause. Completed delivery
+                // and frame effects are covered by Phase 6. A PUSH to SS:FFFF
+                // leaves SP decremented, as on an Intel N80286-12; the model
+                // says so.
+                check(dut.fault_request && dut.fault_vector == 8'd13, "word at FFFF raises interrupt 13");
                 execute_enable = 0;
                 repeat (6) service();
-                check(operand_blocked && retires == 0 && writes == 0, "whole word blocks without effects");
+                check(retires == 0 && writes == 0, "whole word blocks without bus effects");
             end else begin
                 check(retires == 1 && debug_ip == expected_ip, "exact IP and single retirement");
                 check(transaction_index == transaction_count, "complete ordered data traffic before END");

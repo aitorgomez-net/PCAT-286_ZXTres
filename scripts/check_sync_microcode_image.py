@@ -16,7 +16,7 @@ def analyze_compiled_image(run):
     """Recheck the actual mapped image and return its source-linked receipt."""
     run = Path(run).resolve()
     work = run/'work'
-    contract = work/'vendor/spk286/tests/fixtures/microcode_esc_boundary.json'
+    contract = work/'vendor/spk286/tests/fixtures/microcode_enter_commit.json'
     golden = json.loads(contract.read_text())
     words = golden['words']
     require(golden['address_width'] == 10 and golden['word_width'] == 8,

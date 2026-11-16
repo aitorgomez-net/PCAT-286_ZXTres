@@ -80,7 +80,10 @@ module spk286_fault_metadata_tb;
         tr_selector=16'h0028 | {14'd0,rpl}; gate_selector=16'h0030 | {14'd0,rpl};
         stack_selector=site==2 ? {14'd0,rpl} : site==3 ? (16'h0090 | {14'd0,rpl}) : site==14 ? (16'h0094 | {14'd0,rpl}) :
                        site==4 ? (16'h0010 | {14'd0,(rpl==0 ? 2'd1 : rpl)}) : 16'h0010;
-        external_origin=origin==2 || origin==3 || origin==5;
+        // Every event but a software INT sets EXT, including the #GP of origin
+        // 4. The far CALL of origin
+        // 0 is no event at all.
+        external_origin=origin==2 || origin==3 || origin==4 || origin==5;
         vector_num=origin==2 ? 2 : origin==4 ? 13 : origin==5 ? 1 : 32;
         expected_vector=site==1 || site==2 || site==3 || site==4 || site==5 || site==13 || site==14 ? 10 :
                         site==9 || site==10 ? 11 : site==11 || site==12 ? 13 : 12;

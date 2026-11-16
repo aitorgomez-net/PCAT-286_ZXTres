@@ -122,7 +122,7 @@ module spk286_loadall_protected_tb;
 
         for (cycles = 0; cycles < 1200 && !protected_load_seen; cycles = cycles + 1) begin
             tick();
-            if (debug_protected_msw === 16'h0001 && debug_cs === 16'h0009 && debug_ip === 16'h0200)
+            if (debug_protected_msw === 16'hFFF1 && debug_cs === 16'h0009 && debug_ip === 16'h0200)
                 protected_load_seen = 1'b1;
         end
         if (!protected_load_seen)
@@ -133,7 +133,7 @@ module spk286_loadall_protected_tb;
         ready = 1'b0;
 
         if (debug_event_kind !== 3'd1 || debug_cs !== 16'h0009 || debug_ip !== 16'h0100 ||
-            debug_protected_msw !== 16'h0001 || debug_gpr[79:64] !== 16'h03F8)
+            debug_protected_msw !== 16'hFFF1 || debug_gpr[79:64] !== 16'h03F8)
             $fatal(1, "LOADALL #GP entry context kind=%h CS=%h IP=%h MSW=%h SP=%h",
                    debug_event_kind, debug_cs, debug_ip, debug_protected_msw, debug_gpr[79:64]);
         if ({memory[16'h03FF], memory[16'h03FE]} !== 16'h0202 ||

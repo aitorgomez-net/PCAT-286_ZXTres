@@ -44,8 +44,10 @@ module spk286_stack_frame_lifecycle_tb;
         end
         #4;
         if(execute_enable && debug_micro_active && debug_opcode==8'hC8 && dut.micro_executor.stack_cursor_valid_q &&
-            !dut.event_active && debug_micro_instruction!=spk286_microcode_pkg::MC_END)
-            check(debug_gpr[64+:16]==expected_enter_sp,"ENTER preserves architectural SP until final cursor commit");
+            !dut.event_active && debug_micro_instruction!=spk286_microcode_pkg::MC_END &&
+            debug_micro_instruction!=spk286_microcode_pkg::MC_WRITE_BP_TMP0)
+            // ALLOCATE_STACK commits SP, then the BP write ends ENTER.
+            check(debug_gpr[64+:16]==expected_enter_sp,"ENTER preserves architectural SP until the allocation commit");
         if(!reset) begin
             if(bus_valid && ready && bus_status==5 && !dut.event_active) operand_reads++;
 

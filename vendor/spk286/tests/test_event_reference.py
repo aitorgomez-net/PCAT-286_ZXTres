@@ -16,6 +16,12 @@ class EventReferenceTests(unittest.TestCase):
                                     (False,12,0x1234),(False,14,0x7856)])
         self.assertEqual(len(list(physical_accesses(m.accesses))),8)
 
+    def test_pushf_at_ffff_decrements_sp_then_delivers_13(self):
+        # An Intel N80286-12 leaves SP=FFFF and delivers interrupt 13 below it.
+        m=self.machine(sp=1)
+        m.step([0x9c])
+        self.assertEqual((m.sp,m.shutdown,m.event,m.retired),(0xfff9,False,13,False))
+
     def test_frame_wrap_even_and_shutdown_partial_odd(self):
         m=self.machine(sp=0)
         m.step([0xcc])

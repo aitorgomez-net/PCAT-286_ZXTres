@@ -68,8 +68,8 @@ push_frame:
     PUSH16 DECODED TMP0
 finish:
     RESTORE_AUX -> TMP0
-    TMP0 -> BP
     ALLOCATE_STACK
+    TMP0 -> BP
     END
 
 instruction LEAVE_FRAME:

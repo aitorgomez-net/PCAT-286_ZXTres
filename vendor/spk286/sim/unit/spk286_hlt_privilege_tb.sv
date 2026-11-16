@@ -55,9 +55,11 @@ module spk286_hlt_privilege_tb;
         for (integer i = 'h800; i < 'h866; i = i + 1) memory[i] = 0;
         caller_cs = 16'h0018 | {14'd0,cpl};
         caller_ss = 16'h0020 | {14'd0,cpl};
-        original_flags = 16'h0046 | {2'd0,iopl,12'd0};
+        // A real-mode LOADALL image loads FLAGS with IOPL clear, as on an
+        // Intel N80286-12.
+        original_flags = 16'h0046 | (pe ? {2'd0,iopl,12'd0} : 16'h0000);
         memory[0] = 8'h0F; memory[1] = 8'h05; // LOADALL independent fixture.
-        put_word('h806,{15'd0,pe}); put_word('h818,original_flags); put_word('h81A,16'h0100);
+        put_word('h806,{15'd0,pe}); put_word('h818,16'h0046 | {2'd0,iopl,12'd0}); put_word('h81A,16'h0100);
         put_word('h81E,caller_ss); put_word('h820,caller_ss);
         put_word('h822,caller_cs); put_word('h824,caller_ss); put_word('h82C,16'h1000);
         cache('h836,0,8'h93 | {1'b0,cpl,5'd0});

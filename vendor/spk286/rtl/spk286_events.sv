@@ -64,7 +64,11 @@ module spk286_events (
             end else if (boundary) begin
                 if (trap_due && !ss_shadow && !(repeat_boundary && repeat_ss_inhibit_q) && !shutdown) begin selected_kind = KIND_TRAP; selected_vector = 8'd1; end
                 else if ((nmi_pending || nmi_edge) && !nmi_blocked && !shutdown_reset_only_q && !ss_shadow && !(repeat_boundary && repeat_ss_inhibit_q)) begin selected_kind = KIND_NMI; selected_vector = 8'd2; end
-                else if (intr && flags[9] && !sti_shadow && !ss_shadow && !(repeat_boundary && (repeat_ss_inhibit_q || repeat_sti_inhibit_q)) && !shutdown) begin selected_kind = KIND_INTR; end
+                // The STI/POPF shadow of a REP covers only the boundary before
+                // its first iteration: an Intel N80286-12 takes INTR after the
+                // first one.
+                else if (intr && flags[9] && !sti_shadow && !ss_shadow &&
+                         !(repeat_boundary && (repeat_ss_inhibit_q || (repeat_sti_inhibit_q && !repeat_stepped))) && !shutdown) begin selected_kind = KIND_INTR; end
                 // An unavailable next opcode is not a fault of the instruction
                 // that just completed. Its owed trap/external boundary comes first.
                 else if (fault_request && !shutdown) begin selected_kind = KIND_FAULT; selected_vector = fault_vector; end
@@ -105,7 +109,10 @@ module spk286_events (
                 // IRET also releases it is unconfirmed on 80286 hardware;
                 // instruction boundaries remain safe either way.
                 if (opcode == 8'hCF) nmi_blocked <= 1'b0;
-                if (opcode == 8'hFB && !flags[9]) sti_shadow <= 1'b1;
+                // POPF shadows INTR like STI when it may set IF: an Intel
+                // N80286-12 takes INTR one instruction later (ev.flags_load).
+                // A POPF that leaves IF=0 masks INTR anyway. IRET does not.
+                if ((opcode == 8'hFB || opcode == 8'h9D) && !flags[9]) sti_shadow <= 1'b1;
                 else sti_shadow <= 1'b0;
             end
             if (retired && !event_active && trap_sample_q && !ss_shadow) trap_pending_q <= 1'b1;
@@ -130,8 +137,10 @@ module spk286_events (
                 event_active <= 1'b1; cancel_operation <= 1'b1; dispatch_pending_q <= 1'b0;
                 event_kind <= selected_kind; event_vector <= selected_vector;
                 event_software <= selected_kind == KIND_SOFTWARE;
-                event_external <= selected_kind == KIND_TRAP || selected_kind == KIND_NMI || selected_kind == KIND_INTR ||
-                                  (selected_kind == KIND_FAULT && (selected_vector == 8'd7 || selected_vector == 8'd9));
+                // Every event that is not a software INT n/INT3/INTO sets EXT.
+                // An Intel N80286-12 sets it when the IDT gate of a #UD is
+                // invalid and clears it for INT 6 through the same gate.
+                event_external <= selected_kind != KIND_SOFTWARE;
                 delivery_context_live_q <= 1'b0;
                 shutdown_nmi_q <= shutdown && selected_kind == KIND_NMI;
                 event_needs_ack <= selected_kind == KIND_INTR;

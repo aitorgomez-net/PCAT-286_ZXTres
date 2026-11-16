@@ -3,10 +3,12 @@
 `timescale 1ns/1ps
 
 package spk286_tss_pkg;
-    localparam logic [15:0] TSS_MIN_LIMIT = 16'h002B;
     /* These named field offsets are part of the PM5 contract and are
-       intentionally retained before every consumer lands. */
+       intentionally retained before every consumer lands. TSS_MIN_LIMIT is
+       used by the task-switch services only, not by every instance that
+       imports this package. */
     /* verilator lint_off UNUSEDPARAM */
+    localparam logic [15:0] TSS_MIN_LIMIT = 16'h002B;
     localparam integer TSS_WORD_COUNT = 22;
 
     localparam logic [15:0] TSS_BACKLINK = 16'h0000;

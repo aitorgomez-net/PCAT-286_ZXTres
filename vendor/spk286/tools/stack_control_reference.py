@@ -65,6 +65,11 @@ def evaluate(code, registers, flags, ip, memory):
             ram[address], ram[address+1] = value % 256, value // 256
         return value
     def stack_push(value):
+        # An Intel N80286-12 decrements SP before it faults on a word at
+        # SS:FFFF.
+        if (r[4] - 2) % 65536 == 65535:
+            r[4] = 65535
+            raise ValueError('stack word exceeds limit')
         offset, value = push(r[4], value)
         access(True, 0x80000+offset, value)
         r[4] = offset

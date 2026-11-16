@@ -2437,10 +2437,10 @@
       ]
     },
     {
-      "signal": "allocate_stack",
+      "signal": "allocate_stack_operation",
       "guard": "allowed && operation == spk286_microcode_pkg::MC_ALLOCATE_STACK && allocation_valid_q && stack_cursor_valid_q",
-      "original_statement": "    assign allocate_stack = allowed && operation == spk286_microcode_pkg::MC_ALLOCATE_STACK && allocation_valid_q && stack_cursor_valid_q;",
-      "replacement_statement": "    assign allocate_stack = implementation_allowed && operation == spk286_microcode_pkg::MC_ALLOCATE_STACK && allocation_valid_q && stack_cursor_valid_q;",
+      "original_statement": "    assign allocate_stack_operation = allowed && operation == spk286_microcode_pkg::MC_ALLOCATE_STACK && allocation_valid_q && stack_cursor_valid_q;",
+      "replacement_statement": "    assign allocate_stack_operation = implementation_allowed && operation == spk286_microcode_pkg::MC_ALLOCATE_STACK && allocation_valid_q && stack_cursor_valid_q;",
       "original_model": [
         "and",
         [
@@ -7650,6 +7650,80 @@
                 ]
               ],
               [
+                "not",
+                [
+                  "and",
+                  [
+                    [
+                      "and",
+                      [
+                        [
+                          "and",
+                          [
+                            [
+                              "permission",
+                              "allowed"
+                            ],
+                            [
+                              "compare",
+                              "==",
+                              21
+                            ],
+                            [
+                              "context",
+                              "temporary_valid_q[0]"
+                            ]
+                          ]
+                        ],
+                        [
+                          "context",
+                          "push_enabled"
+                        ]
+                      ]
+                    ],
+                    [
+                      "not",
+                      [
+                        "context",
+                        "protected_msw[0]"
+                      ]
+                    ],
+                    [
+                      "not",
+                      [
+                        "context",
+                        "stack_cursor_valid_q"
+                      ]
+                    ],
+                    [
+                      "not",
+                      [
+                        "context",
+                        "event_active"
+                      ]
+                    ],
+                    [
+                      "context",
+                      "stack_native_offset == 16'hFFFF"
+                    ],
+                    [
+                      "not",
+                      [
+                        "context",
+                        "real_push_wrap_q"
+                      ]
+                    ]
+                  ]
+                ]
+              ],
+              [
+                "not",
+                [
+                  "context",
+                  "real_push_wrap_q"
+                ]
+              ],
+              [
                 "or",
                 [
                   [
@@ -9021,6 +9095,80 @@
                 ]
               ],
               [
+                "not",
+                [
+                  "and",
+                  [
+                    [
+                      "and",
+                      [
+                        [
+                          "and",
+                          [
+                            [
+                              "permission",
+                              "allowed"
+                            ],
+                            [
+                              "compare",
+                              "==",
+                              21
+                            ],
+                            [
+                              "context",
+                              "temporary_valid_q[0]"
+                            ]
+                          ]
+                        ],
+                        [
+                          "context",
+                          "push_enabled"
+                        ]
+                      ]
+                    ],
+                    [
+                      "not",
+                      [
+                        "context",
+                        "protected_msw[0]"
+                      ]
+                    ],
+                    [
+                      "not",
+                      [
+                        "context",
+                        "stack_cursor_valid_q"
+                      ]
+                    ],
+                    [
+                      "not",
+                      [
+                        "context",
+                        "event_active"
+                      ]
+                    ],
+                    [
+                      "context",
+                      "stack_native_offset == 16'hFFFF"
+                    ],
+                    [
+                      "not",
+                      [
+                        "context",
+                        "real_push_wrap_q"
+                      ]
+                    ]
+                  ]
+                ]
+              ],
+              [
+                "not",
+                [
+                  "context",
+                  "real_push_wrap_q"
+                ]
+              ],
+              [
                 "or",
                 [
                   [
@@ -9737,8 +9885,8 @@
     {
       "signal": "operation_done",
       "guard": "allowed && (operation == spk286_microcode_pkg::MC_VALIDATE_CS || operation == spk286_microcode_pkg::MC_VALIDATE_CALL_GATE ||\n                                         operation == spk286_microcode_pkg::MC_VALIDATE_CALL_CS || operation == spk286_microcode_pkg::MC_VALIDATE_CALL_SS || operation == spk286_microcode_pkg::MC_VALIDATE_IRET_CS ||\n                                         operation == spk286_microcode_pkg::MC_VALIDATE_IRET_SS) && !protected_msw[0]",
-      "original_statement": "    assign operation_done = register_complete || (immediate_last && !immediate_register) || muldiv_complete || write_result_ax || write_result_dx || (fetch_port && (!port_immediate || byte_valid)) || string_empty || string_continue || string_index_write || string_count || string_read_acc || string_write_acc || add_allocation_sp || ((check_push2 || check_pop2) && !range_fault) || frame_read_gpr || frame_write_gpr || save_auxiliary || restore_auxiliary || save_allocation || load_counter ||\n                            carry_fill_byte || decrement_counter || counter_branch || begin_stack_cursor || read_stack_cursor || set_frame_address || decrement_frame_address || allocate_stack || set_ea_plus2 ||\n                            ((check_push8 || check_pop8 || check_stack_word || check_rm32 || check_call_frame) && !range_fault) ||\n                            (call_stack_validation_operation && (!call_gate_outer_required || call_stack_ready_q || (call_tss_operand_done && call_tss_phase_q == 2'd1))) ||\n                            (call_gate_stack_switch_operation && (!call_gate_outer_required || (call_gate_stack_write_done && call_gate_stack_switch_phase_q == 2'd1))) ||\n                            call_parameter_operation_done ||\n                            (check_bounds && !bounds_fault) || read_segment || segment_write || adjust_complete || (check_arithmetic && !arithmetic_fault_q) || dispatch_request || constant_zero || constant_ones || read_ea || read_target || move_source || set_address || add_base || shift_complete || count_low || direct_flags || sign_extend_byte || sign_fill_word || constant_one || read_flags || restore_flags || set_if || clear_if_tf || read_event_flags || read_event_cs || read_event_ip ||\n                            context_commit || request_event || halt_operation || system_protected_check || system_privilege_check || io_privilege_check ||\n                            ((npx_esc_check || npx_wait_check) && !npx_fault) ||\n                            clear_event_flags || (push_event_error && (!event_error_valid || push_event_error_transfer && operand_done)) || (ack_operation && (!event_needs_ack || ack_done)) || ((fetch_byte || fetch_byte_tmp1) && byte_valid) ||\n                            read_ip || target_relative || target_absolute || adjust_stack || count_operation ||\n                            (push_operation && !push_enabled) || (redirect_operation && (!branch_taken || redirect_ready)) || move_word || read_destination || compute_alu || commit_flags || discard_result || result_to_dst ||\n                            (fetch_word && byte_valid && high_byte_q) || (fetch_signed_byte && byte_valid) ||\n                            (decode_operand && decode_done) || system_done || descriptor_operation_done || event_gate_operation_done ||\n                             ((task_switch_operation && !task_descriptor_candidate_valid_q) ||\n                             // Task completion belongs to TASK_SWITCH. Keeping\n                             // it true for the tail would finish PUSH_EVENT_ERROR\n                             // before its bus response/SP commit (double-fault gate).\n                             (task_switch_operation && task_commit_done_q && task_service_complete_q) || task_switch_skip ||\n                             task_event_switch_skip ||\n                             task_return_noop || task_return_commit_done || task_return_skip) ||\n                             (arpl_check_operation && protected_msw[0]) || arpl_fault || arpl_commit || clts_commit || clts_fault ||\n                            (allowed && (operation == spk286_microcode_pkg::MC_VALIDATE_CS || operation == spk286_microcode_pkg::MC_VALIDATE_CALL_GATE ||\n                                         operation == spk286_microcode_pkg::MC_VALIDATE_CALL_CS || operation == spk286_microcode_pkg::MC_VALIDATE_CALL_SS || operation == spk286_microcode_pkg::MC_VALIDATE_IRET_CS ||\n                                         operation == spk286_microcode_pkg::MC_VALIDATE_IRET_SS) && !protected_msw[0]) ||\n                            (iret_outer_frame_operation && (!iret_outer_required || (iret_outer_phase_q == 2'd1 && operand_done))) ||\n                            (operation == spk286_microcode_pkg::MC_ADD_ALLOCATION_SP && iret_outer_required) ||\n                            ((operand_request && operand_done) && !system_operand_request && !descriptor_active_q && !event_gate_active_q &&\n                             !iret_outer_frame_operation && !call_tss_active_q && !call_gate_stack_write && !copy_call_parameters);",
-      "replacement_statement": "    assign operation_done = register_complete || (immediate_last && !immediate_register) || muldiv_complete || write_result_ax || write_result_dx || (fetch_port && (!port_immediate || byte_valid)) || string_empty || string_continue || string_index_write || string_count || string_read_acc || string_write_acc || add_allocation_sp || ((check_push2 || check_pop2) && !range_fault) || frame_read_gpr || frame_write_gpr || save_auxiliary || restore_auxiliary || save_allocation || load_counter ||\n                            carry_fill_byte || decrement_counter || counter_branch || begin_stack_cursor || read_stack_cursor || set_frame_address || decrement_frame_address || allocate_stack || set_ea_plus2 ||\n                            ((check_push8 || check_pop8 || check_stack_word || check_rm32 || check_call_frame) && !range_fault) ||\n                            (call_stack_validation_operation && (!call_gate_outer_required || call_stack_ready_q || (call_tss_operand_done && call_tss_phase_q == 2'd1))) ||\n                            (call_gate_stack_switch_operation && (!call_gate_outer_required || (call_gate_stack_write_done && call_gate_stack_switch_phase_q == 2'd1))) ||\n                            call_parameter_operation_done ||\n                            (check_bounds && !bounds_fault) || read_segment || segment_write || adjust_complete || (check_arithmetic && !arithmetic_fault_q) || dispatch_request || constant_zero || constant_ones || read_ea || read_target || move_source || set_address || add_base || shift_complete || count_low || direct_flags || sign_extend_byte || sign_fill_word || constant_one || read_flags || restore_flags || set_if || clear_if_tf || read_event_flags || read_event_cs || read_event_ip ||\n                            context_commit || request_event || halt_operation || system_protected_check || system_privilege_check || io_privilege_check ||\n                            ((npx_esc_check || npx_wait_check) && !npx_fault) ||\n                            clear_event_flags || (push_event_error && (!event_error_valid || push_event_error_transfer && operand_done)) || (ack_operation && (!event_needs_ack || ack_done)) || ((fetch_byte || fetch_byte_tmp1) && byte_valid) ||\n                            read_ip || target_relative || target_absolute || adjust_stack || count_operation ||\n                            (push_operation && !push_enabled) || (redirect_operation && (!branch_taken || redirect_ready)) || move_word || read_destination || compute_alu || commit_flags || discard_result || result_to_dst ||\n                            (fetch_word && byte_valid && high_byte_q) || (fetch_signed_byte && byte_valid) ||\n                            (decode_operand && decode_done) || system_done || descriptor_operation_done || event_gate_operation_done ||\n                             ((task_switch_operation && !task_descriptor_candidate_valid_q) ||\n                             // Task completion belongs to TASK_SWITCH. Keeping\n                             // it true for the tail would finish PUSH_EVENT_ERROR\n                             // before its bus response/SP commit (double-fault gate).\n                             (task_switch_operation && task_commit_done_q && task_service_complete_q) || task_switch_skip ||\n                             task_event_switch_skip ||\n                             task_return_noop || task_return_commit_done || task_return_skip) ||\n                             (arpl_check_operation && protected_msw[0]) || arpl_fault || arpl_commit || clts_commit || clts_fault ||\n                            (implementation_allowed && (operation == spk286_microcode_pkg::MC_VALIDATE_CS || operation == spk286_microcode_pkg::MC_VALIDATE_CALL_GATE ||\n                                         operation == spk286_microcode_pkg::MC_VALIDATE_CALL_CS || operation == spk286_microcode_pkg::MC_VALIDATE_CALL_SS || operation == spk286_microcode_pkg::MC_VALIDATE_IRET_CS ||\n                                         operation == spk286_microcode_pkg::MC_VALIDATE_IRET_SS) && !protected_msw[0]) ||\n                            (iret_outer_frame_operation && (!iret_outer_required || (iret_outer_phase_q == 2'd1 && operand_done))) ||\n                            (operation == spk286_microcode_pkg::MC_ADD_ALLOCATION_SP && iret_outer_required) ||\n                            ((operand_request && operand_done) && !system_operand_request && !descriptor_active_q && !event_gate_active_q &&\n                             !iret_outer_frame_operation && !call_tss_active_q && !call_gate_stack_write && !copy_call_parameters);",
+      "original_statement": "    assign operation_done = register_complete || (immediate_last && !immediate_register) || muldiv_complete || write_result_ax || write_result_dx || (fetch_port && (!port_immediate || byte_valid)) || string_empty || string_continue || string_index_write || string_count || string_read_acc || string_write_acc || add_allocation_sp || ((check_push2 || check_pop2) && !range_fault) || frame_read_gpr || frame_write_gpr || save_auxiliary || restore_auxiliary || save_allocation || load_counter ||\n                            carry_fill_byte || decrement_counter || counter_branch || begin_stack_cursor || read_stack_cursor || set_frame_address || decrement_frame_address || allocate_stack || set_ea_plus2 ||\n                            ((check_push8 || check_pop8 || check_stack_word || check_rm32 || check_call_frame) && !range_fault && !stack_limit_fault) ||\n                            (call_stack_validation_operation && (!call_gate_outer_required || call_stack_ready_q || (call_tss_operand_done && call_tss_phase_q == 2'd1))) ||\n                            (call_gate_stack_switch_operation && (!call_gate_outer_required || (call_gate_stack_write_done && call_gate_stack_switch_phase_q == 2'd1))) ||\n                            call_parameter_operation_done ||\n                            (check_bounds && !bounds_fault) || read_segment || segment_write || adjust_complete || (check_arithmetic && !arithmetic_fault_q) || dispatch_request || constant_zero || constant_ones || read_ea || read_target || move_source || set_address || add_base || shift_complete || count_low || direct_flags || sign_extend_byte || sign_fill_word || constant_one || read_flags || restore_flags || set_if || clear_if_tf || read_event_flags || read_event_cs || read_event_ip ||\n                            context_commit || request_event || halt_operation || system_protected_check || system_privilege_check || io_privilege_check ||\n                            ((npx_esc_check || npx_wait_check) && !npx_fault) ||\n                            clear_event_flags || (push_event_error && (!event_error_valid || push_event_error_transfer && operand_done)) || (ack_operation && (!event_needs_ack || ack_done)) || ((fetch_byte || fetch_byte_tmp1) && byte_valid) ||\n                            read_ip || target_relative || target_absolute || adjust_stack || count_operation ||\n                            (push_operation && !push_enabled) || (redirect_operation && (!branch_taken || redirect_ready)) || move_word || read_destination || compute_alu || commit_flags || discard_result || result_to_dst ||\n                            (fetch_word && byte_valid && high_byte_q) || (fetch_signed_byte && byte_valid) ||\n                            (decode_operand && decode_done) || system_done || descriptor_operation_done || event_gate_operation_done ||\n                             ((task_switch_operation && !task_descriptor_candidate_valid_q) ||\n                             // Task completion belongs to TASK_SWITCH. Keeping\n                             // it true for the tail would finish PUSH_EVENT_ERROR\n                             // before its bus response/SP commit (double-fault gate).\n                             (task_switch_operation && task_commit_done_q && task_service_complete_q) || task_switch_skip ||\n                             task_event_switch_skip ||\n                             task_return_noop || task_return_commit_done || task_return_skip) ||\n                             (arpl_check_operation && protected_msw[0]) || arpl_fault || arpl_commit || clts_commit || clts_fault ||\n                            (allowed && (operation == spk286_microcode_pkg::MC_VALIDATE_CS || operation == spk286_microcode_pkg::MC_VALIDATE_CALL_GATE ||\n                                         operation == spk286_microcode_pkg::MC_VALIDATE_CALL_CS || operation == spk286_microcode_pkg::MC_VALIDATE_CALL_SS || operation == spk286_microcode_pkg::MC_VALIDATE_IRET_CS ||\n                                         operation == spk286_microcode_pkg::MC_VALIDATE_IRET_SS) && !protected_msw[0]) ||\n                            (iret_outer_frame_operation && (!iret_outer_required || (iret_outer_phase_q == 2'd1 && operand_done))) ||\n                            (operation == spk286_microcode_pkg::MC_ADD_ALLOCATION_SP && iret_outer_required) ||\n                            ((operand_request && operand_done) && !system_operand_request && !descriptor_active_q && !event_gate_active_q &&\n                             !iret_outer_frame_operation && !call_tss_active_q && !call_gate_stack_write && !copy_call_parameters);",
+      "replacement_statement": "    assign operation_done = register_complete || (immediate_last && !immediate_register) || muldiv_complete || write_result_ax || write_result_dx || (fetch_port && (!port_immediate || byte_valid)) || string_empty || string_continue || string_index_write || string_count || string_read_acc || string_write_acc || add_allocation_sp || ((check_push2 || check_pop2) && !range_fault) || frame_read_gpr || frame_write_gpr || save_auxiliary || restore_auxiliary || save_allocation || load_counter ||\n                            carry_fill_byte || decrement_counter || counter_branch || begin_stack_cursor || read_stack_cursor || set_frame_address || decrement_frame_address || allocate_stack || set_ea_plus2 ||\n                            ((check_push8 || check_pop8 || check_stack_word || check_rm32 || check_call_frame) && !range_fault && !stack_limit_fault) ||\n                            (call_stack_validation_operation && (!call_gate_outer_required || call_stack_ready_q || (call_tss_operand_done && call_tss_phase_q == 2'd1))) ||\n                            (call_gate_stack_switch_operation && (!call_gate_outer_required || (call_gate_stack_write_done && call_gate_stack_switch_phase_q == 2'd1))) ||\n                            call_parameter_operation_done ||\n                            (check_bounds && !bounds_fault) || read_segment || segment_write || adjust_complete || (check_arithmetic && !arithmetic_fault_q) || dispatch_request || constant_zero || constant_ones || read_ea || read_target || move_source || set_address || add_base || shift_complete || count_low || direct_flags || sign_extend_byte || sign_fill_word || constant_one || read_flags || restore_flags || set_if || clear_if_tf || read_event_flags || read_event_cs || read_event_ip ||\n                            context_commit || request_event || halt_operation || system_protected_check || system_privilege_check || io_privilege_check ||\n                            ((npx_esc_check || npx_wait_check) && !npx_fault) ||\n                            clear_event_flags || (push_event_error && (!event_error_valid || push_event_error_transfer && operand_done)) || (ack_operation && (!event_needs_ack || ack_done)) || ((fetch_byte || fetch_byte_tmp1) && byte_valid) ||\n                            read_ip || target_relative || target_absolute || adjust_stack || count_operation ||\n                            (push_operation && !push_enabled) || (redirect_operation && (!branch_taken || redirect_ready)) || move_word || read_destination || compute_alu || commit_flags || discard_result || result_to_dst ||\n                            (fetch_word && byte_valid && high_byte_q) || (fetch_signed_byte && byte_valid) ||\n                            (decode_operand && decode_done) || system_done || descriptor_operation_done || event_gate_operation_done ||\n                             ((task_switch_operation && !task_descriptor_candidate_valid_q) ||\n                             // Task completion belongs to TASK_SWITCH. Keeping\n                             // it true for the tail would finish PUSH_EVENT_ERROR\n                             // before its bus response/SP commit (double-fault gate).\n                             (task_switch_operation && task_commit_done_q && task_service_complete_q) || task_switch_skip ||\n                             task_event_switch_skip ||\n                             task_return_noop || task_return_commit_done || task_return_skip) ||\n                             (arpl_check_operation && protected_msw[0]) || arpl_fault || arpl_commit || clts_commit || clts_fault ||\n                            (implementation_allowed && (operation == spk286_microcode_pkg::MC_VALIDATE_CS || operation == spk286_microcode_pkg::MC_VALIDATE_CALL_GATE ||\n                                         operation == spk286_microcode_pkg::MC_VALIDATE_CALL_CS || operation == spk286_microcode_pkg::MC_VALIDATE_CALL_SS || operation == spk286_microcode_pkg::MC_VALIDATE_IRET_CS ||\n                                         operation == spk286_microcode_pkg::MC_VALIDATE_IRET_SS) && !protected_msw[0]) ||\n                            (iret_outer_frame_operation && (!iret_outer_required || (iret_outer_phase_q == 2'd1 && operand_done))) ||\n                            (operation == spk286_microcode_pkg::MC_ADD_ALLOCATION_SP && iret_outer_required) ||\n                            ((operand_request && operand_done) && !system_operand_request && !descriptor_active_q && !event_gate_active_q &&\n                             !iret_outer_frame_operation && !call_tss_active_q && !call_gate_stack_write && !copy_call_parameters);",
       "original_model": [
         "or",
         [
@@ -10419,6 +10567,10 @@
                       ]
                     ],
                     [
+                      "context",
+                      "real_push_wrap_q"
+                    ],
+                    [
                       "and",
                       [
                         [
@@ -10704,21 +10856,97 @@
             "and",
             [
               [
-                "permission",
-                "allowed"
+                "and",
+                [
+                  [
+                    "permission",
+                    "allowed"
+                  ],
+                  [
+                    "compare",
+                    "==",
+                    108
+                  ],
+                  [
+                    "context",
+                    "allocation_valid_q"
+                  ],
+                  [
+                    "context",
+                    "stack_cursor_valid_q"
+                  ]
+                ]
               ],
               [
-                "compare",
-                "==",
-                108
-              ],
-              [
-                "context",
-                "allocation_valid_q"
-              ],
-              [
-                "context",
-                "stack_cursor_valid_q"
+                "not",
+                [
+                  "and",
+                  [
+                    [
+                      "context",
+                      "protected_msw[0]"
+                    ],
+                    [
+                      "or",
+                      [
+                        [
+                          "and",
+                          [
+                            [
+                              "and",
+                              [
+                                [
+                                  "permission",
+                                  "allowed"
+                                ],
+                                [
+                                  "compare",
+                                  "==",
+                                  102
+                                ]
+                              ]
+                            ],
+                            [
+                              "context",
+                              "|pop8_word_exceeded"
+                            ]
+                          ]
+                        ],
+                        [
+                          "and",
+                          [
+                            [
+                              "and",
+                              [
+                                [
+                                  "permission",
+                                  "allowed"
+                                ],
+                                [
+                                  "compare",
+                                  "==",
+                                  108
+                                ],
+                                [
+                                  "context",
+                                  "allocation_valid_q"
+                                ],
+                                [
+                                  "context",
+                                  "stack_cursor_valid_q"
+                                ]
+                              ]
+                            ],
+                            [
+                              "context",
+                              "stack_word_exceeded(stack_cursor_q - allocation_q)"
+                            ]
+                          ]
+                        ]
+                      ]
+                    ]
+                  ]
+                ]
               ]
             ]
           ],
@@ -11002,6 +11230,10 @@
                       ]
                     ],
                     [
+                      "context",
+                      "real_push_wrap_q"
+                    ],
+                    [
                       "and",
                       [
                         [
@@ -11025,6 +11257,77 @@
                         [
                           "context",
                           "effective_offset > 16'hFFFC"
+                        ]
+                      ]
+                    ]
+                  ]
+                ]
+              ],
+              [
+                "not",
+                [
+                  "and",
+                  [
+                    [
+                      "context",
+                      "protected_msw[0]"
+                    ],
+                    [
+                      "or",
+                      [
+                        [
+                          "and",
+                          [
+                            [
+                              "and",
+                              [
+                                [
+                                  "permission",
+                                  "allowed"
+                                ],
+                                [
+                                  "compare",
+                                  "==",
+                                  102
+                                ]
+                              ]
+                            ],
+                            [
+                              "context",
+                              "|pop8_word_exceeded"
+                            ]
+                          ]
+                        ],
+                        [
+                          "and",
+                          [
+                            [
+                              "and",
+                              [
+                                [
+                                  "permission",
+                                  "allowed"
+                                ],
+                                [
+                                  "compare",
+                                  "==",
+                                  108
+                                ],
+                                [
+                                  "context",
+                                  "allocation_valid_q"
+                                ],
+                                [
+                                  "context",
+                                  "stack_cursor_valid_q"
+                                ]
+                              ]
+                            ],
+                            [
+                              "context",
+                              "stack_word_exceeded(stack_cursor_q - allocation_q)"
+                            ]
+                          ]
                         ]
                       ]
                     ]
@@ -15217,6 +15520,80 @@
                             [
                               "context",
                               "iret_outer_range_fault"
+                            ]
+                          ],
+                          [
+                            "not",
+                            [
+                              "and",
+                              [
+                                [
+                                  "and",
+                                  [
+                                    [
+                                      "and",
+                                      [
+                                        [
+                                          "permission",
+                                          "allowed"
+                                        ],
+                                        [
+                                          "compare",
+                                          "==",
+                                          21
+                                        ],
+                                        [
+                                          "context",
+                                          "temporary_valid_q[0]"
+                                        ]
+                                      ]
+                                    ],
+                                    [
+                                      "context",
+                                      "push_enabled"
+                                    ]
+                                  ]
+                                ],
+                                [
+                                  "not",
+                                  [
+                                    "context",
+                                    "protected_msw[0]"
+                                  ]
+                                ],
+                                [
+                                  "not",
+                                  [
+                                    "context",
+                                    "stack_cursor_valid_q"
+                                  ]
+                                ],
+                                [
+                                  "not",
+                                  [
+                                    "context",
+                                    "event_active"
+                                  ]
+                                ],
+                                [
+                                  "context",
+                                  "stack_native_offset == 16'hFFFF"
+                                ],
+                                [
+                                  "not",
+                                  [
+                                    "context",
+                                    "real_push_wrap_q"
+                                  ]
+                                ]
+                              ]
+                            ]
+                          ],
+                          [
+                            "not",
+                            [
+                              "context",
+                              "real_push_wrap_q"
                             ]
                           ],
                           [
@@ -16908,6 +17285,10 @@
                       ]
                     ],
                     [
+                      "context",
+                      "real_push_wrap_q"
+                    ],
+                    [
                       "and",
                       [
                         [
@@ -17193,21 +17574,97 @@
             "and",
             [
               [
-                "permission",
-                "allowed"
+                "and",
+                [
+                  [
+                    "permission",
+                    "allowed"
+                  ],
+                  [
+                    "compare",
+                    "==",
+                    108
+                  ],
+                  [
+                    "context",
+                    "allocation_valid_q"
+                  ],
+                  [
+                    "context",
+                    "stack_cursor_valid_q"
+                  ]
+                ]
               ],
               [
-                "compare",
-                "==",
-                108
-              ],
-              [
-                "context",
-                "allocation_valid_q"
-              ],
-              [
-                "context",
-                "stack_cursor_valid_q"
+                "not",
+                [
+                  "and",
+                  [
+                    [
+                      "context",
+                      "protected_msw[0]"
+                    ],
+                    [
+                      "or",
+                      [
+                        [
+                          "and",
+                          [
+                            [
+                              "and",
+                              [
+                                [
+                                  "permission",
+                                  "allowed"
+                                ],
+                                [
+                                  "compare",
+                                  "==",
+                                  102
+                                ]
+                              ]
+                            ],
+                            [
+                              "context",
+                              "|pop8_word_exceeded"
+                            ]
+                          ]
+                        ],
+                        [
+                          "and",
+                          [
+                            [
+                              "and",
+                              [
+                                [
+                                  "permission",
+                                  "allowed"
+                                ],
+                                [
+                                  "compare",
+                                  "==",
+                                  108
+                                ],
+                                [
+                                  "context",
+                                  "allocation_valid_q"
+                                ],
+                                [
+                                  "context",
+                                  "stack_cursor_valid_q"
+                                ]
+                              ]
+                            ],
+                            [
+                              "context",
+                              "stack_word_exceeded(stack_cursor_q - allocation_q)"
+                            ]
+                          ]
+                        ]
+                      ]
+                    ]
+                  ]
+                ]
               ]
             ]
           ],
@@ -17491,6 +17948,10 @@
                       ]
                     ],
                     [
+                      "context",
+                      "real_push_wrap_q"
+                    ],
+                    [
                       "and",
                       [
                         [
@@ -17514,6 +17975,77 @@
                         [
                           "context",
                           "effective_offset > 16'hFFFC"
+                        ]
+                      ]
+                    ]
+                  ]
+                ]
+              ],
+              [
+                "not",
+                [
+                  "and",
+                  [
+                    [
+                      "context",
+                      "protected_msw[0]"
+                    ],
+                    [
+                      "or",
+                      [
+                        [
+                          "and",
+                          [
+                            [
+                              "and",
+                              [
+                                [
+                                  "permission",
+                                  "allowed"
+                                ],
+                                [
+                                  "compare",
+                                  "==",
+                                  102
+                                ]
+                              ]
+                            ],
+                            [
+                              "context",
+                              "|pop8_word_exceeded"
+                            ]
+                          ]
+                        ],
+                        [
+                          "and",
+                          [
+                            [
+                              "and",
+                              [
+                                [
+                                  "permission",
+                                  "allowed"
+                                ],
+                                [
+                                  "compare",
+                                  "==",
+                                  108
+                                ],
+                                [
+                                  "context",
+                                  "allocation_valid_q"
+                                ],
+                                [
+                                  "context",
+                                  "stack_cursor_valid_q"
+                                ]
+                              ]
+                            ],
+                            [
+                              "context",
+                              "stack_word_exceeded(stack_cursor_q - allocation_q)"
+                            ]
+                          ]
                         ]
                       ]
                     ]
@@ -21706,6 +22238,80 @@
                             [
                               "context",
                               "iret_outer_range_fault"
+                            ]
+                          ],
+                          [
+                            "not",
+                            [
+                              "and",
+                              [
+                                [
+                                  "and",
+                                  [
+                                    [
+                                      "and",
+                                      [
+                                        [
+                                          "permission",
+                                          "allowed"
+                                        ],
+                                        [
+                                          "compare",
+                                          "==",
+                                          21
+                                        ],
+                                        [
+                                          "context",
+                                          "temporary_valid_q[0]"
+                                        ]
+                                      ]
+                                    ],
+                                    [
+                                      "context",
+                                      "push_enabled"
+                                    ]
+                                  ]
+                                ],
+                                [
+                                  "not",
+                                  [
+                                    "context",
+                                    "protected_msw[0]"
+                                  ]
+                                ],
+                                [
+                                  "not",
+                                  [
+                                    "context",
+                                    "stack_cursor_valid_q"
+                                  ]
+                                ],
+                                [
+                                  "not",
+                                  [
+                                    "context",
+                                    "event_active"
+                                  ]
+                                ],
+                                [
+                                  "context",
+                                  "stack_native_offset == 16'hFFFF"
+                                ],
+                                [
+                                  "not",
+                                  [
+                                    "context",
+                                    "real_push_wrap_q"
+                                  ]
+                                ]
+                              ]
+                            ]
+                          ],
+                          [
+                            "not",
+                            [
+                              "context",
+                              "real_push_wrap_q"
                             ]
                           ],
                           [

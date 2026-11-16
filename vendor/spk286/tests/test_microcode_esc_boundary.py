@@ -24,17 +24,18 @@ def expected_boundary_image(old):
 
 
 class EscBoundaryMicrocodeTests(unittest.TestCase):
-    def test_current_image_adds_only_an_existing_check_without_operand_access(self):
+    def test_h19_image_adds_only_an_existing_check_without_operand_access(self):
+        # H19 is frozen history: the active image is H20
+        # (tests/test_microcode_enter_commit.py), derived from this one.
         old = json.loads((ROOT/'tests/fixtures/microcode_npx_access.json').read_text())
         words,entries,labels,branches = expected_boundary_image(old)
-        program = compile_sources({p.name:p.read_text() for p in (ROOT/'microcode/source').glob('*.mc')})
-        self.assertEqual([encode(op) for op in program.operations],words)
-        self.assertEqual(program.entries,entries)
-        self.assertEqual(program.labels,labels)
-        self.assertEqual(program.branch_targets,branches)
         frozen = json.loads((ROOT/'tests/fixtures/microcode_esc_boundary.json').read_text())
         self.assertEqual(frozen['words'],words)
         self.assertEqual(frozen['entries'],entries)
+        self.assertEqual(frozen['labels'],labels)
+        self.assertEqual({int(pc):target for pc,target in frozen['branch_targets'].items()},branches)
+        program = compile_sources({'canonical.mc':canonical_source(words,entries,labels,branches)})
+        self.assertEqual([encode(op) for op in program.operations],words)
         generated = generate(program)
         emitted = read_generated_words(generated['spk286_microcode_pkg.sv'],generated['spk286_microcode_rom.sv'])
         rebuilt = compile_sources({'canonical.mc':canonical_source(emitted,entries,labels,branches)})

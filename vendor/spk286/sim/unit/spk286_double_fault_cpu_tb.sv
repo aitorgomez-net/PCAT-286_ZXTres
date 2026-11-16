@@ -130,7 +130,9 @@ module spk286_double_fault_cpu_tb;
         integer first_vector,final_vector,expected_error;
         first_vector=origin==1 ? 6 : origin==2 ? 7 : origin==3 ? 2 : origin==4 ? 32 : 8;
         final_vector=origin==2 ? 13 : 11;
-        expected_error=first_vector*8+2+(origin>=2 && origin<=4 ? 1 : 0);
+        // Only the software INT 8 of origin 5 leaves EXT clear; the #UD of
+        // origin 1 sets it as on an Intel N80286-12 (vec.8.benign_first).
+        expected_error=first_vector*8+2+(origin>=1 && origin<=4 ? 1 : 0);
         setup(policy,origin,first_vector,0);until_result(0);
         check(!shutdown && debug_event_vector==8'(final_vector) && debug_event_error_valid &&
               debug_event_error_code==16'(expected_error) && events_seen==2 && faults==1 && retires==0 &&

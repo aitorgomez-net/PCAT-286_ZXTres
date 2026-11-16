@@ -146,13 +146,16 @@ module spk286_string_lifecycle_tb;
                 expected_progress(variant,3);finish_normal(variant,2,1);
                 check(writes==(variant/2==0 || variant/2==2?6:3) && reads==(variant/2==1?11:variant/2==2?5:8),"IRET refetch does not duplicate completed memory elements");cases++;
             end
-            // Every nonfinal TF frame restarts at the first prefix; the final
-            // frame points past REP and only the completed macro retires.
+            // Every TF frame after an element restarts at the first prefix,
+            // including the one that exhausts CX, as on an Intel N80286-12. The REP then re-executes with
+            // CX=0, retires once and traps past itself.
             setup(variant,16'h09D7,16'h2000);
             for(integer element=1;element<=3;element++)begin
                 expected_progress(variant,element);
-                wait_event(element,1,element==3?3:element-1,element==3?16'h0103:16'h0100,expected_flags,16'h2000);
+                wait_event(element,1,element-1,16'h0100,expected_flags,16'h2000);
             end
+            expected_progress(variant,3);
+            wait_event(4,1,4,16'h0103,expected_flags,16'h2000);
             check(acks==0,"TF never acknowledges INTR");cases++;
             // Initial zero count has no element access or comparison result.
             setup(variant,16'h08D7,16'h2000);execute_enable=0;gpr_write_en=1;gpr_write_index=1;gpr_write_data=0;tick();gpr_write_en=0;

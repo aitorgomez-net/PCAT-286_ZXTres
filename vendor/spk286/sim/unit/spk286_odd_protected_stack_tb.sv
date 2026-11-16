@@ -70,7 +70,7 @@ module spk286_odd_protected_stack_tb;
     endtask
     task automatic run_case(input integer form, input logic expand_down, input logic odd_sp,
                             input integer boundary, input logic [1:0] policy);
-        logic entry_case;
+        logic entry_case, wraps;
         logic [15:0] source_sp, target_sp, frame_sp, source_cs, source_ss, source_limit, target_limit;
         logic [15:0] expected_sp, expected_ip;
         integer deadline, frame_bytes, flags_pos, saved_sp_pos;
@@ -94,6 +94,13 @@ module spk286_odd_protected_stack_tb;
             else source_limit = expand_down ? source_sp : source_sp+16'(frame_bytes)-16'd2;
         end
         if (entry_case && boundary == 2) target_sp = 16'h0009; // Too little space, not an alignment fault.
+        // Boundaries 3 and 4 (call gate, expand-up limit FFFF only): an Intel
+        // N80286-12 wraps the new-stack frame below 0000 and the parameter
+        // source above FFFE at 16 bits.  An odd
+        // SP puts a word at FFFF, which still faults.
+        if (boundary == 3) target_sp = 16'h0000 + {15'd0,odd_sp};
+        if (boundary == 4) source_sp = 16'hFFFE + {15'd0,odd_sp};
+        wraps = boundary >= 3 && !odd_sp;
         memory['h40] = 8'h0F; memory['h41] = 8'h05;
         word_put('h806,1); word_put('h816,16'h0028); word_put('h818,16'h3202); word_put('h81A,16'h0100);
         word_put('h81E,16'h0023); word_put('h820,source_ss); word_put('h822,source_cs); word_put('h824,16'h0023);
@@ -138,7 +145,7 @@ module spk286_odd_protected_stack_tb;
                !(debug_cs == (entry_case ? 16'h0008 : 16'h001B) && debug_ip == (entry_case ? 16'h0200 : expected_ip)) && deadline<2200) begin
             tick(); deadline=deadline+1;
         end
-        if (boundary != 0) begin
+        if (boundary != 0 && !wraps) begin
             check(fault_seen && first_fault_vector == 12 && !instruction_retired,
                   "invalid complete frame is rejected with #SS for both returns and gates");
             check(debug_cs == source_cs && debug_gpr[79:64] == source_sp && stack_writes == 0,
@@ -177,8 +184,9 @@ module spk286_odd_protected_stack_tb;
             for (integer form=0;form<6;form=form+1)
                 for (integer ed=0;ed<2;ed=ed+1)
                     for (integer odd_sp=0;odd_sp<2;odd_sp=odd_sp+1)
-                        for (integer boundary=0;boundary<3;boundary=boundary+1)
-                            run_case(form,1'(ed),1'(odd_sp),boundary,2'(policy));
+                        for (integer boundary=0;boundary<5;boundary=boundary+1)
+                            if (boundary < 3 || (form == 3 && ed == 0))
+                                run_case(form,1'(ed),1'(odd_sp),boundary,2'(policy));
         $display("ODD_PROTECTED_STACK PASS: %0d checks / %0d cases",checks,cases);
         $finish;
     end

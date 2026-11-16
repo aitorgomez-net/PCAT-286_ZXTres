@@ -694,7 +694,9 @@ module spk286_protected_system_tb;
         check(debug_flags[6] == 1'b0, "VERR clears ZF for a null selector without raising a fault");
         retire_one();
         retire_one();
-        check(debug_flags[6] == 1'b0, "VERR clears ZF for an invalid descriptor without raising a fault");
+        // GDT index 8 is absent writable data. VERR does not check P: an Intel
+        // N80286-12 sets ZF here.
+        check(debug_flags[6] == 1'b1, "VERR ignores the present bit of readable data and raises no fault");
         retire_one();
         check(debug_gpr[15:0] == 16'h0018, "MOV loads the LAR selector");
         retire_one();
@@ -948,11 +950,12 @@ module spk286_protected_system_tb;
                                          rpl <= dpl, (rpl <= dpl) ? 16'hFFFF : 16'h1234,
                                          "PM1 LSL non-readable-code DPL/RPL matrix");
 
+                // VERR and VERW ignore P, as an Intel N80286-12 does.
                 run_pm1_inspection_case(2'd0, 16'h01C0 + dpl * 8 + rpl,
-                                         1'b0, 16'h1234,
+                                         rpl <= dpl, 16'h1234,
                                          "PM1 VERR not-present-data matrix");
                 run_pm1_inspection_case(2'd1, 16'h01C0 + dpl * 8 + rpl,
-                                         1'b0, 16'h1234,
+                                         rpl <= dpl, 16'h1234,
                                          "PM1 VERW not-present-data matrix");
                 run_pm1_inspection_case(2'd2, 16'h01C0 + dpl * 8 + rpl,
                                          rpl <= dpl,
@@ -963,7 +966,7 @@ module spk286_protected_system_tb;
                                          "PM1 LSL not-present-data matrix");
 
                 run_pm1_inspection_case(2'd0, 16'h01E0 + dpl * 8 + rpl,
-                                         1'b0, 16'h1234,
+                                         rpl <= dpl, 16'h1234,
                                          "PM1 VERR not-present-code matrix");
                 run_pm1_inspection_case(2'd1, 16'h01E0 + dpl * 8 + rpl,
                                          1'b0, 16'h1234,
@@ -981,6 +984,8 @@ module spk286_protected_system_tb;
         // "If the code segment is readable and conforming, the descriptor
         // privilege level (DPL) can be any value for VERR" (Intel, VERR/VERW).
         // The selector RPL does not matter either. VERW still rejects code.
+        // LAR and LSL accept conforming code whatever its DPL and the selector
+        // RPL, as an Intel N80286-12 does.
         for (integer dpl = 0; dpl < 4; dpl = dpl + 1)
             write_pm1_matrix_descriptor(6'd60 + dpl, 8'h9E + dpl * 8'h20);
         for (integer dpl = 0; dpl < 4; dpl = dpl + 1) begin
@@ -989,6 +994,23 @@ module spk286_protected_system_tb;
                                         "PM1 VERR conforming-code DPL/RPL matrix");
                 run_pm1_inspection_case(2'd1, 16'h01E0 + dpl * 8 + rpl, 1'b0, 16'h1234,
                                         "PM1 VERW conforming-code matrix");
+                run_pm1_inspection_case(2'd2, 16'h01E0 + dpl * 8 + rpl, 1'b1, 16'h9E00 + dpl * 16'h2000,
+                                        "PM1 LAR conforming-code DPL/RPL matrix");
+                run_pm1_inspection_case(2'd3, 16'h01E0 + dpl * 8 + rpl, 1'b1, 16'hFFFF,
+                                        "PM1 LSL conforming-code DPL/RPL matrix");
+            end
+        end
+        // LAR rejects interrupt and trap gates and accepts a call gate, as an
+        // Intel N80286-12 does. LSL rejects all three: gates have no limit.
+        for (integer kind = 0; kind < 3; kind = kind + 1) begin
+            for (integer dpl = 0; dpl < 4; dpl = dpl + 1)
+                write_pm1_matrix_descriptor(6'd60 + dpl, (kind == 0 ? 8'h84 : kind == 1 ? 8'h86 : 8'h87) + dpl * 8'h20);
+            for (integer dpl = 0; dpl < 4; dpl = dpl + 1) begin
+                run_pm1_inspection_case(2'd2, 16'h01E0 + dpl * 8, kind == 0,
+                                        kind == 0 ? 16'h8400 + dpl * 16'h2000 : 16'h1234,
+                                        "PM1 LAR gate-type matrix");
+                run_pm1_inspection_case(2'd3, 16'h01E0 + dpl * 8, 1'b0, 16'h1234,
+                                        "PM1 LSL gate-type matrix");
             end
         end
         for (integer dpl = 0; dpl < 4; dpl = dpl + 1)

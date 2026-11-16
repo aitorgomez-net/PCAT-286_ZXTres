@@ -49,8 +49,8 @@ module spk286_task_segment_service_tb;
             if (reset || cancel || start) begin published_mask=0; publish_count=0; end
             else if (commit_valid) begin
                 check(!published_mask[commit_index], "each task cache publishes once");
-                check(commit_index==(publish_count==0 ? 2'd2 : publish_count==1 ? 2'd1 : publish_count==2 ? 2'd0 : 2'd3),
-                      "task cache publication follows SS/CS/ES/DS stages");
+                check(commit_index==(publish_count==0 ? 2'd2 : publish_count==1 ? 2'd1 : publish_count==2 ? 2'd3 : 2'd0),
+                      $sformatf("task cache publication follows SS/CS/DS/ES stages index=%0d count=%0d", commit_index, publish_count));
                 published_mask[commit_index]=1;
                 publish_count++;
             end
@@ -209,7 +209,8 @@ module spk286_task_segment_service_tb;
         check(fault && fault_vector == 8'd11 && fault_error_code == 16'h0018 && !commit_valid,
               "task absent readable conforming ES raises #NP");
         // H13: within each segment, access/type/privilege precedes presence.
-        // The segment order remains SS, CS, ES, DS. Presence of CS must not
+        // The segment order is SS, CS, DS, ES, as on an Intel N80286-12.
+        // Presence of CS must not
         // be folded into its privilege predicate (valid absent CS is #NP).
         for (integer cpl=0; cpl<4; cpl++)
             for (integer slot=0; slot<4; slot++)
@@ -247,9 +248,9 @@ module spk286_task_segment_service_tb;
                                                     (bad==1 && slot!=1 && slot!=2 && cpl==0 ? 16'd1 : 16'(cpl))),
                                   $sformatf("H13 task fault priority CPL=%0d slot=%0d bad=%0d P=%0d",cpl,slot,bad,p));
                             check({memory['h14D][0],memory['h13D][0],memory['h12D][0],memory['h11D][0]} ==
-                                  (slot==2 ? 4'b0000 : slot==1 ? 4'b0100 : slot==0 ? 4'b0110 : 4'b0111),
+                                  (slot==2 ? 4'b0000 : slot==1 ? 4'b0100 : slot==3 ? 4'b0110 : 4'b1110),
                                   "late fault retains Accessed bits of completed task stages only");
-                            check(published_mask == (slot==2 ? 4'b0000 : slot==1 ? 4'b0100 : slot==0 ? 4'b0110 : 4'b0111),
+                            check(published_mask == (slot==2 ? 4'b0000 : slot==1 ? 4'b0100 : slot==3 ? 4'b0110 : 4'b1110),
                                   "late fault retains cache publications of completed stages only");
                         end
         task_segments=64'h0048003800280018;
@@ -262,6 +263,14 @@ module spk286_task_segment_service_tb;
         write_descriptor('h138,0,16'hFFFF,8'h92);
         reset=1; tick(0); reset=0; start=1; tick(0); start=0; run_to_end();
         check(fault && fault_vector==10 && fault_error_code==16'h0028,"invalid CS beats later absent ES/DS");
+        write_descriptor('h128,0,16'hFFFF,8'h9A);
+        reset=1; tick(0); reset=0; start=1; tick(0); start=0; run_to_end();
+        check(fault && fault_vector==11 && fault_error_code==16'h0048 && published_mask==4'b0110,
+              "absent DS is reported before absent ES");
+        write_descriptor('h148,0,16'hFFFF,8'h92);
+        reset=1; tick(0); reset=0; start=1; tick(0); start=0; run_to_end();
+        check(fault && fault_vector==11 && fault_error_code==16'h0018 && published_mask==4'b1110,
+              "ES is loaded after a valid DS");
         $display("TASK_SEGMENT_SERVICE PASS: %0d checks", checks);
         $finish;
     end

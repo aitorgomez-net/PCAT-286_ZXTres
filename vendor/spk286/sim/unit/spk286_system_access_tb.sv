@@ -70,7 +70,9 @@ module spk286_system_access_tb;
         selector_fault=selector_case==2 || (selector_case==1 && kind==9);
         rejected=(!pe && protected_only) || (pe && cpl!=0 && privileged) || bad_operand || selector_fault;
         expected_error=(pe && cpl==0 && selector_fault) ? (input_value & 16'hFFFC) : 16'd0;
-        caller_cs=16'h0018 | {14'd0,cpl}; old_msw=16'h0008 | {15'd0,pe};
+        caller_cs=16'h0018 | {14'd0,cpl};
+        // MSW bits 4-15 read 1, as SMSW shows on an Intel N80286-12.
+        old_msw=16'hFFF8 | {15'd0,pe};
         memory[0]=8'h0F; memory[1]=8'h05;
         word_put('h806,old_msw); word_put('h816,16'h0028); word_put('h818,16'h0046); word_put('h81A,16'h0100);
         word_put('h81C,16'h0038); word_put('h81E,16'h0020 | {14'd0,cpl}); word_put('h820,16'h0020 | {14'd0,cpl});

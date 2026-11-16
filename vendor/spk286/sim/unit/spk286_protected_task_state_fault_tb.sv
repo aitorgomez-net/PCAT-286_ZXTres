@@ -265,8 +265,9 @@ module spk286_protected_task_state_fault_tb;
                 check(dut.protected_segment_valid == 4'b0100,
                       "invalid incoming CS preserves only validated SS");
             else
-                check(dut.protected_segment_valid == 4'b0110,
-                      "invalid incoming ES preserves validated SS and CS");
+                // DS is validated before ES, as on an Intel N80286-12.
+                check(dut.protected_segment_valid == 4'b1110,
+                      "invalid incoming ES preserves validated SS, CS and DS");
             check({memory[16'h400F], memory[16'h400E]} == 16'h010B,
                   "late incoming task fault saves the outgoing IP");
             check(memory[16'h2025] == 8'h83 &&

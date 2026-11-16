@@ -76,8 +76,8 @@ module spk286_task_late_publication_tb;
                     1: begin expected_vector=10;expected_error='h60;expected_valid=0;end
                     2: begin expected_vector=absent!=0 ? 12 : 10;expected_error='h38;expected_valid=0;end
                     3: begin expected_vector=absent!=0 ? 11 : 10;expected_error='h30;expected_valid=4'b0100;end
-                    4: begin expected_vector=absent!=0 ? 11 : 10;expected_error='h40;expected_valid=4'b0110;end
-                    5: begin expected_vector=absent!=0 ? 11 : 10;expected_error='h48;expected_valid=4'b0111;end
+                    4: begin expected_vector=absent!=0 ? 11 : 10;expected_error='h40;expected_valid=4'b1110;end
+                    5: begin expected_vector=absent!=0 ? 11 : 10;expected_error='h48;expected_valid=4'b0110;end
                     6: begin expected_vector=13;expected_error=0;expected_valid=4'b1111;end
                     7: begin expected_vector=10;expected_error=4;expected_valid=0;end
                     default: begin expected_vector=0;expected_error=0;expected_valid=4'b1111;end

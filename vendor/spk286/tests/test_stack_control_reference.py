@@ -28,6 +28,15 @@ class StackControlReferenceTests(unittest.TestCase):
                 self.assertEqual(pop(sp,0xa55a,True),0xa55a)
                 self.assertEqual(pop(sp,0,release=65535),(sp+1)%65536)
 
+    def test_push_at_ffff_leaves_sp_decremented(self):
+        # An Intel N80286-12 decrements SP before it faults on a word at
+        # SS:FFFF.
+        for code in ([0x50], [0x6a, 0x12], [0xe8, 0, 0]):
+            outcome = evaluate(code, [0x1234, 0, 0, 0, 1, 0, 0, 0], 2, 0x100, {})
+            self.assertTrue(outcome.blocked)
+            self.assertEqual(outcome.registers[4], 0xFFFF)
+            self.assertEqual(outcome.transactions, [])
+
     def test_relative_wrap(self):
         self.assertEqual(relative(0xffff,1),0)
         self.assertEqual(relative(1,-2),0xffff)

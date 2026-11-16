@@ -182,8 +182,10 @@ module spk286_event_lifecycle_tb;
             setup('h0102,'h0200); memory[65792]=8'h9D; putword(524800,2);
             until_event(1,1); check(retires==1 && stackword('h01fc)==16'h0101 && stackword('h0200)==2,"clearing sampled TF still traps with post-POPF FLAGS"); next_case();
 
-            setup(2,'h0200); memory[65792]=8'h9D; putword(524800,'h0202); intr=1;
-            until_event(1,66); check(retires==1 && stackword('h01fc)==16'h0101,"POPF IF has no STI shadow"); next_case();
+            // A POPF that sets IF shadows INTR like STI, as on an Intel
+            // N80286-12.
+            setup(2,'h0200); memory[65792]=8'h9D; memory[65793]=8'h90; putword(524800,'h0202); intr=1;
+            until_event(1,66); check(retires==2 && stackword('h01fc)==16'h0102,"POPF that sets IF delays INTR one instruction"); next_case();
 
             setup(2,'h0200); memory[65792]=8'hCF;
             putword(524800,'h0120); putword(524802,'h1000); putword(524804,'h0202); intr=1;

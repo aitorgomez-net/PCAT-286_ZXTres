@@ -38,6 +38,10 @@ def stack_record(opcode,sp,seed,prefix):
         expected[4]=(sp+(2 if pop else -2))%65536
         if pop:segments[segment]=before
         else:after=SEGMENTS[segment]
+    elif not pop:
+        # A PUSH to SS:FFFF decrements SP before it faults, as on an Intel
+        # N80286-12.
+        expected[4]=0xffff
     row=pack(16,prefix+[opcode],initial,expected,offset,2,before,after,
              int(pop and not blocked),int(not pop and not blocked),seed,int(blocked))
     return [*row,*SEGMENTS,*segments]

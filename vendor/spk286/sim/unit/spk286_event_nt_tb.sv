@@ -61,9 +61,12 @@ module spk286_event_nt_tb;
         target_cs = inward ? 16'h0008 : caller_cs;
         target_ss = inward ? 16'h0010 : caller_ss;
         old_flags = 16'h3202 | (nt ? 16'h4000 : 16'd0);
+        // A real-mode LOADALL image loads FLAGS with bits 12-15 clear, as on
+        // an Intel N80286-12.
+        if (!pe) old_flags = old_flags & 16'h0FFF;
         return_ip = exception_source ? 16'h0100 : 16'h0102;
         memory[0] = 8'h0F; memory[1] = 8'h05; // Independent LOADALL setup.
-        word_at('h806,{15'd0,pe}); word_at('h818,old_flags); word_at('h81A,16'h0100);
+        word_at('h806,{15'd0,pe}); word_at('h818,16'h3202 | (nt ? 16'h4000 : 16'd0)); word_at('h81A,16'h0100);
         word_at('h816,16'h0028); word_at('h81E,caller_ss); word_at('h820,caller_ss);
         word_at('h822,caller_cs); word_at('h824,caller_ss); word_at('h82C,16'hF000);
         cache('h836,0,8'h93 | {1'b0,cpl,5'd0},16'hFFFF);
@@ -97,7 +100,7 @@ module spk286_event_nt_tb;
         if (exception_source) frame_sp = frame_sp - 16'd2;
         flags_addr = int'(frame_sp) + (exception_source ? 6 : 4);
         check(read_word(flags_addr) == old_flags,"stack saves the old NT and IF");
-        check(!debug_flags[8] && debug_flags[14] == (pe ? 1'b0 : nt) &&
+        check(!debug_flags[8] && debug_flags[14] == (pe ? 1'b0 : old_flags[14]) &&
               debug_flags[9] == (pe && trap_gate),"live NT/TF/IF follow the gate kind and mode");
         check(debug_gpr[79:64] == frame_sp,"exact event frame size");
         if (pe) begin

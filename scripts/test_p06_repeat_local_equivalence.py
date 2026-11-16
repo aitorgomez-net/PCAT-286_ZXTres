@@ -63,10 +63,12 @@ def main():
     permission = '''module miter (
     input historical_enable, cpu_boundary, profile_deadline_ready,
     input profile_raw_operation_valid, string_compare,
+    input intr, nmi, debug_nmi_pending,
     input [7:0] micro_word, input [1:0] repeat_kind,
     input [127:0] register_state, input [15:0] debug_flags
 );
     wire profile_repeat_more, profile_repeat_empty, profile_repeat_continue, profile_repeat_permit;
+    wire profile_repeat_exhausted, profile_repeat_event_pending;
 ''' + constants + '\n' + actual + f'''
     always @* if (micro_word != 8'd{words[0]} && micro_word != 8'd{words[1]})
         assert(profile_repeat_permit);
