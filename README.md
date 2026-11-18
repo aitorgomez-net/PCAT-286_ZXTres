@@ -13,7 +13,8 @@ so it does not replace the installed cores. The AT RAM lives in the board's
 The card layout, the OSD, the video outputs and the evidence level of each
 feature are in [zxtres/README.md](zxtres/README.md). A ready-made `.ZX3` is in
 [releases](releases), in `A100T-board` for the ZXTRES+ and `A200T-board` for the
-ZXTRES++; a file for one board does not load on the other.
+ZXTRES++, with the same build as a `.BIT` file for the core menu of the MiST
+middle board; a file for one board does not load on the other.
 
 The same machine runs on MiSTer as [PCAT-286_MiSTer](https://github.com/MiSTer-devel/PCAT-286_MiSTer).
 This repository keeps the machine sources both builds share, so a fix in the
@@ -95,7 +96,10 @@ build `credits/msg2hex.cc`, run it on that file and copy the resulting
    [BIOS Builder](https://aitorgomez-net.github.io/PCAT-286_ZXTres/BIOS_Builder)
    (see [Firmware](#firmware)). In the ZX Spectrum core press F5 for the NMI
    browser, select the file and load it; to go back to the Spectrum core, power
-   cycle the board.
+   cycle the board. With the MiST firmware on the middle board, the `.BIT` of
+   the same release can go in the card's `MIST` folder instead: the core menu
+   shown at power-up with the card in lists it by its file name. The `PCAT286`
+   folder and its files are the same either way.
 2. Open the OSD with **Win + F12**. Select both ROMs in the **BIOS** page (or
    name them `PCAT286.ROM` and `EGA.ROM` so they load by themselves).
 3. Mount a bootable floppy image in drive A or a `VHD`/`IMG` hard disk image in

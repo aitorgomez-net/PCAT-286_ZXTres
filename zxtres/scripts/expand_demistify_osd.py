@@ -244,10 +244,23 @@ def transform(main_path, menu_path, header_path):
         '\tTestKey(KEY_OSD);\n'
         '\treturn(0);\n'
         '}\n\n'
+        '/* Menu_PollInput() for the menu key. With no menu key it must not poll\n'
+        '   at all: key code 0 is the keyboard\'s overrun code, which has no\n'
+        '   release, and once seen it would read as held for ever, a long press\n'
+        '   that reopened the OSD 750 ms after every close. */\n'
+        'static int Menu_PollOsd()\n'
+        '{\n'
+        '\tint key=Menu_OsdKey();\n'
+        '\tif(key)\n'
+        '\t\treturn(Menu_PollInput(key,0,JOY_BUTTON_MENU));\n'
+        '\tMenu_UpdateInput();\n'
+        '\tmenu_longpress=0;\n'
+        '\treturn(0);\n'
+        '}\n\n'
         'void Menu_Run()\n',
         'menu key helper')
     menu = replace_once(menu, 'if(Menu_PollInput(KEY_OSD,0,JOY_BUTTON_MENU))',
-                        'if(Menu_PollInput(Menu_OsdKey(),0,JOY_BUTTON_MENU))',
+                        'if(Menu_PollOsd())',
                         'menu key Win+F12')
 
     # ESC backs out of the menu as it does on MiSTer: from a page to the main
