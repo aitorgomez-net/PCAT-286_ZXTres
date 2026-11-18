@@ -464,7 +464,11 @@ module zxtres_ide_store #(
                                 state_q <= S_RESP0;
                             end
                             8'h90: begin resp_err_q <= 8'h01; state_q <= S_RESP0; end
-                            8'h40, 8'h41, 8'hEF, 8'hC6, 8'hE0, 8'hE1, 8'hE2, 8'hE3,
+                            // SET MULTIPLE MODE (C6) falls to the abort below:
+                            // there is no READ/WRITE MULTIPLE, and IDENTIFY
+                            // word 47 says so. Accepting it made the XT-IDE
+                            // BIOS read with C4, which was aborted.
+                            8'h40, 8'h41, 8'hEF, 8'hE0, 8'hE1, 8'hE2, 8'hE3,
                             8'hE4, 8'hE5, 8'hE6, 8'hE7: state_q <= S_RESP0;
                             default: begin
                                 if (cmd_q[7:4] == 4'h1 || cmd_q[7:4] == 4'h7)
