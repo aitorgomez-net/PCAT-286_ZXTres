@@ -92,6 +92,36 @@ static unsigned int mountdir[SLOTS];
 /* 1 while autoboot() loads the files, with the machine held in reset. */
 static int booting;
 
+/* A hard disk chosen, changed or dismounted in the OSD while the machine runs
+   waits for the next reset of the machine (Reset & apply, a BIOS loaded,
+   defaults): until then the image the machine has stays open and served, as
+   a drive is not swapped with the power on. pendname is the 8.3 name to
+   mount then, empty for none, from the folder penddir. */
+static unsigned char pending[2];
+static char pendname[2][12];
+static unsigned int penddir[2];
+
+/* Mount what is pending, with the machine held in reset. */
+static void apply_pending_disks(void)
+{
+	unsigned int dir = CurrentDirectory();
+	int u;
+
+	for(u = 0; u < 2; ++u)
+	{
+		if(!pending[u])
+			continue;
+		pending[u] = 0;
+		diskimg_mount(0, u);
+		if(pendname[u][0])
+		{
+			ChangeDirectoryByCluster(penddir[u]);
+			diskimg_mount((const unsigned char *)pendname[u], u);
+		}
+	}
+	ChangeDirectoryByCluster(dir);
+}
+
 /* The slot of a unit, -1 for none. */
 static int slot_of(int unit)
 {
@@ -152,6 +182,33 @@ int loadimage(char *filename, int unit)
 			return(LoadROM(filename));
 		case '0':
 		case '1':
+			if(!booting)
+			{
+				int u = unit - '0';
+				fileTYPE f;
+
+				size = 0;
+				if(filename && FileOpen(&f, filename))
+					size = f.size;
+				pending[u] = 1;
+				pendname[u][0] = 0;
+				if(size)
+				{
+					memcpy(pendname[u], filename, 11);
+					pendname[u][11] = 0;
+					penddir[u] = CurrentDirectory();
+				}
+				setimagename(unit, filename, size);
+				mountname[u][0] = 0;
+				if(size)
+				{
+					memcpy(mountname[u], filename, 11);
+					mountname[u][11] = 0;
+					mountdir[u] = CurrentDirectory();
+				}
+				return(size);
+			}
+			/* fall through: autoboot mounts at once, the machine is held */
 		case '3':
 		case '4':
 		{
@@ -186,6 +243,7 @@ int loadimage(char *filename, int unit)
 			size = LoadROM(filename);
 			if(!booting)
 			{
+				apply_pending_disks();
 				statusword &= ~RESET_BIT;
 				sendstatus();
 			}
@@ -575,6 +633,7 @@ void confirm_yes(int row)
 	load_rom(bios_name, BIOS_UNIT);
 	load_rom(ega_name, EGA_UNIT);
 	booting = 0;
+	apply_pending_disks();
 	t = GetTimer(200);
 	while(!CheckTimer(t))
 		;
@@ -594,6 +653,23 @@ void toggle(int row)
 		confirm_bit = bit;
 		menupage = MENUPAGE_CONFIRM;
 		buildmenu(1);
+		return;
+	}
+	if(bit == 0)
+	{
+		/* Reset & apply: the hard disks chosen since the last reset are
+		   mounted while the machine is held. */
+		unsigned int t;
+
+		statusword |= RESET_BIT;
+		sendstatus();
+		apply_pending_disks();
+		t = GetTimer(50);
+		while(!CheckTimer(t))
+			;
+		statusword &= ~RESET_BIT;
+		sendstatus();
+		Menu_ShowHide(0);
 		return;
 	}
 	cycle(row);
@@ -1110,6 +1186,19 @@ static void inforule(struct menu_entry *m, int i, const char *title)
 	m[i].action = 0;
 }
 
+/* A hard disk row: a change that waits for the reset is in yellow, marked. */
+static void diskrow(struct menu_entry *m, int i, const char *title, int u)
+{
+	char v[21];
+	const char *image = imagename('0' + u);
+
+	strncpy(v, image, 12);
+	v[12] = 0;
+	if(pending[u])
+		strcat(v, " (reset)");
+	inforow(m, i, title, pending[u] ? C_YELLOW : image[0] == '(' ? C_GREY : C_GREEN, v);
+}
+
 int info_page(struct menu_entry *m)
 {
 	int i = 0;
@@ -1128,10 +1217,8 @@ int info_page(struct menu_entry *m)
 	inforow(m, i++, "Floppy A", image[0] == '(' ? C_GREY : C_GREEN, image);
 	image = imagename('4');
 	inforow(m, i++, "Floppy B", image[0] == '(' ? C_GREY : C_GREEN, image);
-	image = imagename('0');
-	inforow(m, i++, "Disk 0", image[0] == '(' ? C_GREY : C_GREEN, image);
-	image = imagename('1');
-	inforow(m, i++, "Disk 1", image[0] == '(' ? C_GREY : C_GREEN, image);
+	diskrow(m, i++, "Disk 0", 0);
+	diskrow(m, i++, "Disk 1", 1);
 	inforow(m, i++, "Settings", cfg_state == 2 ? C_GREEN : cfg_state ? C_GREY : C_RED,
 		cfg_state == 2 ? "saved on the card" : cfg_state ? "none saved" : "PCAT286.CFG missing");
 	return(i);

@@ -19,6 +19,7 @@ module zxtres_ide_store_tb;
     logic clk = 1'b0;
     always #10 clk = !clk;
     logic reset = 1'b1;
+    logic machine_reset = 1'b1;     // the machine is held in reset (OSD Reset, autoboot)
 
     // ------------------------------------------------------------ IDE
     logic [3:0]  io_address = '0;
@@ -66,7 +67,7 @@ module zxtres_ide_store_tb;
     endfunction
 
     zxtres_ide_store #(.TIMEOUT_CYCLES(200000)) dut (
-        .clk(clk), .reset(reset),
+        .clk(clk), .reset(reset), .machine_reset(machine_reset),
         .img_mounted(img_mounted), .img_size(img_size),
         .sd_rd(sd_rd), .sd_wr(sd_wr), .sd_lba(sd_lba), .sd_ack(sd_ack),
         .sd_buff_addr(sd_buff_addr), .sd_dout(sd_dout), .sd_dout_strobe(sd_dout_strobe),
@@ -240,6 +241,7 @@ module zxtres_ide_store_tb;
         @(negedge clk); img_mounted = 2'b00;
         @(negedge clk); img_mounted = 2'b10; img_size = 64'(SECT1 * 512);
         @(negedge clk); img_mounted = 2'b00;
+        machine_reset = 1'b0;
         wait_status(1'b0, status);
         check(status == 8'h50, $sformatf("status after reset is %02h", status));
         ide_read(4'd1, w);
@@ -354,6 +356,48 @@ module zxtres_ide_store_tb;
         check(status == 8'h51, $sformatf("aborted command status %02h", status));
         ide_read(4'd1, w);
         check(w[7:0] == 8'h04, "abort error");
+
+        // The OSD changes a disk while the machine runs: dismounting the slave
+        // changes nothing the machine sees. It still has the drive, but the
+        // image under it is gone, so its commands are aborted.
+        @(negedge clk); img_mounted = 2'b10; img_size = 64'd0;
+        @(negedge clk); img_mounted = 2'b00;
+        repeat (400) @(negedge clk);
+        check(dut.pend_q == 2'b10, "the dismount waits for a reset");
+        check(dut.present_q[1] && dut.pres_out_q[1], "the machine still has the slave");
+        select_lba(1'b1, 5, 1, 8'h20);
+        wait_status(1'b0, status);
+        check(status == 8'h51, $sformatf("a read of a changed disk is aborted, status %02h", status));
+        ide_read(4'd1, w);
+        check(w[7:0] == 8'h04, "abort error of a changed disk");
+        // The master is untouched
+        select_lba(1'b0, 7, 1, 8'h20);
+        read_block(0, 7, "master after the slave was dismounted");
+        wait_status(1'b0, status);
+        // A second change replaces the first one: the other image, then the reset
+        @(negedge clk); img_mounted = 2'b10; img_size = 64'(SECT1 * 512);
+        @(negedge clk); img_mounted = 2'b00;
+        repeat (400) @(negedge clk);
+        check(dut.pend_q == 2'b10 && dut.present_q[1], "a second change waits too");
+        @(negedge clk); machine_reset = 1'b1;
+        repeat (4) @(negedge clk);
+        machine_reset = 1'b0;
+        repeat (400) @(negedge clk);
+        check(dut.pend_q == 2'b00, "the reset applied the change");
+        // The slave is served again, from the image chosen last
+        select_lba(1'b1, 9, 1, 8'h20);
+        read_block(1, 9, "slave after the reset");
+        wait_status(1'b0, status);
+        // A dismount followed by a reset takes the drive away
+        @(negedge clk); img_mounted = 2'b10; img_size = 64'd0;
+        @(negedge clk); img_mounted = 2'b00;
+        repeat (50) @(negedge clk);
+        check(dut.present_q[1] && dut.pres_out_q[1], "still there before the reset");
+        @(negedge clk); machine_reset = 1'b1;
+        repeat (4) @(negedge clk);
+        machine_reset = 1'b0;
+        repeat (400) @(negedge clk);
+        check(!dut.present_q[1] && !dut.pres_out_q[1] && dut.present_q[0], "the reset removed the slave only");
 
         $display("ZXTRES_IDE_STORE_PASS commands=%0d reads=%0d writes=%0d", command_count, reads, writes);
         $finish;

@@ -145,7 +145,7 @@ module pcat286_zxtres_guest (
         "P3T2,Reset to defaults;",
         "P3L,Board;",
         "P3Tz,Reload ZX core;",
-        "T0,Reset;",
+        "T0,Reset & apply;",
         "V,v0.1"
     };
 
@@ -402,7 +402,7 @@ module pcat286_zxtres_guest (
         .busy(cmos_busy), .restored(), .save_count()
     );
     zxtres_ide_store u_ide_store (
-        .clk(CLK_50M), .reset(RESET),
+        .clk(CLK_50M), .reset(RESET), .machine_reset(at_boot_reset),
         .img_mounted(img_mounted[1:0]), .img_size(img_size),
         .sd_rd(ide_sd_rd), .sd_wr(ide_sd_wr), .sd_lba(ide_sd_lba),
         .sd_ack(sd_ack_x[1:0]), .sd_buff_addr(sd_buff_addr),

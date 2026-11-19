@@ -29,6 +29,7 @@ module zxtres_ide_store #(
 ) (
     input  logic        clk,
     input  logic        reset,
+    input  logic        machine_reset,   // the machine is held in reset (OSD Reset, autoboot)
 
     // user_io block devices 0 and 1
     input  logic [1:0]  img_mounted,
@@ -65,6 +66,13 @@ module zxtres_ide_store #(
     // reading as an empty bus while the geometry is fetched.
     logic [1:0]  seen_q = 2'b00, need_geo_q = 2'b00, present_q = 2'b00, pres_out_q = 2'b00;
     logic        pres_dirty_q = 1'b0;
+    // A mount event (a disk chosen, changed or dismounted in the OSD) takes
+    // effect when the machine is reset, as a drive that is cabled before the
+    // power is on. Until then the machine keeps the drive it has, and the
+    // events wait in pend_q / pnew_*: the image under the drive is not the one
+    // it was told about, so commands to it are aborted instead of served.
+    logic [1:0]  pend_q = 2'b00, pnew_pres_q = 2'b00;
+    logic [31:0] pnew_size_q [0:1];
     logic [31:0] size_q   [0:1];
     logic [31:0] total_q  [0:1];
     logic [15:0] cyl_q    [0:1];
@@ -75,7 +83,7 @@ module zxtres_ide_store #(
 
     initial begin
         for (int u = 0; u < 2; u++) begin
-            size_q[u] = '0; total_q[u] = '0; cyl_q[u] = '0; heads_q[u] = '0;
+            pnew_size_q[u] = '0; size_q[u] = '0; total_q[u] = '0; cyl_q[u] = '0; heads_q[u] = '0;
             spt_q[u] = '0; cheads_q[u] = '0; cspt_q[u] = '0;
         end
     end
@@ -453,6 +461,10 @@ module zxtres_ide_store #(
                     if (!sel_present) begin
                         resp_stat_q <= 8'h00;               // no device there
                         state_q <= S_RESP0;
+                    end else if (pend_q[dsel_q]) begin
+                        resp_err_q <= 8'h04;                // its image has been changed:
+                        resp_stat_q <= 8'h55;               // aborted until the next reset
+                        state_q <= S_RESP0;
                     end else begin
                         case (cmd_q)
                             8'h20, 8'h21: begin is_write_q <= 1'b0; state_q <= S_ADDR0; end
@@ -613,14 +625,28 @@ module zxtres_ide_store #(
             endcase
         end
 
-        // Mount events outrank everything above.
+        // Mount events outrank everything above. They apply at once while the
+        // machine is in reset (the firmware loading PCXT.CFG) and for a drive
+        // that has had none yet; otherwise they wait for the next reset.
         for (int u = 0; u < 2; u++) begin
-            if (img_mounted[u]) begin
+            if (img_mounted[u] && (machine_reset || !seen_q[u])) begin
                 seen_q[u] <= 1'b1;
+                pend_q[u] <= 1'b0;
                 present_q[u] <= 1'b0;
                 pres_out_q[u] <= (img_size[63:9] != 55'd0);
                 size_q[u] <= img_size[40:9];
                 need_geo_q[u] <= (img_size[63:9] != 55'd0);
+                pres_dirty_q <= 1'b1;
+            end else if (img_mounted[u]) begin
+                pend_q[u] <= 1'b1;
+                pnew_pres_q[u] <= (img_size[63:9] != 55'd0);
+                pnew_size_q[u] <= img_size[40:9];
+            end else if (machine_reset && pend_q[u]) begin
+                pend_q[u] <= 1'b0;
+                present_q[u] <= 1'b0;
+                pres_out_q[u] <= pnew_pres_q[u];
+                size_q[u] <= pnew_size_q[u];
+                need_geo_q[u] <= pnew_pres_q[u];
                 pres_dirty_q <= 1'b1;
             end
         end
