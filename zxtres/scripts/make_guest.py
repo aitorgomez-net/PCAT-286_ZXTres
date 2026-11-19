@@ -89,6 +89,7 @@ module pcat286_zxtres_guest (
     input  logic        CLOCK_50,       // 50 MHz from a global buffer
     input  logic        RESET_N,        // from the DeMiSTify controller
     output logic        LED,
+    output logic        REBOOT_FPGA,    // OSD "Reload ZX core": reload from flash address 0
 
     output logic [12:0] SDRAM_A,
     inout  wire  [15:0] SDRAM_DQ,
@@ -144,7 +145,8 @@ module pcat286_zxtres_guest (
     // the 64 MiST bits; the fields above bit 63 move to free bits and are
     // put back in place in hps_status below.
     //   0 reset, 1-2 Settings page triggers (save, defaults; the firmware
-    //   handles them, the core never sees them set), 14-16 display, 23-27 joysticks, 28-29 220h audio,
+    //   handles them, the core never sees them set), 61 Reload ZX core (set by
+    //   the firmware after its confirmation; never saved), 14-16 display, 23-27 joysticks, 28-29 220h audio,
     //   32-33 speaker volume, 36-37 audio boost, 38-39 stereo mix, 42-43 OPL2,
     //   44-45 monitor, 54 joystick swap,
     //   56 Tandy, 49-52 CRT H offset, 53-55 CRT V offset, 57-59 CPU speed, 46-48 installed RAM, 5 SB IRQ,
@@ -201,6 +203,8 @@ module pcat286_zxtres_guest (
         "P3L,Settings file;",
         "P3T1,Save settings;",
         "P3T2,Reset to defaults;",
+        "P3L,Board;",
+        "P3Tz,Reload ZX core;",
         "T0,Reset;",
         "V,v0.1"
     };
@@ -732,6 +736,10 @@ VIDEO_OUT = r'''
     );
 
     assign LED = main_rom_loaded;
+    // Status bit 61, set by the firmware after the confirmation of "Cold
+    // Reboot": the board top reconfigures the FPGA from the flash through ICAP
+    // (zxtres_pcat_top.sv), which loads the Spectrum core again.
+    assign REBOOT_FPGA = status[61];
     // 16-bit signed audio; the board top turns it into the sigma-delta and
     // I2S outputs.
     assign DAC_L = audio_mix_l_q;

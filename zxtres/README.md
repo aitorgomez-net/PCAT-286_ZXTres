@@ -63,7 +63,7 @@ software on the board beyond the rows above.
 | Second SD card as an IDE disk | The one microSD slot belongs to the controller. |
 | Real-time clock from the HPS | The board has none. Set the time in DOS or in the BIOS setup; the CMOS file keeps the rest. |
 | Analog joysticks | The DB9 ports give directions and buttons only. |
-| Return to the Spectrum core from the OSD | Power cycle the board. |
+| Back to the Spectrum core | *Reload ZX core* on the Settings page reloads the Spectrum core from the flash (see below). |
 | Image files created by the core | The controller can write a file but not create one: `PCAT286.CMS` and `PCAT286.CFG` must exist, see below. |
 
 ## Preparing the microSD card
@@ -95,7 +95,9 @@ nothing is mounted and the defaults apply. After choosing a hard disk, use
 1. Copy `PCAT286.ZX3` to the card, with the files above.
 2. In the ZX Spectrum core, press F5 for the NMI browser, select the file and
    load it. The core goes to a temporary flash slot.
-3. To go back to the Spectrum core, power cycle the board.
+3. To go back to the Spectrum core, choose *Reload ZX core* on the OSD page
+   *Settings* and confirm: the FPGA reloads the Spectrum core from the
+   board's flash and starts it straight away, with or without the card.
 
 Connect a VGA monitor, or a 15 kHz TV through a suitable adapter. Plug the
 PS/2 mouse in before the core starts, or before a reset from the OSD, because
@@ -122,7 +124,7 @@ Machine group (CPU speed, installed RAM, floppy write protect), and the pages
 *Video* (monitor, display tint, CRT offsets, VGA 13h+ CRT rate, scandoubler,
 350-line CRT output, splash time, video info), *Audio* (sound cards, levels),
 *Input* (joysticks), *BIOS* (the two BIOS files) and *Settings* (info, OSD
-position, save settings, reset to defaults), then Reset.
+position, save settings, reset to defaults, cold reboot), then Reset.
 
 The *Video info* page shows the raster that leaves the VGA pins: lines per
 frame, line and frame frequency, and the width and polarity of the sync

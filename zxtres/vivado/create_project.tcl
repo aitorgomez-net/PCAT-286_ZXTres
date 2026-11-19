@@ -60,6 +60,7 @@ set sv [list     {sys/at_cdc_snapshot.sv} \
     {zxtres/rtl/zxtres_ps2_rx.sv} \
     {DeMiSTify/templates/zxtres/zx3w/sigma_delta_codec.v} \
     {DeMiSTify/templates/zxtres/zx3w/i2s_sound.v} \
+    {DeMiSTify/templates/zxtres/zx3w/return_to_core1.v} \
     {sys/at_cdc_fifo.sv} \
     {rtl/common/floppy.v} \
     {rtl/common/simple_fifo.v} \

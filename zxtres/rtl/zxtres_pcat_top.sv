@@ -99,11 +99,12 @@ module zxtres_pcat_top (
 
     // Guest core.
     logic reset_n, act_led;
+    logic reboot_fpga;
     logic spi_clk, spi_toguest, spi_ss2, spi_ss3, spi_ss4, conf_data0;
     wire  spi_fromguest;
     logic [15:0] dac_l, dac_r;
     pcat286_zxtres_guest guest (
-        .CLOCK_50(clk50), .RESET_N(reset_n), .LED(act_led),
+        .CLOCK_50(clk50), .RESET_N(reset_n), .LED(act_led), .REBOOT_FPGA(reboot_fpga),
         .SDRAM_A(SDRAM_A), .SDRAM_DQ(SDRAM_DQ), .SDRAM_DQML(SDRAM_DQML), .SDRAM_DQMH(SDRAM_DQMH),
         .SDRAM_nWE(SDRAM_nWE), .SDRAM_nCAS(SDRAM_nCAS), .SDRAM_nRAS(SDRAM_nRAS),
         .SDRAM_nCS(SDRAM_nCS), .SDRAM_BA(SDRAM_BA), .SDRAM_CLK(SDRAM_CLK), .SDRAM_CKE(SDRAM_CKE),
@@ -118,6 +119,15 @@ module zxtres_pcat_top (
         .PS2M_CLK_OUT(guest_ps2m_clk_out), .PS2M_DAT_OUT(guest_ps2m_dat_out),
         .DAC_L(dac_l), .DAC_R(dac_r)
     );
+
+    // OSD "Reload ZX core": status bit 61 crosses to clk50 and starts the ICAP
+    // warm boot (IPROG) from flash address 0, where the Spectrum core is. The
+    // module is the one of DeMiSTify's ZXTRES wrapper
+    // (templates/zxtres/zx3w/return_to_core1.v); it latches the request and
+    // drives ICAPE2 at clk50 / 8.
+    logic reboot_meta = 1'b0, reboot_sync = 1'b0;
+    always_ff @(posedge clk50) {reboot_sync, reboot_meta} <= {reboot_meta, reboot_fpga};
+    return_to_core1 u_return_to_core (.clk(clk50), .boot_core(reboot_sync));
 
     // DeMiSTify controller; SD_SCK is the shared SPI clock.
     /* verilator lint_off PINCONNECTEMPTY */

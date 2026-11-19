@@ -121,7 +121,7 @@ verilator --binary --timing -O2 +1364-2005ext+vg --x-initial fast -Wno-fatal -Wn
   zxtres/rtl/zxtres_sram_ctrl.sv zxtres/rtl/zxtres_scanconv.sv zxtres/sim/zxtres_sram_model.sv \
   "$out/patched/user_io.v" "$out/patched/data_io.v" zxtres/rtl/zxtres_osd.sv \
   DeMiSTify/templates/demistify/common/joydecoder_neptuno.v \
-  DeMiSTify/templates/zxtres/zx3w/sigma_delta_codec.v DeMiSTify/templates/zxtres/zx3w/i2s_sound.v   zxtres/rtl/zxtres_ps2_rx.sv zxtres/rtl/zxtres_ps2_key.sv zxtres/rtl/zxtres_cmos_store.sv zxtres/rtl/zxtres_ide_store.sv zxtres/rtl/zxtres_fdd_store.sv zxtres/rtl/zxtres_sd_arb.sv \
+  DeMiSTify/templates/zxtres/zx3w/sigma_delta_codec.v DeMiSTify/templates/zxtres/zx3w/i2s_sound.v DeMiSTify/templates/zxtres/zx3w/return_to_core1.v   zxtres/rtl/zxtres_ps2_rx.sv zxtres/rtl/zxtres_ps2_key.sv zxtres/rtl/zxtres_cmos_store.sv zxtres/rtl/zxtres_ide_store.sv zxtres/rtl/zxtres_fdd_store.sv zxtres/rtl/zxtres_sd_arb.sv \
   zxtres/rtl/zxtres_vidinfo.sv zxtres/rtl/pcat286_zxtres_guest.sv \
   zxtres/rtl/zxtres_pcat_top.sv sim/spk286_integration/spk286_sdram_pin_model.sv \
   zxtres/sim/sd_card_model.sv zxtres/sim/zxtres_pcat_bios_tb.sv \

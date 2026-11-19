@@ -391,9 +391,12 @@ before that the sim had Tandy compiled out). Not tried with a game.
   module with a synthetic CGA raster and the real `user_io`; `sim/
   run_bios_sim.sh ... +OSD_TOUR` (or `+VINFO_ONLY`) saves the page.
 - **Settings page (Built)**: `P3,Settings;` holds the `Info` page (core,
-  machine and mounted images, `info_page()`), `OSD position`, and two triggers, `T1` Save
-  settings and `T2` Reset to defaults (status bits 1 and 2, never set: the
-  `toggle()` override in `overrides.c` catches them). Each opens a page of its
+  machine and mounted images, `info_page()`), `OSD position`, and three triggers, `T1` Save
+  settings, `T2` Reset to defaults (status bits 1 and 2, never set: the
+  `toggle()` override in `overrides.c` catches them) and `Tz` Reload ZX core (status
+  bit 61, set by the firmware after the confirmation and never saved: the board
+  top sends the ICAP warm boot, IPROG with WBSTAR 0, through DeMiSTify's
+  `zx3w/return_to_core1.v`, which reloads the Spectrum core from flash address 0). Each opens a page of its
   own (`MENUPAGE_CONFIRM`, hook in `main.c`) that asks Yes/No; Back is the
   default row. Save writes `PCAT286.CFG` (version 3) in the folder `PCAT286`
   of the card, or in the root when there is no such folder: the status word

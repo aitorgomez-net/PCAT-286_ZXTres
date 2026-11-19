@@ -95,6 +95,7 @@ sv=(
   zxtres/rtl/zxtres_ps2_rx.sv
   DeMiSTify/templates/zxtres/zx3w/sigma_delta_codec.v
   DeMiSTify/templates/zxtres/zx3w/i2s_sound.v
+  DeMiSTify/templates/zxtres/zx3w/return_to_core1.v
 )
 includes=()
 # One block RAM per EGA plane, as in the Quartus build (rtl/video/ega_vram.v).

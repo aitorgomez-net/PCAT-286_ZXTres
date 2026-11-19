@@ -70,6 +70,8 @@ static const char cfg_name[] = "PCAT286 CFG";
 #define BIOS_UNIT 'B'           /* system BIOS and EGA BIOS, chosen from the OSD */
 #define EGA_UNIT 'E'
 #define RESET_BIT 1             /* status bit 0: hold the machine in reset */
+#define ZXCORE_BIT 61           /* cold reboot, see confirm_yes() */
+#define ZXCORE_HIGH_MASK (1u << (ZXCORE_BIT - 32))   /* in statusword_high */
 #define CMOS_DISKIMG 2
 #define FLOPPY_DISKIMG 3        /* block device of unit '3'; '4' follows */
 
@@ -424,7 +426,7 @@ static int cfg_store(int blank)
 		memcpy(cfg_bytes, "PCAT", 4);
 		cfg_bytes[4] = CFG_VERSION;
 		put32(cfg_bytes + 8, statusword & ~RESET_BIT);
-		put32(cfg_bytes + 12, statusword_high);
+		put32(cfg_bytes + 12, statusword_high & ~ZXCORE_HIGH_MASK);
 		for(i = 0; i < CFG_UNITS; ++i)
 			image_path(slot_of(cfg_units[i]), (char *)cfg_bytes + CFG_PATHS + i * PATH_SIZE);
 	}
@@ -469,7 +471,7 @@ char *autoboot()
 	if(cfg_load())
 	{
 		statusword = get32(cfg_bytes + 8) | RESET_BIT;
-		statusword_high = get32(cfg_bytes + 12);
+		statusword_high = get32(cfg_bytes + 12) & ~ZXCORE_HIGH_MASK;
 		sendstatus();
 	}
 
@@ -491,8 +493,9 @@ char *autoboot()
 	return 0;
 }
 
-/* Settings page: "T1" saves the settings and "T2" returns to the defaults.
-   Both ask first, on a page of their own (MENUPAGE_CONFIRM, built here and
+/* Settings page: "T1" saves the settings, "T2" returns to the defaults and
+   bit 61 ("Reload ZX core") makes the board top reload the FPGA from the flash,
+   which brings back the Spectrum core. All three ask first, on a page of their own (MENUPAGE_CONFIRM, built here and
    selected by a hook in main.c, see expand_demistify_osd.py). */
 
 #define SAVE_BIT 1
@@ -507,7 +510,8 @@ int confirm_page(struct menu_entry *m)
 	void confirm_yes(int row);
 	void confirm_no(int row);
 
-	strcpy(m[0].label, confirm_bit == SAVE_BIT ? "Save settings now?" : "Reset all settings?");
+	strcpy(m[0].label, confirm_bit == SAVE_BIT ? "Save settings now?"
+		: confirm_bit == ZXCORE_BIT ? "Cold reboot now?" : "Reset all settings?");
 	m[0].action = 0;
 	strcpy(m[1].label, "Yes");
 	m[1].action = MENU_ACTION(&confirm_yes);
@@ -552,6 +556,14 @@ void confirm_yes(int row)
 		confirm_close(cfg_store(0) ? "Settings saved" : "Cannot write PCAT286.CFG");
 		return;
 	}
+	if(confirm_bit == ZXCORE_BIT)
+	{
+		/* The FPGA reconfigures a few microseconds after the bit reaches
+		   the core; nothing runs after it. */
+		statusword_high |= ZXCORE_HIGH_MASK;
+		sendstatus();
+		return;
+	}
 
 	/* Defaults: every option back to its first value, forget the saved
 	   file, and reset the machine so that they all apply. */
@@ -577,7 +589,7 @@ void toggle(int row)
 {
 	int bit = menu[row].u.opt.shift;
 
-	if(bit == SAVE_BIT || bit == DEFAULTS_BIT)
+	if(bit == SAVE_BIT || bit == DEFAULTS_BIT || bit == ZXCORE_BIT)
 	{
 		confirm_bit = bit;
 		menupage = MENUPAGE_CONFIRM;
