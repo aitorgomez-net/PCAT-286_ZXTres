@@ -100,6 +100,28 @@ def transform(main_path, menu_path, header_path):
                           'menu footer navigation')
     source = replace_once(source, '(j<7)', '(j<OSDNLINE-1)',
                           'file selector row count')
+    # Unmounting is a row of the file selector, "Unmount NAME", shown first while the unit
+    # holds an image (unmountable() is in the core's overrides.c): opening the selector
+    # no longer dismounts anything, and Back leaves the unit as it was. The rows after
+    # it are the files, so a row stands for the file unmount_rows places before it.
+    source = replace_once(
+        source,
+        '\tloadimage(NULL,unit); /* Dismount existing disk when entering the menu */\n',
+        '',
+        'selector keeps the image')
+    source = replace_once(
+        source,
+        '\tfor(j=0;(j<OSDNLINE-1) && p;++i)\n',
+        '\tunmount_rows=0;\n\tj=0;\n\tif(menuindex==0 && unmountable(unit))\n\t{\n\t\tmenu[0].action=MENU_ACTION(&selectunmount);\n\t\tmenu[0].u.file.index=-1;\n\t\tstrcpy(romfilenames[0],"Unmount ");\n\t\tstrcat(romfilenames[0],unmountable(unit));\n\t\tj=1;\n\t\tunmount_rows=1;\n\t}\n\tfor(;(j<OSDNLINE-1) && p;++i)\n',
+        'unmount row')
+    if source.count('nthfile(menuindex+row)') != 2:
+        raise ValueError('file rows: expected two nthfile(menuindex+row)')
+    source = source.replace('nthfile(menuindex+row)', 'nthfile(menuindex+row-unmount_rows)')
+    source = replace_once(
+        source,
+        'char filename[12];\nvoid selectrom(int row)\n',
+        'char filename[12];\nstatic int unmount_rows;     /* 1 while the first row is the Unmount row */\nvoid selectunmount(int row)\n{\n\tloadimage(NULL,unit);\n\tMenu_ShowHide(0);\n\tmenupage=0;\n\tbuildmenu(1);\n}\n\n\nvoid selectrom(int row)\n',
+        'unmount action')
     source = replace_once(source, '(line<7)', '(line<OSDNLINE-1)',
                           'supporters row count')
     source = replace_once(source, 'line<7', 'line<OSDNLINE-1',
@@ -118,6 +140,7 @@ def transform(main_path, menu_path, header_path):
         'void parseconf(int selpage,struct menu_entry *menu,unsigned int first,unsigned int limit);',
         'void parseconf(int selpage,struct menu_entry *menu,unsigned int first,unsigned int limit);\n'
         '__weak const char *imagename(int unit) { return 0; }\n'
+        '__weak const char *unmountable(int unit) { return 0; }\n'
         '#define MENUPAGE_CONFIRM 27\n'
         '#define MENUPAGE_INFO 26\n'
         '#define MENUPAGE_VIDEO 25\n'

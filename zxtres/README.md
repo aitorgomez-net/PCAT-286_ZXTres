@@ -47,6 +47,7 @@ in Vivado. The dates are those of the observation in [SPEC.md](SPEC.md).
 | CPU speed profiles, MAX to 25 MHz (MAX runs at 50 MHz and closes timing) | Built. Only MAX was run on a board. |
 | Boot splash, F12 pause and credits | Built, Sim |
 | OSD with settings saved to the card | Built, Sim |
+| Dismounting a floppy or hard disk image: its OSD file selector starts with the row *Unmount NAME*; opening the selector changes nothing and *Back* leaves the unit as it was. A hard disk dismounts at the next *Reset & apply* | Built |
 
 Neither this list nor the main README certifies the machine as a complete
 AT chipset or its timing as historical; see the qualification limits in the

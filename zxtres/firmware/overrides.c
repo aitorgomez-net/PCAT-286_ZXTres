@@ -156,6 +156,18 @@ static void setimagename(int unit, const char *name, int mounted)
 		put83(imgnames[u], name);
 }
 
+/* Called by the menu for the file selector: the name of the image in a unit
+   that can be dismounted (a disk), 0 for any other unit or an empty one. The
+   selector shows it as the row "Unmount NAME". */
+const char *unmountable(int unit)
+{
+	int u = slot_of(unit);
+
+	if(u < 0 || !((unit >= '0' && unit <= '1') || (unit >= '3' && unit <= '4')))
+		return(0);
+	return(imgnames[u][0] ? imgnames[u] : 0);
+}
+
 /* Called by the menu for the S entries: the text to show after the label. */
 const char *imagename(int unit)
 {
@@ -727,6 +739,7 @@ void submenu(int row);
 void fileselector(int row);
 void selectrom(int row);
 void selectdir(int row);
+void selectunmount(int row);
 void confirm_yes(int row);
 void confirm_no(int row);
 
@@ -925,6 +938,13 @@ void Menu_DrawRow(int row, int selected, struct menu_entry *m)
 		pc(' ');
 		ps(l);
 	}
+	else if(a == MENU_ACTION(&selectunmount))
+	{
+		pc(C_RED);
+		pc(ICON_CROSS);
+		pc(' ');
+		ps(l);
+	}
 	else if(a == MENU_ACTION(&confirm_no))
 	{
 		pc(C_RED);
@@ -1040,6 +1060,8 @@ void Menu_DrawExtras(int selected, struct menu_entry *m)
 		help = "\006Enter: choose a file";
 	else if(a == MENU_ACTION(&selectdir))
 		help = "\006Enter: open the folder";
+	else if(a == MENU_ACTION(&selectunmount))
+		help = "\006Enter: unmount";
 	else if(a == MENU_ACTION(&selectrom))
 		help = "\006Enter: load";
 	centre_row(OSDNLINE + 1, help);
